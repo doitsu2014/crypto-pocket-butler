@@ -1,0 +1,15 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Node
+node_modules
+.next
+out
+
+# Env
+.env
+.env.*
+
+# OS
+.DS_Store

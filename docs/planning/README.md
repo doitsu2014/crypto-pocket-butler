@@ -1,6 +1,6 @@
-# Notion Export
+# Planning Docs
 
-This folder mirrors the planning/spec notes from Notion.
+This folder mirrors the project planning/spec notes (source: Notion).
 
 - [00 Project Overview](./00-project-overview.md)
 - [01 MVP Scope](./01-mvp-scope.md)

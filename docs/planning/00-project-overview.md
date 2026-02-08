@@ -6,6 +6,9 @@
 Build a crypto portfolio management system that aggregates positions across wallets + exchanges, computes portfolio views per account and in total, and uses an AI agent (OpenClaw) to propose and/or execute rebalancing and risk controls.
 
 ## Goals (MVP)
+- User authentication and authorization via Keycloak (frontend + backend).
+- User-defined portfolios that choose which wallets/exchanges are included.
+- Daily end-of-day (EOD) portfolio snapshots.
 - Connect data sources: on-chain wallets + exchange accounts (read-only first).
 - Normalize holdings into a single schema (asset, quantity, USD value, cost basis if available).
 - Portfolio views: per-wallet/per-exchange + consolidated total; allocation by asset, sector, chain, and risk bucket.

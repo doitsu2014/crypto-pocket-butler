@@ -2,9 +2,43 @@
 
 A small (but serious) pet project: **crypto portfolio management** across wallets + exchanges, with an **OpenClaw agent** that produces rebalancing suggestions and writes daily briefs to Notion.
 
+## Architecture
+
+### Backend (Rust)
+- **Framework**: Axum 0.8
+- **Authentication**: Keycloak JWT validation with axum-keycloak-auth
+- **API Documentation**: Swagger UI with utoipa
+- **Location**: `backend-rust/`
+
+### Frontend (Next.js)
+- **Framework**: Next.js 16 with App Router
+- **Authentication**: NextAuth.js v5 with Keycloak OIDC (Authorization Code + PKCE)
+- **Styling**: TailwindCSS 4
+- **Language**: TypeScript
+- **Location**: `frontend-react/`
+
+See [frontend-react/FRONTEND_README.md](frontend-react/FRONTEND_README.md) for detailed setup instructions.
+
+## Quick Start
+
+### Backend
+```bash
+cd backend-rust
+cargo run
+```
+
+### Frontend
+```bash
+cd frontend-react
+npm install
+cp .env.example .env.local
+# Configure .env.local with your Keycloak settings
+npm run dev
+```
+
 ## Planned stack
 - **Backend:** Rust (Axum) + Postgres
-- **Frontend:** React (Next.js) + TypeScript
+- **Frontend:** React (Next.js) + TypeScript ✅ **Implemented**
 - **Agent:** OpenClaw (suggestions first, execution later with guardrails)
 
 ## MVP (first milestone)
@@ -20,6 +54,9 @@ A small (but serious) pet project: **crypto portfolio management** across wallet
 - Futures cap: TBD
 
 ## Security
+- ✅ **Keycloak OIDC authentication** with PKCE flow (frontend)
+- ✅ **JWT validation** on backend API
+- ✅ **Bearer token authentication** for API calls
 - Start **read-only** for exchanges.
 - Never enable withdrawals.
 - If trading is enabled later: strict allowlists + max order sizes + full audit log.

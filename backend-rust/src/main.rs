@@ -3,6 +3,7 @@ use axum_keycloak_auth::{
     decode::KeycloakToken, instance::KeycloakAuthInstance, instance::KeycloakConfig,
     layer::KeycloakAuthLayer, PassthroughMode,
 };
+use crypto_pocket_butler_backend::{db::DbConfig, handlers};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -51,13 +52,32 @@ struct HealthResponse {
         health,
         get_user_info,
         protected_endpoint,
+        handlers::portfolios::list_portfolios,
+        handlers::portfolios::get_portfolio,
+        handlers::portfolios::create_portfolio,
+        handlers::portfolios::update_portfolio,
+        handlers::portfolios::delete_portfolio,
+        handlers::portfolios::list_portfolio_accounts,
+        handlers::portfolios::add_account_to_portfolio,
+        handlers::portfolios::remove_account_from_portfolio,
     ),
     components(
-        schemas(UserInfo, ProtectedResponse, HealthResponse)
+        schemas(
+            UserInfo, 
+            ProtectedResponse, 
+            HealthResponse,
+            handlers::portfolios::CreatePortfolioRequest,
+            handlers::portfolios::UpdatePortfolioRequest,
+            handlers::portfolios::PortfolioResponse,
+            handlers::portfolios::AddAccountToPortfolioRequest,
+            handlers::portfolios::PortfolioAccountResponse,
+            handlers::portfolios::AccountInPortfolioResponse,
+        )
     ),
     modifiers(&SecurityAddon),
     tags(
-        (name = "crypto-pocket-butler", description = "Crypto Pocket Butler API endpoints")
+        (name = "crypto-pocket-butler", description = "Crypto Pocket Butler API endpoints"),
+        (name = "portfolios", description = "Portfolio management endpoints")
     ),
     info(
         title = "Crypto Pocket Butler API",
@@ -102,6 +122,13 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Initialize database connection
+    tracing::info!("Connecting to database...");
+    let db = DbConfig::from_env()
+        .await
+        .expect("Failed to connect to database");
+    tracing::info!("Database connection established");
+
     // Keycloak configuration from environment variables
     let server_url = std::env::var("KEYCLOAK_SERVER")
         .unwrap_or_else(|_| "https://keycloak.example.com".to_string());
@@ -143,7 +170,10 @@ async fn main() {
         // Protected routes that require authentication
         .route("/api/me", get(get_user_info))
         .route("/api/protected", get(protected_endpoint))
-        .layer(auth_layer);
+        // Portfolio API routes (protected)
+        .merge(handlers::portfolios::create_router())
+        .layer(auth_layer)
+        .with_state(db);
 
     // Run the server
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));

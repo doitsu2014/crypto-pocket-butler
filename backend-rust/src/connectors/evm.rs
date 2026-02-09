@@ -135,7 +135,7 @@ impl EvmConnector {
             Ok(Some(Balance {
                 asset: format!("{}-{}", chain.native_symbol(), chain.name()),
                 quantity: balance_str.clone(),
-                available: balance_str,
+                available: balance_str.clone(),
                 frozen: "0".to_string(),
             }))
         } else {
@@ -175,7 +175,7 @@ impl EvmConnector {
                         balances.push(Balance {
                             asset: format!("{}-{}", symbol, chain.name()),
                             quantity: balance_str.clone(),
-                            available: balance_str,
+                            available: balance_str.clone(),
                             frozen: "0".to_string(),
                         });
                     }

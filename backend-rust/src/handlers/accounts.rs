@@ -209,6 +209,6 @@ async fn sync_all_accounts_handler(
 /// Create router for account sync endpoints
 pub fn create_router() -> Router<DatabaseConnection> {
     Router::new()
-        .route("/api/v1/accounts/:account_id/sync", post(sync_account_handler))
+        .route("/api/v1/accounts/{account_id}/sync", post(sync_account_handler))
         .route("/api/v1/accounts/sync-all", post(sync_all_accounts_handler))
 }

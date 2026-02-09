@@ -125,8 +125,8 @@ pub async fn sync_account(
                 "quantity": b.quantity,
                 "available": b.available,
                 "frozen": b.frozen,
-                "price_usd": "0.00",
-                "value_usd": "0.00",
+                "price_usd": 0,
+                "value_usd": 0,
                 "account_id": account_id.to_string(),
                 "account_name": account.name.clone(),
             })

@@ -6,15 +6,32 @@ use axum::{
     Router,
 };
 use axum_keycloak_auth::decode::KeycloakToken;
+use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, ModelTrait,
     QueryFilter,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::str::FromStr;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::entities::{accounts, portfolio_accounts, portfolios, users};
+
+// === Internal DTOs for deserialization ===
+
+#[derive(Debug, Deserialize)]
+struct HoldingData {
+    asset: String,
+    quantity: String,
+    available: String,
+    frozen: String,
+    #[serde(default)]
+    price_usd: f64,
+    #[serde(default)]
+    value_usd: f64,
+}
 
 // === Request/Response DTOs ===
 
@@ -123,6 +140,57 @@ impl From<accounts::Model> for AccountInPortfolioResponse {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct AssetHolding {
+    /// Asset symbol (e.g., BTC, ETH, USDT)
+    pub asset: String,
+    /// Total quantity across all accounts
+    pub total_quantity: String,
+    /// Total available quantity
+    pub total_available: String,
+    /// Total frozen quantity
+    pub total_frozen: String,
+    /// Price per unit in USD
+    pub price_usd: f64,
+    /// Total value in USD
+    pub value_usd: f64,
+    /// List of accounts holding this asset
+    pub accounts: Vec<AccountHoldingDetail>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct AccountHoldingDetail {
+    pub account_id: Uuid,
+    pub account_name: String,
+    pub quantity: String,
+    pub available: String,
+    pub frozen: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct AllocationItem {
+    /// Asset symbol
+    pub asset: String,
+    /// Value in USD
+    pub value_usd: f64,
+    /// Percentage of total portfolio
+    pub percentage: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct PortfolioHoldingsResponse {
+    /// Portfolio ID
+    pub portfolio_id: Uuid,
+    /// Total portfolio value in USD
+    pub total_value_usd: f64,
+    /// Holdings grouped by asset
+    pub holdings: Vec<AssetHolding>,
+    /// Allocation breakdown
+    pub allocation: Vec<AllocationItem>,
+    /// Timestamp of the data
+    pub as_of: String,
+}
+
 // === Error handling ===
 
 #[derive(Debug)]
@@ -223,6 +291,14 @@ async fn check_account_ownership(
     }
 
     Ok(account)
+}
+
+/// Helper to parse decimal values safely
+/// 
+/// Attempts to parse a string to a Decimal value. Returns Decimal::ZERO
+/// if the parsing fails, ensuring safe handling of invalid input.
+fn parse_decimal_or_zero(value: &str) -> Decimal {
+    Decimal::from_str(value).unwrap_or(Decimal::ZERO)
 }
 
 /// Unset default flag for all user's portfolios except the specified one
@@ -575,6 +651,145 @@ pub async fn remove_account_from_portfolio(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Get portfolio holdings and allocation
+#[utoipa::path(
+    get,
+    path = "/v1/portfolios/{id}/holdings",
+    params(
+        ("id" = Uuid, Path, description = "Portfolio ID")
+    ),
+    responses(
+        (status = 200, description = "Portfolio holdings and allocation", body = PortfolioHoldingsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Portfolio not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "portfolios"
+)]
+pub async fn get_portfolio_holdings(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<PortfolioHoldingsResponse>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
+    check_portfolio_ownership(&db, id, user.id).await?;
+
+    // Get all accounts linked to this portfolio
+    let portfolio_accounts = portfolio_accounts::Entity::find()
+        .filter(portfolio_accounts::Column::PortfolioId.eq(id))
+        .all(&db)
+        .await?;
+
+    let account_ids: Vec<Uuid> = portfolio_accounts
+        .iter()
+        .map(|pa| pa.account_id)
+        .collect();
+
+    let accounts = accounts::Entity::find()
+        .filter(accounts::Column::Id.is_in(account_ids))
+        .all(&db)
+        .await?;
+
+    // Aggregate holdings by asset
+    let mut holdings_map: HashMap<String, AssetHolding> = HashMap::new();
+
+    for account in accounts {
+        if let Some(holdings_json) = account.holdings {
+            // Deserialize holdings directly to typed struct
+            let holdings: Vec<HoldingData> = match serde_json::from_value(serde_json::Value::from(holdings_json)) {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to deserialize holdings for account {}: {}",
+                        account.id, e
+                    );
+                    continue;
+                }
+            };
+            
+            for holding in holdings {
+                // Skip holdings with empty asset names
+                if holding.asset.is_empty() {
+                    tracing::warn!(
+                        "Skipping holding with empty asset name for account {}",
+                        account.id
+                    );
+                    continue;
+                }
+
+                let entry = holdings_map.entry(holding.asset.clone()).or_insert_with(|| {
+                    AssetHolding {
+                        asset: holding.asset.clone(),
+                        total_quantity: "0".to_string(),
+                        total_available: "0".to_string(),
+                        total_frozen: "0".to_string(),
+                        price_usd: holding.price_usd,
+                        value_usd: 0.0,
+                        accounts: Vec::new(),
+                    }
+                });
+
+                // Add to totals using Decimal for precision
+                let qty = parse_decimal_or_zero(&holding.quantity);
+                let avail = parse_decimal_or_zero(&holding.available);
+                let frz = parse_decimal_or_zero(&holding.frozen);
+                let curr_qty = parse_decimal_or_zero(&entry.total_quantity);
+                let curr_avail = parse_decimal_or_zero(&entry.total_available);
+                let curr_frz = parse_decimal_or_zero(&entry.total_frozen);
+
+                entry.total_quantity = (curr_qty + qty).to_string();
+                entry.total_available = (curr_avail + avail).to_string();
+                entry.total_frozen = (curr_frz + frz).to_string();
+                entry.value_usd += holding.value_usd;
+
+                entry.accounts.push(AccountHoldingDetail {
+                    account_id: account.id,
+                    account_name: account.name.clone(),
+                    quantity: holding.quantity,
+                    available: holding.available,
+                    frozen: holding.frozen,
+                });
+            }
+        }
+    }
+
+    // Convert to vec and sort by value descending (highest value first)
+    // Note: NaN values are treated as equal to maintain stable ordering
+    let mut holdings: Vec<AssetHolding> = holdings_map.into_values().collect();
+    holdings.sort_by(|a, b| {
+        b.value_usd
+            .partial_cmp(&a.value_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Calculate total value and allocation
+    let total_value_usd: f64 = holdings.iter().map(|h| h.value_usd).sum();
+
+    let allocation: Vec<AllocationItem> = holdings
+        .iter()
+        .map(|h| AllocationItem {
+            asset: h.asset.clone(),
+            value_usd: h.value_usd,
+            percentage: if total_value_usd > 0.0 {
+                (h.value_usd / total_value_usd) * 100.0
+            } else {
+                0.0
+            },
+        })
+        .collect();
+
+    Ok(Json(PortfolioHoldingsResponse {
+        portfolio_id: id,
+        total_value_usd,
+        holdings,
+        allocation,
+        as_of: chrono::Utc::now().to_rfc3339(),
+    }))
+}
+
 // === Router setup ===
 
 pub fn create_router() -> Router<DatabaseConnection> {
@@ -593,5 +808,9 @@ pub fn create_router() -> Router<DatabaseConnection> {
         .route(
             "/v1/portfolios/:id/accounts/:account_id",
             delete(remove_account_from_portfolio),
+        )
+        .route(
+            "/v1/portfolios/:id/holdings",
+            get(get_portfolio_holdings),
         )
 }

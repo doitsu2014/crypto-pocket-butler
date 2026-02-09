@@ -33,7 +33,10 @@ export async function GET() {
     return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to fetch from backend", details: error instanceof Error ? error.message : "Unknown error" },
+      { 
+        error: "Failed to fetch from backend", 
+        details: error instanceof Error ? error.message : String(error) 
+      },
       { status: 500 }
     );
   }

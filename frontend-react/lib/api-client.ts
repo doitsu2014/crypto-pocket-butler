@@ -36,7 +36,9 @@ export async function apiClient<T>(
   const response = await fetch(`/api/backend${endpoint}`, config);
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+    const errorData = await response.json().catch(() => ({ 
+      error: `Failed to parse error response (HTTP ${response.status})` 
+    }));
     throw new Error(errorData.error || `API request failed: ${response.statusText}`);
   }
 
@@ -69,7 +71,9 @@ export async function directBackendClient<T>(
   const response = await fetch(`${BACKEND_URL}${endpoint}`, config);
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+    const errorData = await response.json().catch(() => ({ 
+      error: `Failed to parse error response (HTTP ${response.status})` 
+    }));
     throw new Error(errorData.error || `API request failed: ${response.statusText}`);
   }
 

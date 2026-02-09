@@ -123,7 +123,7 @@ User-defined portfolio groupings to organize accounts.
 
 **Indexes:**
 - `idx_portfolios_user_id` on `user_id`
-- `idx_portfolios_user_id_is_default` on `(user_id, is_default)` (UNIQUE) - Ensures only one default portfolio per user
+- `idx_portfolios_user_id_is_default` on `user_id WHERE is_default = true` (UNIQUE, partial) - Ensures only one default portfolio per user while allowing multiple non-default portfolios
 
 ### portfolio_accounts
 
@@ -323,7 +323,7 @@ portfolio_account.insert(&db).await?;
 // Create a snapshot
 let snapshot = snapshots::ActiveModel {
     portfolio_id: Set(portfolio_id),
-    snapshot_date: Set(chrono::Utc::now().naive_utc().date()),
+    snapshot_date: Set(chrono::Utc::now().date_naive()),
     snapshot_type: Set("eod".to_string()),
     total_value_usd: Set(rust_decimal::Decimal::from(100000)),
     holdings: Set(serde_json::json!([...])),

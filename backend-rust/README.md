@@ -376,10 +376,13 @@ For SeaORM documentation:
 - ✅ Implement OKX read-only connector
 - ✅ Implement account sync jobs
 - ✅ Add API endpoints for manual account sync
+- ✅ Implement portfolio snapshot jobs
+- ✅ Add API endpoints for manual snapshot creation
 - Add authorization checks (roles, resource ownership)
 - Split routes into public and protected routers
 - Implement API endpoints for CRUD operations on entities
-- Add automatic scheduled syncing
+- Add automatic scheduled syncing (cron-based)
+- Add automatic scheduled EOD snapshots (cron-based)
 - Add price data fetching
 - Calculate total portfolio values in USD
 
@@ -407,7 +410,7 @@ Background jobs for synchronizing account balances:
 
 New endpoints for triggering account syncs:
 
-- **POST /api/v1/accounts/:account_id/sync**: Sync a specific account
+- **POST /api/v1/accounts/{account_id}/sync**: Sync a specific account
 - **POST /api/v1/accounts/sync-all**: Sync all accounts for the authenticated user
 
 Both endpoints require authentication and return detailed sync results including:
@@ -418,6 +421,73 @@ Both endpoints require authentication and return detailed sync results including
 Example response:
 ```json
 {
+  "total": 3,
+  "successful": 2,
+  "failed": 1,
+  "results": [
+    {
+      "account_id": "uuid",
+      "success": true,
+      "holdings_count": 5
+    }
+  ]
+}
+```
+
+## Portfolio Snapshot Feature
+
+The backend includes a comprehensive portfolio snapshot system for capturing point-in-time portfolio composition and valuation.
+
+### Snapshot Jobs
+
+Background jobs for creating portfolio snapshots:
+- `create_portfolio_snapshot(portfolio_id, snapshot_date, snapshot_type)`: Create snapshot for a single portfolio
+- `create_all_portfolio_snapshots(snapshot_date)`: Create EOD snapshots for all portfolios
+
+### Snapshot Functionality
+
+The snapshot system:
+- Aggregates holdings from all accounts linked to a portfolio
+- Calculates total portfolio value in USD
+- Stores snapshot composition with metadata
+- Supports different snapshot types: "eod" (End of Day), "manual", "hourly"
+- Prevents duplicate snapshots for the same portfolio/date/type combination
+
+### API Endpoints
+
+New endpoints for creating snapshots:
+
+- **POST /api/v1/portfolios/{portfolio_id}/snapshots**: Create a snapshot for a specific portfolio
+- **POST /api/v1/snapshots/create-all**: Create snapshots for all portfolios owned by the authenticated user
+
+Request body:
+```json
+{
+  "snapshot_type": "manual",
+  "snapshot_date": "2024-01-15"
+}
+```
+
+Response:
+```json
+{
+  "portfolio_id": "uuid",
+  "snapshot_id": "uuid",
+  "success": true,
+  "holdings_count": 10,
+  "total_value_usd": "50000.00"
+}
+```
+
+### Scheduled EOD Snapshots
+
+The snapshot system is designed to support scheduled execution for automated EOD (End of Day) snapshots:
+
+1. **Job Function**: `create_all_portfolio_snapshots()` creates snapshots for all portfolios
+2. **Cutover Time**: Can be configured via environment variable (future enhancement)
+3. **Execution**: Designed to be called by a cron job or task scheduler
+
+**Future Enhancement**: Add cron-based scheduling to automatically trigger EOD snapshots at configured time (e.g., using `tokio-cron-scheduler` crate).
   "total": 3,
   "successful": 2,
   "failed": 1,

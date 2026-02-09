@@ -66,14 +66,14 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-// Public endpoint (no authentication required) - will be blocked by auth layer
-// Move to a separate router without the auth layer for truly public endpoints
+// Root endpoint - currently requires authentication due to the auth layer
+// To make this public, move it to a separate router without the auth layer
 async fn root() -> &'static str {
     "Crypto Pocket Butler API"
 }
 
-// Public health check endpoint - will be blocked by auth layer
-// Move to a separate router without the auth layer for truly public endpoints
+// Health check endpoint - currently requires authentication due to the auth layer
+// To make this public, move it to a separate router without the auth layer
 async fn health() -> Json<Value> {
     Json(json!({
         "status": "ok",
@@ -98,6 +98,4 @@ async fn protected_endpoint(Extension(token): Extension<KeycloakToken<String>>) 
         "user_id": token.subject,
     }))
 }
-
-
 

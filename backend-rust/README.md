@@ -488,15 +488,3 @@ The snapshot system is designed to support scheduled execution for automated EOD
 3. **Execution**: Designed to be called by a cron job or task scheduler
 
 **Future Enhancement**: Add cron-based scheduling to automatically trigger EOD snapshots at configured time (e.g., using `tokio-cron-scheduler` crate).
-  "total": 3,
-  "successful": 2,
-  "failed": 1,
-  "results": [
-    {
-      "account_id": "uuid",
-      "success": true,
-      "holdings_count": 5
-    }
-  ]
-}
-```

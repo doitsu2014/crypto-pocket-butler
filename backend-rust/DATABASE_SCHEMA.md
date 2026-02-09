@@ -1,0 +1,356 @@
+# Database Schema Documentation
+
+This document describes the PostgreSQL database schema for the Crypto Pocket Butler application using SeaORM.
+
+## Overview
+
+The database uses a normalized schema with the following main entities:
+- **Users**: Keycloak-authenticated users
+- **Accounts**: Exchange accounts, wallets, or DeFi protocols
+- **Portfolios**: User-defined groupings of accounts
+- **Portfolio_Accounts**: Many-to-many join table
+- **Snapshots**: Point-in-time portfolio snapshots (EOD, manual, etc.)
+
+## Entity Relationship Diagram
+
+```
+┌─────────────┐
+│   Users     │
+│─────────────│
+│ id (PK)     │◄──┐
+│ keycloak_id │   │
+│ email       │   │
+│ username    │   │
+└─────────────┘   │
+                  │
+        ┌─────────┴──────────────┐
+        │                        │
+┌───────┴───────┐       ┌────────┴──────┐
+│   Accounts    │       │  Portfolios   │
+│───────────────│       │───────────────│
+│ id (PK)       │◄──┐   │ id (PK)       │◄──┐
+│ user_id (FK)  │   │   │ user_id (FK)  │   │
+│ name          │   │   │ name          │   │
+│ account_type  │   │   │ is_default    │   │
+│ exchange_name │   │   └───────────────┘   │
+│ credentials   │   │           ▲            │
+└───────────────┘   │           │            │
+                    │   ┌───────┴───────┐    │
+                    │   │Portfolio_Accts│    │
+                    │   │───────────────│    │
+                    └───┤ account_id(FK)│    │
+                        │ portfolio_id  ├────┘
+                        │  (FK)         │
+                        └───────────────┘
+                                ▲
+                                │
+                        ┌───────┴───────┐
+                        │  Snapshots    │
+                        │───────────────│
+                        │ id (PK)       │
+                        │ portfolio_id  │
+                        │  (FK)         │
+                        │ snapshot_date │
+                        │ snapshot_type │
+                        │ total_value   │
+                        │ holdings(JSON)│
+                        └───────────────┘
+```
+
+## Tables
+
+### users
+
+User accounts linked to Keycloak authentication.
+
+| Column              | Type        | Constraints           | Description                    |
+|---------------------|-------------|-----------------------|--------------------------------|
+| id                  | UUID        | PRIMARY KEY           | Auto-generated UUID            |
+| keycloak_user_id    | VARCHAR     | UNIQUE, NOT NULL      | Keycloak user ID (sub claim)   |
+| email               | VARCHAR     | NULL                  | User email                     |
+| preferred_username  | VARCHAR     | NULL                  | Preferred username             |
+| created_at          | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp      |
+| updated_at          | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Last update timestamp          |
+
+**Indexes:**
+- `idx_users_keycloak_user_id` on `keycloak_user_id`
+
+### accounts
+
+Exchange accounts, wallets, or DeFi protocol connections.
+
+| Column                 | Type        | Constraints           | Description                       |
+|------------------------|-------------|-----------------------|-----------------------------------|
+| id                     | UUID        | PRIMARY KEY           | Auto-generated UUID               |
+| user_id                | UUID        | NOT NULL, FK          | References users.id               |
+| name                   | VARCHAR     | NOT NULL              | User-defined account name         |
+| account_type           | VARCHAR     | NOT NULL              | "exchange", "wallet", "defi"      |
+| exchange_name          | VARCHAR     | NULL                  | e.g., "okx", "binance"            |
+| api_key_encrypted      | TEXT        | NULL                  | Encrypted API key                 |
+| api_secret_encrypted   | TEXT        | NULL                  | Encrypted API secret              |
+| passphrase_encrypted   | TEXT        | NULL                  | Encrypted passphrase              |
+| wallet_address         | VARCHAR     | NULL                  | Wallet address (for wallet type)  |
+| is_active              | BOOLEAN     | NOT NULL, DEFAULT true| Whether account is active         |
+| last_synced_at         | TIMESTAMPTZ | NULL                  | Last successful sync              |
+| created_at             | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp         |
+| updated_at             | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Last update timestamp             |
+
+**Foreign Keys:**
+- `fk_accounts_user_id`: `user_id` → `users.id` (CASCADE on DELETE/UPDATE)
+
+**Indexes:**
+- `idx_accounts_user_id` on `user_id`
+- `idx_accounts_account_type` on `account_type`
+
+**Security Note:** API credentials should be encrypted at rest using a secure encryption key management system.
+
+### portfolios
+
+User-defined portfolio groupings to organize accounts.
+
+| Column      | Type        | Constraints           | Description                    |
+|-------------|-------------|-----------------------|--------------------------------|
+| id          | UUID        | PRIMARY KEY           | Auto-generated UUID            |
+| user_id     | UUID        | NOT NULL, FK          | References users.id            |
+| name        | VARCHAR     | NOT NULL              | Portfolio name                 |
+| description | TEXT        | NULL                  | Optional description           |
+| is_default  | BOOLEAN     | NOT NULL, DEFAULT false| One default portfolio per user |
+| created_at  | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp      |
+| updated_at  | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Last update timestamp          |
+
+**Foreign Keys:**
+- `fk_portfolios_user_id`: `user_id` → `users.id` (CASCADE on DELETE/UPDATE)
+
+**Indexes:**
+- `idx_portfolios_user_id` on `user_id`
+- `idx_portfolios_user_id_is_default` on `user_id WHERE is_default = true` (UNIQUE, partial) - Ensures only one default portfolio per user while allowing multiple non-default portfolios
+
+### portfolio_accounts
+
+Join table for many-to-many relationship between portfolios and accounts.
+
+| Column       | Type        | Constraints           | Description                 |
+|--------------|-------------|-----------------------|-----------------------------|
+| id           | UUID        | PRIMARY KEY           | Auto-generated UUID         |
+| portfolio_id | UUID        | NOT NULL, FK          | References portfolios.id    |
+| account_id   | UUID        | NOT NULL, FK          | References accounts.id      |
+| added_at     | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | When account was added      |
+
+**Foreign Keys:**
+- `fk_portfolio_accounts_portfolio_id`: `portfolio_id` → `portfolios.id` (CASCADE on DELETE/UPDATE)
+- `fk_portfolio_accounts_account_id`: `account_id` → `accounts.id` (CASCADE on DELETE/UPDATE)
+
+**Indexes:**
+- `idx_portfolio_accounts_unique` on `(portfolio_id, account_id)` (UNIQUE) - Prevents duplicate associations
+- `idx_portfolio_accounts_portfolio_id` on `portfolio_id`
+- `idx_portfolio_accounts_account_id` on `account_id`
+
+### snapshots
+
+Point-in-time portfolio value snapshots for historical tracking and analysis.
+
+| Column         | Type        | Constraints           | Description                       |
+|----------------|-------------|-----------------------|-----------------------------------|
+| id             | UUID        | PRIMARY KEY           | Auto-generated UUID               |
+| portfolio_id   | UUID        | NOT NULL, FK          | References portfolios.id          |
+| snapshot_date  | DATE        | NOT NULL              | Date of snapshot                  |
+| snapshot_type  | VARCHAR     | NOT NULL              | "eod", "manual", "hourly"         |
+| total_value_usd| DECIMAL     | NOT NULL              | Total portfolio value in USD      |
+| holdings       | JSON        | NOT NULL              | Array of asset holdings           |
+| metadata       | JSON        | NULL                  | Exchange rates, prices, etc.      |
+| created_at     | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp         |
+
+**Foreign Keys:**
+- `fk_snapshots_portfolio_id`: `portfolio_id` → `portfolios.id` (CASCADE on DELETE/UPDATE)
+
+**Indexes:**
+- `idx_snapshots_portfolio_id` on `portfolio_id`
+- `idx_snapshots_snapshot_date` on `snapshot_date` - For time-series queries
+- `idx_snapshots_unique` on `(portfolio_id, snapshot_date, snapshot_type)` (UNIQUE) - Prevents duplicate snapshots
+
+**Holdings JSON Structure:**
+```json
+[
+  {
+    "asset": "BTC",
+    "quantity": "1.5",
+    "price_usd": "50000.00",
+    "value_usd": "75000.00",
+    "account_id": "uuid",
+    "account_name": "My Exchange"
+  },
+  ...
+]
+```
+
+**Metadata JSON Structure:**
+```json
+{
+  "exchange_rates": {
+    "BTC/USD": "50000.00",
+    "ETH/USD": "3000.00"
+  },
+  "snapshot_version": "1.0",
+  "sync_errors": []
+}
+```
+
+## Migration Management
+
+### Setup
+
+1. Install PostgreSQL (or use Docker Compose):
+```bash
+docker-compose up -d
+```
+
+2. Set DATABASE_URL:
+```bash
+export DATABASE_URL="postgres://postgres:postgres@localhost:5432/crypto_pocket_butler"
+```
+
+### Running Migrations
+
+```bash
+cd migration
+
+# Apply all pending migrations
+cargo run -- up
+
+# Rollback last migration
+cargo run -- down
+
+# Check migration status
+cargo run -- status
+
+# Refresh (down + up last migration)
+cargo run -- refresh
+
+# Reset database (down all + up all)
+cargo run -- reset
+```
+
+### Creating New Migrations
+
+To generate a new migration:
+```bash
+cd migration
+cargo run -- generate MIGRATION_NAME
+```
+
+Edit the generated file in `migration/src/` with your schema changes.
+
+## SeaORM Entity Usage
+
+### Basic Queries
+
+```rust
+use crypto_pocket_butler_backend::entities::*;
+use sea_orm::*;
+
+// Find user by Keycloak ID
+let user = users::Entity::find()
+    .filter(users::Column::KeycloakUserId.eq("keycloak-id"))
+    .one(&db)
+    .await?;
+
+// Get all active accounts for a user
+let accounts = accounts::Entity::find()
+    .filter(accounts::Column::UserId.eq(user_id))
+    .filter(accounts::Column::IsActive.eq(true))
+    .all(&db)
+    .await?;
+
+// Get user's default portfolio
+let default_portfolio = portfolios::Entity::find()
+    .filter(portfolios::Column::UserId.eq(user_id))
+    .filter(portfolios::Column::IsDefault.eq(true))
+    .one(&db)
+    .await?;
+```
+
+### Relationship Queries
+
+```rust
+// Get portfolios with their accounts (many-to-many)
+let portfolios_with_accounts = portfolios::Entity::find()
+    .filter(portfolios::Column::UserId.eq(user_id))
+    .find_with_related(accounts::Entity)
+    .all(&db)
+    .await?;
+
+// Get latest snapshot for a portfolio
+let latest_snapshot = snapshots::Entity::find()
+    .filter(snapshots::Column::PortfolioId.eq(portfolio_id))
+    .order_by_desc(snapshots::Column::SnapshotDate)
+    .one(&db)
+    .await?;
+
+// Get EOD snapshots for a date range
+let snapshots = snapshots::Entity::find()
+    .filter(snapshots::Column::PortfolioId.eq(portfolio_id))
+    .filter(snapshots::Column::SnapshotType.eq("eod"))
+    .filter(snapshots::Column::SnapshotDate.between(start_date, end_date))
+    .order_by_asc(snapshots::Column::SnapshotDate)
+    .all(&db)
+    .await?;
+```
+
+### Insert Operations
+
+```rust
+use sea_orm::ActiveValue::Set;
+
+// Create a new account
+let account = accounts::ActiveModel {
+    user_id: Set(user_id),
+    name: Set("My OKX Account".to_string()),
+    account_type: Set("exchange".to_string()),
+    exchange_name: Set(Some("okx".to_string())),
+    is_active: Set(true),
+    ..Default::default()
+};
+let result = account.insert(&db).await?;
+
+// Add account to portfolio
+let portfolio_account = portfolio_accounts::ActiveModel {
+    portfolio_id: Set(portfolio_id),
+    account_id: Set(account_id),
+    ..Default::default()
+};
+portfolio_account.insert(&db).await?;
+
+// Create a snapshot
+let snapshot = snapshots::ActiveModel {
+    portfolio_id: Set(portfolio_id),
+    snapshot_date: Set(chrono::Utc::now().date_naive()),
+    snapshot_type: Set("eod".to_string()),
+    total_value_usd: Set(rust_decimal::Decimal::from(100000)),
+    holdings: Set(serde_json::json!([...])),
+    ..Default::default()
+};
+snapshot.insert(&db).await?;
+```
+
+## Performance Considerations
+
+1. **Indexes**: All foreign keys and commonly queried columns have indexes
+2. **JSON Columns**: Consider using JSONB if doing complex JSON queries
+3. **Partitioning**: For large snapshots tables, consider partitioning by date
+4. **Archival**: Implement archival strategy for old snapshots
+
+## Security Considerations
+
+1. **Credential Encryption**: Always encrypt API keys/secrets before storing
+2. **Row-Level Security**: Consider implementing RLS policies in PostgreSQL
+3. **Audit Logging**: Add audit triggers for sensitive operations
+4. **Backup**: Regular backups of the database
+5. **User Isolation**: Always filter by user_id to prevent data leakage
+
+## Future Enhancements
+
+- Add asset holdings table (normalized)
+- Add transaction history table
+- Add audit log table
+- Implement soft deletes with deleted_at columns
+- Add full-text search on account/portfolio names

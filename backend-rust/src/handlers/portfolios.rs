@@ -225,6 +225,31 @@ async fn check_account_ownership(
     Ok(account)
 }
 
+/// Unset default flag for all user's portfolios except the specified one
+async fn unset_other_default_portfolios(
+    db: &DatabaseConnection,
+    user_id: Uuid,
+    exclude_portfolio_id: Option<Uuid>,
+) -> Result<(), ApiError> {
+    let mut query = portfolios::Entity::update_many()
+        .filter(portfolios::Column::UserId.eq(user_id))
+        .filter(portfolios::Column::IsDefault.eq(true));
+
+    if let Some(id) = exclude_portfolio_id {
+        query = query.filter(portfolios::Column::Id.ne(id));
+    }
+
+    query
+        .col_expr(
+            portfolios::Column::IsDefault,
+            sea_orm::sea_query::Expr::value(false),
+        )
+        .exec(db)
+        .await?;
+
+    Ok(())
+}
+
 // === Route handlers ===
 
 /// List all portfolios for the authenticated user
@@ -307,12 +332,7 @@ pub async fn create_portfolio(
 
     // If this is set as default, unset any existing default portfolio
     if req.is_default {
-        portfolios::Entity::update_many()
-            .filter(portfolios::Column::UserId.eq(user.id))
-            .filter(portfolios::Column::IsDefault.eq(true))
-            .col_expr(portfolios::Column::IsDefault, sea_orm::sea_query::Expr::value(false))
-            .exec(&db)
-            .await?;
+        unset_other_default_portfolios(&db, user.id, None).await?;
     }
 
     let new_portfolio = portfolios::ActiveModel {
@@ -360,13 +380,7 @@ pub async fn update_portfolio(
 
     // If this is set as default, unset any existing default portfolio
     if req.is_default == Some(true) {
-        portfolios::Entity::update_many()
-            .filter(portfolios::Column::UserId.eq(user.id))
-            .filter(portfolios::Column::IsDefault.eq(true))
-            .filter(portfolios::Column::Id.ne(id))
-            .col_expr(portfolios::Column::IsDefault, sea_orm::sea_query::Expr::value(false))
-            .exec(&db)
-            .await?;
+        unset_other_default_portfolios(&db, user.id, Some(id)).await?;
     }
 
     let mut active_portfolio: portfolios::ActiveModel = portfolio.into();
@@ -374,8 +388,8 @@ pub async fn update_portfolio(
     if let Some(name) = req.name {
         active_portfolio.name = ActiveValue::Set(name);
     }
-    if let Some(description) = req.description {
-        active_portfolio.description = ActiveValue::Set(Some(description));
+    if req.description.is_some() {
+        active_portfolio.description = ActiveValue::Set(req.description);
     }
     if let Some(is_default) = req.is_default {
         active_portfolio.is_default = ActiveValue::Set(is_default);

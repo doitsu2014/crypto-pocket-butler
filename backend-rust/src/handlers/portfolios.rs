@@ -293,6 +293,14 @@ async fn check_account_ownership(
     Ok(account)
 }
 
+/// Helper to parse decimal values safely
+/// 
+/// Attempts to parse a string to a Decimal value. Returns Decimal::ZERO
+/// if the parsing fails, ensuring safe handling of invalid input.
+fn parse_decimal_or_zero(value: &str) -> Decimal {
+    Decimal::from_str(value).unwrap_or(Decimal::ZERO)
+}
+
 /// Unset default flag for all user's portfolios except the specified one
 async fn unset_other_default_portfolios(
     db: &DatabaseConnection,
@@ -725,12 +733,12 @@ pub async fn get_portfolio_holdings(
                 });
 
                 // Add to totals using Decimal for precision
-                let qty = Decimal::from_str(&holding.quantity).unwrap_or(Decimal::ZERO);
-                let avail = Decimal::from_str(&holding.available).unwrap_or(Decimal::ZERO);
-                let frz = Decimal::from_str(&holding.frozen).unwrap_or(Decimal::ZERO);
-                let curr_qty = Decimal::from_str(&entry.total_quantity).unwrap_or(Decimal::ZERO);
-                let curr_avail = Decimal::from_str(&entry.total_available).unwrap_or(Decimal::ZERO);
-                let curr_frz = Decimal::from_str(&entry.total_frozen).unwrap_or(Decimal::ZERO);
+                let qty = parse_decimal_or_zero(&holding.quantity);
+                let avail = parse_decimal_or_zero(&holding.available);
+                let frz = parse_decimal_or_zero(&holding.frozen);
+                let curr_qty = parse_decimal_or_zero(&entry.total_quantity);
+                let curr_avail = parse_decimal_or_zero(&entry.total_available);
+                let curr_frz = parse_decimal_or_zero(&entry.total_frozen);
 
                 entry.total_quantity = (curr_qty + qty).to_string();
                 entry.total_available = (curr_avail + avail).to_string();
@@ -748,9 +756,14 @@ pub async fn get_portfolio_holdings(
         }
     }
 
-    // Convert to vec and sort by value descending
+    // Convert to vec and sort by value descending (highest value first)
+    // Note: NaN values are treated as equal to maintain stable ordering
     let mut holdings: Vec<AssetHolding> = holdings_map.into_values().collect();
-    holdings.sort_by(|a, b| b.value_usd.partial_cmp(&a.value_usd).unwrap_or(std::cmp::Ordering::Equal));
+    holdings.sort_by(|a, b| {
+        b.value_usd
+            .partial_cmp(&a.value_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Calculate total value and allocation
     let total_value_usd: f64 = holdings.iter().map(|h| h.value_usd).sum();

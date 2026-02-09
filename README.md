@@ -17,7 +17,7 @@ A small (but serious) pet project: **crypto portfolio management** across wallet
 - **Language**: TypeScript
 - **Location**: `frontend-react/`
 
-See [frontend-react/FRONTEND_README.md](frontend-react/FRONTEND_README.md) for detailed setup instructions.
+See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for detailed setup instructions and [docs/UI-STYLE-GUIDE.md](docs/UI-STYLE-GUIDE.md) for the design system documentation.
 
 ## Quick Start
 

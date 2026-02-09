@@ -1,6 +1,8 @@
 # Crypto Pocket Butler - Frontend
 
-For detailed setup and usage instructions, see [FRONTEND_README.md](./FRONTEND_README.md).
+For detailed setup and usage instructions, see [../docs/FRONTEND_SETUP.md](../docs/FRONTEND_SETUP.md).
+
+For UI/UX design system documentation, see [../docs/UI-STYLE-GUIDE.md](../docs/UI-STYLE-GUIDE.md).
 
 ## Quick Start
 
@@ -21,8 +23,14 @@ Open [http://localhost:3001](http://localhost:3001) with your browser.
 ## Key Features
 
 - 🔐 Keycloak OIDC authentication with PKCE
-- 🎨 TailwindCSS styling
-- 🛡️ Secure token management
+- 🔄 Automatic token refresh
+- 🎨 Intense neon cyberpunk theme with TailwindCSS
+- 🛡️ Secure token management (server-side)
 - 📱 Responsive design
+- 📚 Comprehensive design system documentation
 
-See [FRONTEND_README.md](./FRONTEND_README.md) for complete documentation.
+## Documentation
+
+- **Setup Guide**: [../docs/FRONTEND_SETUP.md](../docs/FRONTEND_SETUP.md)
+- **Design System**: [../docs/UI-STYLE-GUIDE.md](../docs/UI-STYLE-GUIDE.md)
+- **Keycloak Setup**: [../docs/KEYCLOAK_SETUP.md](../docs/KEYCLOAK_SETUP.md)

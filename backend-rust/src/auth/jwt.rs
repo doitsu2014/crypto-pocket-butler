@@ -1,4 +1,4 @@
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -113,14 +113,20 @@ impl JwtValidator {
             .kid
             .ok_or_else(|| JwtError::DecodeHeader("Missing kid in token header".to_string()))?;
 
+        // Verify algorithm is one we support (prevent algorithm confusion attacks)
+        let supported_algorithms = [Algorithm::RS256, Algorithm::RS384, Algorithm::RS512];
+        if !supported_algorithms.contains(&header.alg) {
+            return Err(JwtError::ValidationError(format!(
+                "Unsupported algorithm: {:?}. Only RS256, RS384, and RS512 are supported.",
+                header.alg
+            )));
+        }
+
         // Get the decoding key from JWKS
         let decoding_key = self.get_decoding_key(&kid).await?;
 
-        // Set up validation
-        let mut validation = Validation::new(
-            header.alg.try_into()
-                .map_err(|_| JwtError::ValidationError("Unsupported algorithm".to_string()))?
-        );
+        // Set up validation with explicit algorithm
+        let mut validation = Validation::new(header.alg);
         validation.set_issuer(&[&self.config.issuer]);
         validation.set_audience(&[&self.config.audience]);
 
@@ -146,7 +152,7 @@ impl JwtValidator {
             if let Some(jwks_cache) = cache.as_ref() {
                 // Check if cache is still valid
                 let now = SystemTime::now();
-                if now.duration_since(jwks_cache.last_fetch).unwrap_or(Duration::MAX)
+                if now.duration_since(jwks_cache.last_fetch).unwrap_or(Duration::ZERO)
                     < jwks_cache.cache_duration
                 {
                     if let Some(key) = jwks_cache.keys.get(kid) {

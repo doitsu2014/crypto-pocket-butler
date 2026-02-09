@@ -1,6 +1,6 @@
 use axum::{
     extract::{Request, State},
-    http::StatusCode,
+    http::{header, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -69,7 +69,7 @@ pub async fn require_auth(
     // Extract Authorization header
     let auth_header = request
         .headers()
-        .get("Authorization")
+        .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
         .ok_or(JwtError::MissingAuthHeader)?;
 

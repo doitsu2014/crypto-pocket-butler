@@ -79,9 +79,11 @@ async fn protected_handler(Extension(user): Extension<AuthUser>) -> String {
 
 ## Architecture
 
-### Authentication Flow
+### Authentication Flow (Expected Integration)
 
-1. **Frontend → Keycloak**: User authenticates via OIDC Authorization Code + PKCE flow
+This backend provides the server-side JWT validation. The complete authentication flow would work as follows:
+
+1. **Frontend → Keycloak**: User authenticates via OIDC Authorization Code + PKCE flow (frontend implementation not included)
 2. **Frontend → Backend**: Sends `Authorization: Bearer <access_token>` with each request
 3. **Backend Middleware**: 
    - Extracts token from Authorization header
@@ -89,6 +91,8 @@ async fn protected_handler(Extension(user): Extension<AuthUser>) -> String {
    - Validates token signature, issuer, audience, and expiry
    - Extracts user identity from `sub` claim
    - Adds `AuthUser` to request extensions for use in handlers
+
+**Note**: This PR implements only the backend middleware. Frontend OIDC integration is a separate concern.
 
 ### Module Structure
 

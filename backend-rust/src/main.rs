@@ -41,8 +41,7 @@ async fn main() {
         .route_layer(middleware::from_fn_with_state(
             jwt_validator.clone(),
             auth::require_auth,
-        ))
-        .with_state(jwt_validator);
+        ));
 
     // Run the server
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));

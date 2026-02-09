@@ -103,9 +103,30 @@ async fn get_user_info(
 #[derive(OpenApi)]
 #[openapi(
     paths(get_user_info),
-    components(schemas(UserInfo))
+    components(schemas(UserInfo)),
+    modifiers(&SecurityAddon)
 )]
 struct ApiDoc;
+
+use utoipa::Modify;
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "bearer_auth",
+                utoipa::openapi::security::SecurityScheme::Http(
+                    utoipa::openapi::security::HttpBuilder::new()
+                        .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
+                        .bearer_format("JWT")
+                        .build(),
+                ),
+            )
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {

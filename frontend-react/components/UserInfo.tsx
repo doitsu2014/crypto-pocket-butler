@@ -38,16 +38,16 @@ export function UserInfo() {
   if (loading) {
     return (
       <div className="animate-pulse">
-        <div className="h-4 bg-slate-700 rounded w-3/4 mb-2"></div>
-        <div className="h-4 bg-slate-700 rounded w-1/2"></div>
+        <div className="h-4 bg-violet-900/50 rounded w-3/4 mb-2 shadow-[0_0_10px_rgba(139,92,246,0.3)]"></div>
+        <div className="h-4 bg-violet-900/50 rounded w-1/2 shadow-[0_0_10px_rgba(139,92,246,0.3)]"></div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-4">
-        <p className="text-red-300 text-sm">
+      <div className="bg-red-950/30 border-2 border-red-500/50 rounded-xl p-4 shadow-[0_0_30px_rgba(239,68,68,0.3)]">
+        <p className="text-red-300 text-sm drop-shadow-[0_0_5px_rgba(252,165,165,0.5)]">
           <strong>Error:</strong> {error}
         </p>
       </div>
@@ -59,35 +59,35 @@ export function UserInfo() {
   }
 
   return (
-    <div className="bg-violet-900/20 border border-violet-500/30 rounded-lg p-4 backdrop-blur-sm">
-      <h4 className="text-sm font-semibold text-violet-300 mb-2 flex items-center gap-2">
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="bg-fuchsia-950/20 border-2 border-fuchsia-500/40 rounded-xl p-4 backdrop-blur-sm shadow-[0_0_30px_rgba(217,70,239,0.3)]">
+      <h4 className="text-sm font-bold text-fuchsia-300 mb-2 flex items-center gap-2 drop-shadow-[0_0_10px_rgba(232,121,249,0.6)]">
+        <svg className="w-5 h-5 drop-shadow-[0_0_10px_rgba(232,121,249,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
         </svg>
         User Information from Backend
       </h4>
       <dl className="space-y-1 text-sm">
         <div>
-          <dt className="inline font-medium text-slate-300">User ID: </dt>
-          <dd className="inline text-slate-400">{userInfo.user_id}</dd>
+          <dt className="inline font-bold text-slate-200">User ID: </dt>
+          <dd className="inline text-slate-300">{userInfo.user_id}</dd>
         </div>
         {userInfo.preferred_username && (
           <div>
-            <dt className="inline font-medium text-slate-300">Username: </dt>
-            <dd className="inline text-slate-400">{userInfo.preferred_username}</dd>
+            <dt className="inline font-bold text-slate-200">Username: </dt>
+            <dd className="inline text-slate-300">{userInfo.preferred_username}</dd>
           </div>
         )}
         {userInfo.email && (
           <div>
-            <dt className="inline font-medium text-slate-300">Email: </dt>
-            <dd className="inline text-slate-400">{userInfo.email}</dd>
+            <dt className="inline font-bold text-slate-200">Email: </dt>
+            <dd className="inline text-slate-300">{userInfo.email}</dd>
           </div>
         )}
         {userInfo.email_verified !== undefined && (
           <div>
-            <dt className="inline font-medium text-slate-300">Email Verified: </dt>
-            <dd className="inline text-slate-400">
-              <span className={`inline-flex items-center gap-1 ${userInfo.email_verified ? 'text-green-400' : 'text-yellow-400'}`}>
+            <dt className="inline font-bold text-slate-200">Email Verified: </dt>
+            <dd className="inline text-slate-300">
+              <span className={`inline-flex items-center gap-1 ${userInfo.email_verified ? 'text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.6)]' : 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.6)]'}`}>
                 {userInfo.email_verified ? (
                   <>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

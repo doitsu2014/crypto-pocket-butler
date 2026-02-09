@@ -228,15 +228,129 @@ Run the test suite:
 cargo test
 ```
 
+## Database Schema
+
+The backend uses SeaORM with PostgreSQL for data persistence. The schema includes:
+
+### Tables
+
+1. **users** - User accounts linked to Keycloak
+   - `id` (UUID, PK)
+   - `keycloak_user_id` (String, unique) - Links to Keycloak user
+   - `email` (String, optional)
+   - `preferred_username` (String, optional)
+   - `created_at`, `updated_at` (Timestamptz)
+
+2. **accounts** - Exchange accounts, wallets, or DeFi protocols
+   - `id` (UUID, PK)
+   - `user_id` (UUID, FK to users)
+   - `name` (String) - User-defined name
+   - `account_type` (String) - "exchange", "wallet", "defi"
+   - `exchange_name` (String, optional) - e.g., "okx", "binance"
+   - `api_key_encrypted`, `api_secret_encrypted`, `passphrase_encrypted` (String, optional) - Encrypted credentials
+   - `wallet_address` (String, optional)
+   - `is_active` (Boolean)
+   - `last_synced_at` (Timestamptz, optional)
+   - `created_at`, `updated_at` (Timestamptz)
+
+3. **portfolios** - User-defined portfolio groupings
+   - `id` (UUID, PK)
+   - `user_id` (UUID, FK to users)
+   - `name` (String)
+   - `description` (Text, optional)
+   - `is_default` (Boolean) - Only one default portfolio per user
+   - `created_at`, `updated_at` (Timestamptz)
+
+4. **portfolio_accounts** - Join table for many-to-many relationship
+   - `id` (UUID, PK)
+   - `portfolio_id` (UUID, FK to portfolios)
+   - `account_id` (UUID, FK to accounts)
+   - `added_at` (Timestamptz)
+
+5. **snapshots** - Point-in-time portfolio snapshots (EOD, manual, etc.)
+   - `id` (UUID, PK)
+   - `portfolio_id` (UUID, FK to portfolios)
+   - `snapshot_date` (Date)
+   - `snapshot_type` (String) - "eod", "manual", "hourly"
+   - `total_value_usd` (Decimal)
+   - `holdings` (JSON) - Array of asset holdings
+   - `metadata` (JSON, optional) - Exchange rates, etc.
+   - `created_at` (Timestamptz)
+
+### Running Migrations
+
+Set up your database connection:
+
+```bash
+export DATABASE_URL="postgres://username:password@localhost/crypto_pocket_butler"
+```
+
+Run migrations:
+
+```bash
+cd migration
+cargo run
+```
+
+Or use the migration CLI:
+
+```bash
+# Run all pending migrations
+cargo run -- up
+
+# Rollback last migration
+cargo run -- down
+
+# Check migration status
+cargo run -- status
+
+# Refresh (down + up)
+cargo run -- refresh
+
+# Reset database (down all + up all)
+cargo run -- reset
+```
+
+### Using Entities in Code
+
+```rust
+use crypto_pocket_butler_backend::entities::{users, accounts, portfolios};
+use sea_orm::*;
+
+// Query user by Keycloak ID
+let user = users::Entity::find()
+    .filter(users::Column::KeycloakUserId.eq("keycloak-user-id"))
+    .one(&db)
+    .await?;
+
+// Query user's accounts
+let accounts = accounts::Entity::find()
+    .filter(accounts::Column::UserId.eq(user_id))
+    .all(&db)
+    .await?;
+
+// Query portfolios with their accounts (many-to-many)
+let portfolios_with_accounts = portfolios::Entity::find()
+    .filter(portfolios::Column::UserId.eq(user_id))
+    .find_with_related(accounts::Entity)
+    .all(&db)
+    .await?;
+```
+
 ## Library Documentation
 
 For complete documentation on `axum-keycloak-auth`, see:
 - [Crate documentation](https://docs.rs/axum-keycloak-auth)
 - [GitHub repository](https://github.com/lpotthast/axum-keycloak-auth)
 
+For SeaORM documentation:
+- [SeaORM Documentation](https://www.sea-ql.org/SeaORM/)
+- [SeaORM Cookbook](https://www.sea-ql.org/sea-orm-cookbook/)
+
 ## Next Steps
 
-- Define DB schema (accounts, assets, holdings, snapshots)
+- ✅ Define DB schema (accounts, portfolios, snapshots)
 - Implement OKX read-only connector
 - Add authorization checks (roles, resource ownership)
 - Split routes into public and protected routers
+- Implement API endpoints for CRUD operations on entities

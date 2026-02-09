@@ -122,12 +122,20 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Initialize database connection
+    tracing::info!("Starting Crypto Pocket Butler Backend");
+    tracing::info!(
+        "Tokio runtime: multi-threaded with {} worker threads",
+        num_cpus::get()
+    );
+
+    // Initialize database connection pool
+    // The connection pool handles concurrent database access efficiently
+    // by maintaining a pool of reusable connections
     tracing::info!("Connecting to database...");
     let db = DbConfig::from_env()
         .await
         .expect("Failed to connect to database");
-    tracing::info!("Database connection established");
+    tracing::info!("Database connection pool established");
 
     // Keycloak configuration from environment variables
     let server_url = std::env::var("KEYCLOAK_SERVER")
@@ -161,6 +169,8 @@ async fn main() {
         .build();
 
     // Build application with public and protected routes
+    // Axum handles concurrent requests efficiently using Tokio's async runtime
+    // Each request is processed asynchronously without blocking other requests
     let app = Router::new()
         // Swagger UI - publicly accessible
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
@@ -179,6 +189,7 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("Starting server on {}", addr);
     tracing::info!("Swagger UI available at http://localhost:3000/swagger-ui");
+    tracing::info!("Server ready to handle concurrent requests");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

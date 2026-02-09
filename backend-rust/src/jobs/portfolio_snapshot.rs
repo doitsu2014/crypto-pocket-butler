@@ -93,24 +93,22 @@ pub async fn create_portfolio_snapshot(
         .iter()
         .map(|pa| pa.account_id)
         .collect();
-    
-    let account_count = account_ids.len();
 
     tracing::info!(
         "Found {} accounts linked to portfolio {}",
-        account_count,
+        account_ids.len(),
         portfolio_id
     );
 
     // Fetch all accounts
     let accounts_list = accounts::Entity::find()
-        .filter(accounts::Column::Id.is_in(account_ids))
+        .filter(accounts::Column::Id.is_in(account_ids.clone()))
         .all(db)
         .await?;
 
     // Aggregate holdings by asset
     let mut holdings_map: HashMap<String, serde_json::Value> = HashMap::new();
-    let mut total_holdings_count = 0;
+    let mut individual_holdings_count = 0;
 
     for account in accounts_list {
         if let Some(holdings_json) = account.holdings {
@@ -134,7 +132,7 @@ pub async fn create_portfolio_snapshot(
                     continue;
                 }
 
-                total_holdings_count += 1;
+                individual_holdings_count += 1;
 
                 let entry = holdings_map
                     .entry(holding.asset.clone())
@@ -220,8 +218,8 @@ pub async fn create_portfolio_snapshot(
         metadata: ActiveValue::Set(Some(
             json!({
                 "portfolio_name": portfolio.name,
-                "account_count": account_count,
-                "holdings_count": total_holdings_count,
+                "account_count": account_ids.len(),
+                "holdings_count": individual_holdings_count,
                 "unique_assets": holdings_array.len(),
                 "created_at": Utc::now().to_rfc3339(),
             })

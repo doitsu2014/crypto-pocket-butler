@@ -42,18 +42,16 @@ impl MigrationTrait for Migration {
             .await?;
 
         // Create unique index to ensure only one default portfolio per user
+        // Using raw SQL for partial unique index (WHERE is_default = true)
         manager
-            .create_index(
-                Index::create()
-                    .name("idx_portfolios_user_id_is_default")
-                    .table(Portfolios::Table)
-                    .col(Portfolios::UserId)
-                    .col(Portfolios::IsDefault)
-                    .unique()
-                    .if_not_exists()
-                    .to_owned(),
+            .get_connection()
+            .execute_unprepared(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolios_user_id_is_default \
+                 ON portfolios (user_id) WHERE is_default = true"
             )
-            .await
+            .await?;
+
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {

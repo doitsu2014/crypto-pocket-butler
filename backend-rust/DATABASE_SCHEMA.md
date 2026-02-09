@@ -323,7 +323,7 @@ portfolio_account.insert(&db).await?;
 // Create a snapshot
 let snapshot = snapshots::ActiveModel {
     portfolio_id: Set(portfolio_id),
-    snapshot_date: Set(chrono::Utc::now().date_naive()),
+    snapshot_date: Set(chrono::Utc::now().naive_utc().date()),
     snapshot_type: Set("eod".to_string()),
     total_value_usd: Set(rust_decimal::Decimal::from(100000)),
     holdings: Set(serde_json::json!([...])),

@@ -1,4 +1,4 @@
-use crate::connectors::{okx::OkxConnector, ExchangeConnector};
+use crate::connectors::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, ExchangeConnector};
 use crate::entities::accounts;
 use chrono::Utc;
 use sea_orm::{
@@ -56,52 +56,83 @@ pub async fn sync_account(
         });
     }
 
-    // Only process exchange accounts (not wallets or defi)
-    if account.account_type != "exchange" {
-        return Ok(SyncResult {
-            account_id,
-            success: false,
-            error: Some("Only exchange accounts are supported".to_string()),
-            holdings_count: 0,
-        });
-    }
+    // Handle different account types
+    let connector: Box<dyn ExchangeConnector> = match account.account_type.as_str() {
+        "exchange" => {
+            // Handle exchange accounts (OKX)
+            let exchange_name = account
+                .exchange_name
+                .as_ref()
+                .ok_or_else(|| "Exchange name not set")?;
 
-    // Check if exchange is OKX
-    let exchange_name = account
-        .exchange_name
-        .as_ref()
-        .ok_or_else(|| "Exchange name not set")?;
+            if exchange_name.to_lowercase() != "okx" {
+                return Ok(SyncResult {
+                    account_id,
+                    success: false,
+                    error: Some(format!("Unsupported exchange: {}", exchange_name)),
+                    holdings_count: 0,
+                });
+            }
 
-    if exchange_name.to_lowercase() != "okx" {
-        return Ok(SyncResult {
-            account_id,
-            success: false,
-            error: Some(format!("Unsupported exchange: {}", exchange_name)),
-            holdings_count: 0,
-        });
-    }
+            // Get API credentials
+            let api_key = account
+                .api_key_encrypted
+                .as_ref()
+                .ok_or_else(|| "API key not set")?;
+            let api_secret = account
+                .api_secret_encrypted
+                .as_ref()
+                .ok_or_else(|| "API secret not set")?;
+            let passphrase = account
+                .passphrase_encrypted
+                .as_ref()
+                .ok_or_else(|| "Passphrase not set")?;
 
-    // Get API credentials
-    let api_key = account
-        .api_key_encrypted
-        .as_ref()
-        .ok_or_else(|| "API key not set")?;
-    let api_secret = account
-        .api_secret_encrypted
-        .as_ref()
-        .ok_or_else(|| "API secret not set")?;
-    let passphrase = account
-        .passphrase_encrypted
-        .as_ref()
-        .ok_or_else(|| "Passphrase not set")?;
+            // Decrypt credentials
+            let api_key = decrypt_credential(api_key)?;
+            let api_secret = decrypt_credential(api_secret)?;
+            let passphrase = decrypt_credential(passphrase)?;
 
-    // Decrypt credentials
-    let api_key = decrypt_credential(api_key)?;
-    let api_secret = decrypt_credential(api_secret)?;
-    let passphrase = decrypt_credential(passphrase)?;
+            // Create OKX connector
+            Box::new(OkxConnector::new(api_key, api_secret, passphrase))
+        }
+        "wallet" => {
+            // Handle wallet accounts (EVM)
+            let wallet_address = account
+                .wallet_address
+                .as_ref()
+                .ok_or_else(|| "Wallet address not set")?;
 
-    // Create OKX connector
-    let connector = OkxConnector::new(api_key, api_secret, passphrase);
+            // Default to checking all major EVM chains
+            let chains = vec![
+                EvmChain::Ethereum,
+                EvmChain::Arbitrum,
+                EvmChain::Optimism,
+                EvmChain::Base,
+            ];
+
+            // Create EVM connector
+            match EvmConnector::new(wallet_address.clone(), chains) {
+                Ok(connector) => Box::new(connector),
+                Err(e) => {
+                    return Ok(SyncResult {
+                        account_id,
+                        success: false,
+                        error: Some(format!("Failed to create EVM connector: {}", e)),
+                        holdings_count: 0,
+                    });
+                }
+            }
+        }
+        other => {
+            return Ok(SyncResult {
+                account_id,
+                success: false,
+                error: Some(format!("Unsupported account type: {}", other)),
+                holdings_count: 0,
+            });
+        }
+    };
 
     // Fetch balances
     let balances = match connector.fetch_spot_balances().await {

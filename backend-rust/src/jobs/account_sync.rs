@@ -1,4 +1,6 @@
 use crate::connectors::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, ExchangeConnector};
+// TODO: Solana connector temporarily disabled due to dependency conflicts
+// use crate::connectors::solana::SolanaConnector;
 use crate::entities::accounts;
 use chrono::Utc;
 use sea_orm::{
@@ -97,30 +99,47 @@ pub async fn sync_account(
             Box::new(OkxConnector::new(api_key, api_secret, passphrase))
         }
         "wallet" => {
-            // Handle wallet accounts (EVM)
+            // Handle wallet accounts (EVM or Solana)
             let wallet_address = account
                 .wallet_address
                 .as_ref()
                 .ok_or_else(|| "Wallet address not set")?;
 
-            // Default to checking all major EVM chains
-            let chains = vec![
-                EvmChain::Ethereum,
-                EvmChain::Arbitrum,
-                EvmChain::Optimism,
-                EvmChain::Base,
-            ];
-
-            // Create EVM connector
-            match EvmConnector::new(wallet_address.clone(), chains) {
-                Ok(connector) => Box::new(connector),
-                Err(e) => {
+            // Check exchange_name to determine wallet type
+            // If exchange_name is "solana", Solana connector would be used (not yet available)
+            // Otherwise, use EVM connector for all other chains
+            match account.exchange_name.as_deref() {
+                Some("solana") => {
+                    // Solana support coming soon - dependency conflicts being resolved
                     return Ok(SyncResult {
                         account_id,
                         success: false,
-                        error: Some(format!("Failed to create EVM connector: {}", e)),
+                        error: Some("Solana support temporarily unavailable - coming in next update".to_string()),
                         holdings_count: 0,
                     });
+                }
+                _ => {
+                    // Default to EVM chains (Ethereum, Arbitrum, Optimism, Base, BSC)
+                    let chains = vec![
+                        EvmChain::Ethereum,
+                        EvmChain::Arbitrum,
+                        EvmChain::Optimism,
+                        EvmChain::Base,
+                        EvmChain::BinanceSmartChain,
+                    ];
+
+                    // Create EVM connector
+                    match EvmConnector::new(wallet_address.clone(), chains) {
+                        Ok(connector) => Box::new(connector),
+                        Err(e) => {
+                            return Ok(SyncResult {
+                                account_id,
+                                success: false,
+                                error: Some(format!("Failed to create EVM connector: {}", e)),
+                                holdings_count: 0,
+                            });
+                        }
+                    }
                 }
             }
         }

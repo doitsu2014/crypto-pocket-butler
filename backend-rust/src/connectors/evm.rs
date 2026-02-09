@@ -25,6 +25,7 @@ pub enum EvmChain {
     Arbitrum,
     Optimism,
     Base,
+    BinanceSmartChain,
 }
 
 impl EvmChain {
@@ -35,6 +36,7 @@ impl EvmChain {
             EvmChain::Arbitrum => "https://arbitrum.llamarpc.com",
             EvmChain::Optimism => "https://optimism.llamarpc.com",
             EvmChain::Base => "https://base.llamarpc.com",
+            EvmChain::BinanceSmartChain => "https://bsc-dataseed.bnbchain.org",
         }
     }
 
@@ -45,6 +47,7 @@ impl EvmChain {
             EvmChain::Arbitrum => "arbitrum",
             EvmChain::Optimism => "optimism",
             EvmChain::Base => "base",
+            EvmChain::BinanceSmartChain => "bsc",
         }
     }
 
@@ -55,6 +58,7 @@ impl EvmChain {
             EvmChain::Arbitrum => "ETH",
             EvmChain::Optimism => "ETH",
             EvmChain::Base => "ETH",
+            EvmChain::BinanceSmartChain => "BNB",
         }
     }
 }
@@ -85,6 +89,12 @@ pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> 
             ("USDC", "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
             ("DAI", "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb"),
             ("WETH", "0x4200000000000000000000000000000000000006"),
+        ],
+        EvmChain::BinanceSmartChain => vec![
+            ("USDT", "0x55d398326f99059fF775485246999027B3197955"),
+            ("USDC", "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d"),
+            ("DAI", "0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3"),
+            ("WBNB", "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"),
         ],
     }
 }
@@ -234,6 +244,11 @@ mod tests {
         assert_eq!(eth.name(), "ethereum");
         assert_eq!(eth.native_symbol(), "ETH");
         assert!(!eth.rpc_url().is_empty());
+        
+        let bsc = EvmChain::BinanceSmartChain;
+        assert_eq!(bsc.name(), "bsc");
+        assert_eq!(bsc.native_symbol(), "BNB");
+        assert!(!bsc.rpc_url().is_empty());
     }
 
     #[test]
@@ -261,5 +276,10 @@ mod tests {
         
         let arb_tokens = get_common_tokens(&EvmChain::Arbitrum);
         assert!(!arb_tokens.is_empty());
+        
+        let bsc_tokens = get_common_tokens(&EvmChain::BinanceSmartChain);
+        assert!(!bsc_tokens.is_empty());
+        assert!(bsc_tokens.iter().any(|(symbol, _)| *symbol == "USDT"));
+        assert!(bsc_tokens.iter().any(|(symbol, _)| *symbol == "WBNB"));
     }
 }

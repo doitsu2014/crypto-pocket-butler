@@ -125,6 +125,7 @@ This module implements a connector for fetching native and ERC-20 token balances
 - **Arbitrum**
 - **Optimism**
 - **Base**
+- **Binance Smart Chain (BSC)**
 
 ### Features
 
@@ -150,6 +151,9 @@ The connector automatically checks balances for popular tokens on each chain:
 
 **Base:**
 - USDC, DAI, WETH
+
+**Binance Smart Chain (BSC):**
+- USDT, USDC, DAI, WBNB
 
 ### Usage
 
@@ -178,11 +182,12 @@ for balance in balances {
 
 ### RPC Endpoints
 
-The connector uses public RPC endpoints from LlamaRPC:
+The connector uses public RPC endpoints:
 - Ethereum: `https://eth.llamarpc.com`
 - Arbitrum: `https://arbitrum.llamarpc.com`
 - Optimism: `https://optimism.llamarpc.com`
 - Base: `https://base.llamarpc.com`
+- Binance Smart Chain: `https://bsc-dataseed.bnbchain.org`
 
 ### Security Considerations
 
@@ -236,5 +241,27 @@ All errors are logged but don't stop the entire sync process. If one chain fails
 - Balance caching with TTL
 - Support for NFT balances
 - DeFi protocol position tracking
-- Support for Bitcoin and Solana
+- Support for Bitcoin
 - Multicall optimization for batch token queries
+
+---
+
+## Solana Wallet Connector
+
+**Status**: Coming Soon
+
+Solana wallet support is planned but temporarily on hold due to dependency version conflicts between the Solana SDK and existing project dependencies. The implementation will be added in a future update once the dependency tree is upgraded to support both stacks.
+
+### Planned Features
+
+- Native SOL balance fetching
+- SPL token balance support (USDC, USDT, wrapped SOL, etc.)
+- Uses public Solana RPC endpoints
+- Associated token account derivation
+
+### Workaround
+
+For now, to track Solana wallet balances:
+1. Use the account type "wallet" with `exchange_name` set to "solana"
+2. The sync will return a friendly message indicating Solana support is coming soon
+3. Check back in the next release for full Solana integration

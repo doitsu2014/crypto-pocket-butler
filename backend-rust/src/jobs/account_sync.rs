@@ -196,7 +196,11 @@ pub async fn sync_account(
     // Update account's last_synced_at and holdings
     let mut account_update: accounts::ActiveModel = account.into();
     account_update.last_synced_at = ActiveValue::Set(Some(Utc::now().into()));
-    account_update.holdings = ActiveValue::Set(Some(serde_json::to_value(&holdings).unwrap().into()));
+    account_update.holdings = ActiveValue::Set(Some(
+        serde_json::to_value(&holdings)
+            .map_err(|e| format!("Failed to serialize holdings: {}", e))?
+            .into()
+    ));
     account_update.update(db).await?;
 
     tracing::info!(

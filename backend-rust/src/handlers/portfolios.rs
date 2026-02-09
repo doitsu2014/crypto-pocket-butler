@@ -6,16 +6,32 @@ use axum::{
     Router,
 };
 use axum_keycloak_auth::decode::KeycloakToken;
+use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, ModelTrait,
     QueryFilter,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::entities::{accounts, portfolio_accounts, portfolios, users};
+
+// === Internal DTOs for deserialization ===
+
+#[derive(Debug, Deserialize)]
+struct HoldingData {
+    asset: String,
+    quantity: String,
+    available: String,
+    frozen: String,
+    #[serde(default)]
+    price_usd: f64,
+    #[serde(default)]
+    value_usd: f64,
+}
 
 // === Request/Response DTOs ===
 
@@ -674,49 +690,59 @@ pub async fn get_portfolio_holdings(
 
     for account in accounts {
         if let Some(holdings_json) = account.holdings {
-            // holdings_json is sea_orm::prelude::Json which wraps serde_json::Value
-            let holdings: Vec<serde_json::Value> = 
-                serde_json::from_value(serde_json::Value::from(holdings_json)).unwrap_or_default();
+            // Deserialize holdings directly to typed struct
+            let holdings: Vec<HoldingData> = match serde_json::from_value(serde_json::Value::from(holdings_json)) {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to deserialize holdings for account {}: {}",
+                        account.id, e
+                    );
+                    continue;
+                }
+            };
             
             for holding in holdings {
-                let asset = holding["asset"].as_str().unwrap_or("UNKNOWN").to_string();
-                let quantity = holding["quantity"].as_str().unwrap_or("0").to_string();
-                let available = holding["available"].as_str().unwrap_or("0").to_string();
-                let frozen = holding["frozen"].as_str().unwrap_or("0").to_string();
-                let price_usd = holding["price_usd"].as_f64().unwrap_or(0.0);
-                let value_usd = holding["value_usd"].as_f64().unwrap_or(0.0);
+                // Skip holdings with empty asset names
+                if holding.asset.is_empty() {
+                    tracing::warn!(
+                        "Skipping holding with empty asset name for account {}",
+                        account.id
+                    );
+                    continue;
+                }
 
-                let entry = holdings_map.entry(asset.clone()).or_insert_with(|| {
+                let entry = holdings_map.entry(holding.asset.clone()).or_insert_with(|| {
                     AssetHolding {
-                        asset: asset.clone(),
+                        asset: holding.asset.clone(),
                         total_quantity: "0".to_string(),
                         total_available: "0".to_string(),
                         total_frozen: "0".to_string(),
-                        price_usd,
+                        price_usd: holding.price_usd,
                         value_usd: 0.0,
                         accounts: Vec::new(),
                     }
                 });
 
-                // Add to totals (simple string concatenation for now - in production use Decimal)
-                let qty: f64 = quantity.parse().unwrap_or(0.0);
-                let avail: f64 = available.parse().unwrap_or(0.0);
-                let frz: f64 = frozen.parse().unwrap_or(0.0);
-                let curr_qty: f64 = entry.total_quantity.parse().unwrap_or(0.0);
-                let curr_avail: f64 = entry.total_available.parse().unwrap_or(0.0);
-                let curr_frz: f64 = entry.total_frozen.parse().unwrap_or(0.0);
+                // Add to totals using Decimal for precision
+                let qty = Decimal::from_str(&holding.quantity).unwrap_or(Decimal::ZERO);
+                let avail = Decimal::from_str(&holding.available).unwrap_or(Decimal::ZERO);
+                let frz = Decimal::from_str(&holding.frozen).unwrap_or(Decimal::ZERO);
+                let curr_qty = Decimal::from_str(&entry.total_quantity).unwrap_or(Decimal::ZERO);
+                let curr_avail = Decimal::from_str(&entry.total_available).unwrap_or(Decimal::ZERO);
+                let curr_frz = Decimal::from_str(&entry.total_frozen).unwrap_or(Decimal::ZERO);
 
                 entry.total_quantity = (curr_qty + qty).to_string();
                 entry.total_available = (curr_avail + avail).to_string();
                 entry.total_frozen = (curr_frz + frz).to_string();
-                entry.value_usd += value_usd;
+                entry.value_usd += holding.value_usd;
 
                 entry.accounts.push(AccountHoldingDetail {
                     account_id: account.id,
                     account_name: account.name.clone(),
-                    quantity,
-                    available,
-                    frozen,
+                    quantity: holding.quantity,
+                    available: holding.available,
+                    frozen: holding.frozen,
                 });
             }
         }
@@ -724,7 +750,7 @@ pub async fn get_portfolio_holdings(
 
     // Convert to vec and sort by value descending
     let mut holdings: Vec<AssetHolding> = holdings_map.into_values().collect();
-    holdings.sort_by(|a, b| b.value_usd.partial_cmp(&a.value_usd).unwrap());
+    holdings.sort_by(|a, b| b.value_usd.partial_cmp(&a.value_usd).unwrap_or(std::cmp::Ordering::Equal));
 
     // Calculate total value and allocation
     let total_value_usd: f64 = holdings.iter().map(|h| h.value_usd).sum();

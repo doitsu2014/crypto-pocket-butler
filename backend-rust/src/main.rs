@@ -60,6 +60,8 @@ struct HealthResponse {
         handlers::portfolios::list_portfolio_accounts,
         handlers::portfolios::add_account_to_portfolio,
         handlers::portfolios::remove_account_from_portfolio,
+        handlers::accounts::sync_account_handler,
+        handlers::accounts::sync_all_accounts_handler,
     ),
     components(
         schemas(
@@ -72,12 +74,16 @@ struct HealthResponse {
             handlers::portfolios::AddAccountToPortfolioRequest,
             handlers::portfolios::PortfolioAccountResponse,
             handlers::portfolios::AccountInPortfolioResponse,
+            handlers::accounts::SyncAccountRequest,
+            handlers::accounts::SyncResultResponse,
+            handlers::accounts::SyncAllAccountsResponse,
         )
     ),
     modifiers(&SecurityAddon),
     tags(
         (name = "crypto-pocket-butler", description = "Crypto Pocket Butler API endpoints"),
-        (name = "portfolios", description = "Portfolio management endpoints")
+        (name = "portfolios", description = "Portfolio management endpoints"),
+        (name = "accounts", description = "Account management and sync endpoints")
     ),
     info(
         title = "Crypto Pocket Butler API",
@@ -182,6 +188,8 @@ async fn main() {
         .route("/api/protected", get(protected_endpoint))
         // Portfolio API routes (protected)
         .merge(handlers::portfolios::create_router())
+        // Account sync API routes (protected)
+        .merge(handlers::accounts::create_router())
         .layer(auth_layer)
         .with_state(db);
 

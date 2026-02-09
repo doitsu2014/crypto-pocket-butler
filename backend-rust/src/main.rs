@@ -3,9 +3,71 @@ use axum_keycloak_auth::{
     decode::KeycloakToken, instance::KeycloakAuthInstance, instance::KeycloakConfig,
     layer::KeycloakAuthLayer, PassthroughMode,
 };
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use utoipa::{OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
+
+/// User information response
+#[derive(Serialize, Deserialize, ToSchema)]
+struct UserInfo {
+    /// User ID from JWT sub claim
+    user_id: String,
+    /// Preferred username
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preferred_username: Option<String>,
+    /// Email address
+    #[serde(skip_serializing_if = "Option::is_none")]
+    email: Option<String>,
+    /// Whether email is verified
+    #[serde(skip_serializing_if = "Option::is_none")]
+    email_verified: Option<bool>,
+}
+
+/// Protected endpoint response
+#[derive(Serialize, Deserialize, ToSchema)]
+struct ProtectedResponse {
+    /// Response message
+    message: String,
+    /// User ID
+    user_id: String,
+}
+
+/// Health check response
+#[derive(Serialize, Deserialize, ToSchema)]
+struct HealthResponse {
+    /// Service status
+    status: String,
+    /// Service name
+    service: String,
+}
+
+/// OpenAPI documentation
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        root,
+        health,
+        get_user_info,
+        protected_endpoint,
+    ),
+    components(
+        schemas(UserInfo, ProtectedResponse, HealthResponse)
+    ),
+    tags(
+        (name = "crypto-pocket-butler", description = "Crypto Pocket Butler API endpoints")
+    ),
+    info(
+        title = "Crypto Pocket Butler API",
+        version = "0.1.0",
+        description = "API for managing crypto portfolio with Keycloak JWT authentication",
+    ),
+    servers(
+        (url = "http://localhost:3000", description = "Local development server")
+    )
+)]
+struct ApiDoc;
 
 #[tokio::main]
 async fn main() {
@@ -51,6 +113,9 @@ async fn main() {
 
     // Build application with public and protected routes
     let app = Router::new()
+        // Swagger UI - publicly accessible
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        // Public routes (no auth required)
         .route("/", get(root))
         .route("/health", get(health))
         // Protected routes that require authentication
@@ -61,41 +126,90 @@ async fn main() {
     // Run the server
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("Starting server on {}", addr);
+    tracing::info!("Swagger UI available at http://localhost:3000/swagger-ui");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
-// Root endpoint - currently requires authentication due to the auth layer
-// To make this public, move it to a separate router without the auth layer
+/// Root endpoint
+///
+/// Returns API information
+#[utoipa::path(
+    get,
+    path = "/",
+    responses(
+        (status = 200, description = "API information", body = String)
+    ),
+    tag = "crypto-pocket-butler"
+)]
 async fn root() -> &'static str {
     "Crypto Pocket Butler API"
 }
 
-// Health check endpoint - currently requires authentication due to the auth layer
-// To make this public, move it to a separate router without the auth layer
-async fn health() -> Json<Value> {
-    Json(json!({
-        "status": "ok",
-        "service": "crypto-pocket-butler-backend"
-    }))
+/// Health check endpoint
+///
+/// Returns service health status
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "Service health status", body = HealthResponse)
+    ),
+    tag = "crypto-pocket-butler"
+)]
+async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "ok".to_string(),
+        service: "crypto-pocket-butler-backend".to_string(),
+    })
 }
 
-// Protected endpoint - returns authenticated user information
-async fn get_user_info(Extension(token): Extension<KeycloakToken<String>>) -> Json<Value> {
-    Json(json!({
-        "user_id": token.subject,
-        "preferred_username": token.extra.profile.preferred_username,
-        "email": token.extra.email.email,
-        "email_verified": token.extra.email.email_verified,
-    }))
+/// Get authenticated user information
+///
+/// Returns information about the authenticated user extracted from JWT token
+#[utoipa::path(
+    get,
+    path = "/api/me",
+    responses(
+        (status = 200, description = "User information", body = UserInfo),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "crypto-pocket-butler"
+)]
+async fn get_user_info(Extension(token): Extension<KeycloakToken<String>>) -> Json<UserInfo> {
+    Json(UserInfo {
+        user_id: token.subject,
+        preferred_username: Some(token.extra.profile.preferred_username),
+        email: Some(token.extra.email.email),
+        email_verified: Some(token.extra.email.email_verified),
+    })
 }
 
-// Example protected endpoint
-async fn protected_endpoint(Extension(token): Extension<KeycloakToken<String>>) -> Json<Value> {
-    Json(json!({
-        "message": "This is a protected endpoint",
-        "user_id": token.subject,
-    }))
+/// Protected endpoint example
+///
+/// Example of a protected endpoint that requires authentication
+#[utoipa::path(
+    get,
+    path = "/api/protected",
+    responses(
+        (status = 200, description = "Protected resource accessed", body = ProtectedResponse),
+        (status = 401, description = "Unauthorized - invalid or missing JWT token")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "crypto-pocket-butler"
+)]
+async fn protected_endpoint(
+    Extension(token): Extension<KeycloakToken<String>>,
+) -> Json<ProtectedResponse> {
+    Json(ProtectedResponse {
+        message: "This is a protected endpoint".to_string(),
+        user_id: token.subject,
+    })
 }
 

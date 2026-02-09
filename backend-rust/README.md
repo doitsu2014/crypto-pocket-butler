@@ -2,6 +2,7 @@
 
 Rust backend service for Crypto Pocket Butler:
 - Axum HTTP API with Keycloak JWT authentication using `axum-keycloak-auth`
+- OpenAPI documentation with Swagger UI using `utoipa`
 - Scheduled workers for syncing accounts (planned)
 - Postgres for normalized holdings + snapshots (planned)
 
@@ -17,6 +18,15 @@ The backend uses the [`axum-keycloak-auth`](https://github.com/lpotthast/axum-ke
 - **User Context Extraction**: Extracts user identity (`sub` claim as `user_id`) and adds it to request context
 - **Role-Based Access Control**: Support for required role checking (optional)
 - **Automatic Key Rotation**: Handles JWKS key rotation automatically
+
+### OpenAPI Documentation
+
+The backend uses [`utoipa`](https://github.com/juhaku/utoipa) for compile-time OpenAPI documentation generation:
+
+- **Automatic Schema Generation**: Generate OpenAPI schemas from Rust types
+- **Interactive Swagger UI**: Browse and test API endpoints at `/swagger-ui`
+- **Type-Safe Documentation**: Documentation stays in sync with code
+- **OpenAPI 3.0 Spec**: Available at `/api-docs/openapi.json`
 
 ## Usage
 
@@ -42,8 +52,10 @@ The server will start on `http://0.0.0.0:3000` with the following endpoints:
 - `GET /health` - Health check (requires authentication)
 - `GET /api/me` - Protected endpoint that returns authenticated user info
 - `GET /api/protected` - Example protected endpoint
+- `GET /swagger-ui` - **Interactive Swagger UI** (publicly accessible)
+- `GET /api-docs/openapi.json` - OpenAPI specification (publicly accessible)
 
-**Note**: In the current setup, all routes require authentication. To have truly public endpoints, create a separate router without the auth layer and merge it with the protected router.
+**Note**: In the current setup, most routes require authentication except for Swagger UI and OpenAPI spec. To have truly public endpoints, create a separate router without the auth layer and merge it with the protected router.
 
 ### Using the Library in Your Code
 
@@ -55,7 +67,45 @@ use axum_keycloak_auth::{
     layer::KeycloakAuthLayer,
     PassthroughMode,
 };
+use utoipa::{OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+
+// Define response schema
+#[derive(Serialize, Deserialize, ToSchema)]
+struct UserInfo {
+    user_id: String,
+    username: Option<String>,
+}
+
+// Document endpoint with utoipa
+#[utoipa::path(
+    get,
+    path = "/api/me",
+    responses(
+        (status = 200, description = "User information", body = UserInfo),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+async fn get_user_info(
+    Extension(token): Extension<KeycloakToken<String>>,
+) -> Json<UserInfo> {
+    Json(UserInfo {
+        user_id: token.subject,
+        username: Some(token.extra.profile.preferred_username),
+    })
+}
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(get_user_info),
+    components(schemas(UserInfo))
+)]
+struct ApiDoc;
 
 #[tokio::main]
 async fn main() {

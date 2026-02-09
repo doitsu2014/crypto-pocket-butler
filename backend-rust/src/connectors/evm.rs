@@ -133,7 +133,7 @@ impl EvmConnector {
         tracing::debug!("Fetching native balance for {} on {}", self.wallet_address, chain.name());
         
         let provider = ProviderBuilder::new()
-            .on_http(chain.rpc_url().parse()?);
+            .connect_http(chain.rpc_url().parse()?);
         
         let balance = provider.get_balance(self.wallet_address).await?;
         
@@ -158,7 +158,7 @@ impl EvmConnector {
         tracing::debug!("Fetching token balances for {} on {}", self.wallet_address, chain.name());
         
         let provider = ProviderBuilder::new()
-            .on_http(chain.rpc_url().parse()?);
+            .connect_http(chain.rpc_url().parse()?);
         
         let mut balances = Vec::new();
         let common_tokens = get_common_tokens(chain);
@@ -178,8 +178,8 @@ impl EvmConnector {
             // Fetch balance
             match erc20.balanceOf(self.wallet_address).call().await {
                 Ok(balance) => {
-                    if balance._0 > U256::ZERO {
-                        let balance_str = format!("{}", balance._0);
+                    if balance > U256::ZERO {
+                        let balance_str = format!("{}", balance);
                         tracing::info!("Found {} balance on {}: {}", symbol, chain.name(), balance_str);
                         
                         balances.push(Balance {

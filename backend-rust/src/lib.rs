@@ -1,4 +1,3 @@
-pub mod auth;
+// Re-export axum-keycloak-auth for convenience
+pub use axum_keycloak_auth;
 
-// Re-export main auth types for convenience
-pub use auth::{AuthUser, Claims, JwtValidator, KeycloakConfig};

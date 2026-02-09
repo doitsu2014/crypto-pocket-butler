@@ -1,7 +1,7 @@
 # backend-rust
 
 Rust backend service for Crypto Pocket Butler:
-- Axum HTTP API with Keycloak JWT authentication
+- Axum HTTP API with Keycloak JWT authentication using `axum-keycloak-auth`
 - Scheduled workers for syncing accounts (planned)
 - Postgres for normalized holdings + snapshots (planned)
 
@@ -9,12 +9,14 @@ Rust backend service for Crypto Pocket Butler:
 
 ### Keycloak JWT Authentication Middleware
 
-The backend implements a robust JWT validation middleware for Keycloak integration:
+The backend uses the [`axum-keycloak-auth`](https://github.com/lpotthast/axum-keycloak-auth) library for robust JWT validation:
 
+- **OIDC Discovery**: Automatically discovers Keycloak configuration via OIDC endpoints
 - **JWKS Validation**: Fetches and caches Keycloak's public keys (JWKS) for JWT signature verification
 - **Issuer & Audience Enforcement**: Validates that tokens are issued by the correct Keycloak realm and intended for this application
 - **User Context Extraction**: Extracts user identity (`sub` claim as `user_id`) and adds it to request context
-- **Automatic Token Refresh**: Caches JWKS for 1 hour and refreshes as needed
+- **Role-Based Access Control**: Support for required role checking (optional)
+- **Automatic Key Rotation**: Handles JWKS key rotation automatically
 
 ## Usage
 
@@ -23,7 +25,8 @@ The backend implements a robust JWT validation middleware for Keycloak integrati
 Configure Keycloak connection using environment variables:
 
 ```bash
-export KEYCLOAK_ISSUER="https://keycloak.example.com/realms/myrealm"
+export KEYCLOAK_SERVER="https://keycloak.example.com"
+export KEYCLOAK_REALM="myrealm"
 export KEYCLOAK_AUDIENCE="account"  # or your client_id
 ```
 
@@ -35,45 +38,58 @@ cargo run
 
 The server will start on `http://0.0.0.0:3000` with the following endpoints:
 
-- `GET /` - Public root endpoint
-- `GET /health` - Public health check
+- `GET /` - Root endpoint (requires authentication)
+- `GET /health` - Health check (requires authentication)
 - `GET /api/me` - Protected endpoint that returns authenticated user info
 - `GET /api/protected` - Example protected endpoint
 
-### Using the Middleware in Your Code
+**Note**: In the current setup, all routes require authentication. To have truly public endpoints, create a separate router without the auth layer and merge it with the protected router.
+
+### Using the Library in Your Code
 
 ```rust
-use crypto_pocket_butler_backend::{auth, AuthUser, JwtValidator, KeycloakConfig};
-use axum::{extract::Extension, middleware, routing::get, Router};
+use axum::{extract::Extension, routing::get, Router};
+use axum_keycloak_auth::{
+    decode::KeycloakToken,
+    instance::{KeycloakAuthInstance, KeycloakConfig},
+    layer::KeycloakAuthLayer,
+    PassthroughMode,
+};
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    // Configure Keycloak
-    let keycloak_config = KeycloakConfig::new(
-        "https://keycloak.example.com/realms/myrealm".to_string(),
-        "account".to_string(),
-    );
+    // Build Keycloak configuration
+    let keycloak_config = KeycloakConfig {
+        server: "https://keycloak.example.com".parse().unwrap(),
+        realm: "myrealm".to_string(),
+        retry: (5, 1), // 5 retries with 1 second delay
+    };
 
-    // Create JWT validator
-    let jwt_validator = Arc::new(JwtValidator::new(keycloak_config));
+    // Initialize Keycloak auth instance with OIDC discovery
+    let keycloak_auth_instance = Arc::new(KeycloakAuthInstance::new(keycloak_config));
+
+    // Build the auth layer
+    let auth_layer = KeycloakAuthLayer::<String>::builder()
+        .instance(keycloak_auth_instance.clone())
+        .passthrough_mode(PassthroughMode::Block)
+        .expected_audiences(vec!["account".to_string()])
+        .required_roles(vec![]) // Optional: add required roles
+        .build();
 
     // Build application with protected routes
     let app = Router::new()
         .route("/api/protected", get(protected_handler))
-        // Add the auth middleware to protect routes
-        .route_layer(middleware::from_fn_with_state(
-            jwt_validator.clone(),
-            auth::require_auth,
-        ))
-        .with_state(jwt_validator);
+        .layer(auth_layer);
 
     // ... start server
 }
 
-// Access authenticated user in handlers
-async fn protected_handler(Extension(user): Extension<AuthUser>) -> String {
-    format!("Hello, user {}!", user.user_id)
+// Access authenticated user in handlers via KeycloakToken
+async fn protected_handler(
+    Extension(token): Extension<KeycloakToken<String>>,
+) -> String {
+    format!("Hello, user {}!", token.subject)
 }
 ```
 
@@ -81,42 +97,55 @@ async fn protected_handler(Extension(user): Extension<AuthUser>) -> String {
 
 ### Authentication Flow (Expected Integration)
 
-This backend provides the server-side JWT validation. The complete authentication flow would work as follows:
+This backend provides the server-side JWT validation using the `axum-keycloak-auth` library. The complete authentication flow works as follows:
 
 1. **Frontend → Keycloak**: User authenticates via OIDC Authorization Code + PKCE flow (frontend implementation not included)
 2. **Frontend → Backend**: Sends `Authorization: Bearer <access_token>` with each request
-3. **Backend Middleware**: 
+3. **Backend Middleware** (`axum-keycloak-auth`):
    - Extracts token from Authorization header
-   - Fetches JWKS from Keycloak (cached)
+   - Performs OIDC discovery to get Keycloak configuration
+   - Fetches JWKS from Keycloak (cached with automatic rotation)
    - Validates token signature, issuer, audience, and expiry
    - Extracts user identity from `sub` claim
-   - Adds `AuthUser` to request extensions for use in handlers
+   - Adds `KeycloakToken` to request extensions for use in handlers
 
-**Note**: This PR implements only the backend middleware. Frontend OIDC integration is a separate concern.
+**Note**: This implementation uses the well-maintained `axum-keycloak-auth` library instead of a custom implementation, providing production-ready JWT validation with automatic OIDC discovery and JWKS rotation.
 
 ### Module Structure
 
 ```
 src/
-├── auth/
-│   ├── mod.rs          - Public API exports
-│   ├── config.rs       - Keycloak configuration
-│   ├── jwt.rs          - JWT validation logic and JWKS handling
-│   └── middleware.rs   - Axum middleware implementation
-├── lib.rs              - Library exports
-└── main.rs             - Example application
+├── lib.rs              - Library exports (re-exports axum-keycloak-auth)
+└── main.rs             - Example application with Keycloak auth
 ```
 
-### AuthUser Context
+### KeycloakToken Context
 
-The middleware adds an `AuthUser` struct to request extensions containing:
+The middleware adds a `KeycloakToken<String>` struct to request extensions containing:
 
 ```rust
-pub struct AuthUser {
-    pub user_id: String,              // From JWT 'sub' claim
-    pub username: Option<String>,     // From 'preferred_username'
-    pub email: Option<String>,        // From 'email'
-    pub claims: Claims,               // Full JWT claims
+pub struct KeycloakToken<R> {
+    pub subject: String,              // From JWT 'sub' claim (user ID)
+    pub extra: ProfileAndEmail,       // Standard JWT claims
+    pub roles: Vec<R>,                // User roles
+    // ... other fields
+}
+
+pub struct ProfileAndEmail {
+    pub profile: Profile,             // User profile (username, name, etc.)
+    pub email: Email,                 // Email and verification status
+}
+
+pub struct Profile {
+    pub preferred_username: String,   // Username
+    pub given_name: Option<String>,   // First name
+    pub family_name: Option<String>,  // Last name
+    pub full_name: Option<String>,    // Full name
+}
+
+pub struct Email {
+    pub email: String,                // Email address
+    pub email_verified: bool,         // Email verification status
 }
 ```
 
@@ -128,8 +157,15 @@ Run the test suite:
 cargo test
 ```
 
+## Library Documentation
+
+For complete documentation on `axum-keycloak-auth`, see:
+- [Crate documentation](https://docs.rs/axum-keycloak-auth)
+- [GitHub repository](https://github.com/lpotthast/axum-keycloak-auth)
+
 ## Next Steps
 
 - Define DB schema (accounts, assets, holdings, snapshots)
 - Implement OKX read-only connector
 - Add authorization checks (roles, resource ownership)
+- Split routes into public and protected routers

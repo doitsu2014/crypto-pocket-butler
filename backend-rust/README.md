@@ -8,6 +8,17 @@ Rust backend service for Crypto Pocket Butler:
 
 ## Features
 
+### Concurrency & Performance
+
+The backend is designed for high-performance concurrent request handling:
+
+- **Thread Pool**: Tokio multi-threaded runtime with work-stealing scheduler
+- **Connection Pool**: Configurable database connection pool (default: 100 max connections)
+- **Non-blocking I/O**: All operations are asynchronous using async/await
+- **Scalability**: Handles thousands of concurrent requests efficiently
+
+See [CONCURRENCY.md](./CONCURRENCY.md) for detailed information on thread pools, connection pools, and performance tuning.
+
 ### Keycloak JWT Authentication Middleware
 
 The backend uses the [`axum-keycloak-auth`](https://github.com/lpotthast/axum-keycloak-auth) library for robust JWT validation:
@@ -32,12 +43,24 @@ The backend uses [`utoipa`](https://github.com/juhaku/utoipa) for compile-time O
 
 ### Environment Variables
 
-Configure Keycloak connection using environment variables:
+Configure Keycloak connection and database using environment variables:
 
 ```bash
+# Keycloak Configuration
 export KEYCLOAK_SERVER="https://keycloak.example.com"
 export KEYCLOAK_REALM="myrealm"
 export KEYCLOAK_AUDIENCE="account"  # or your client_id
+
+# Database Configuration
+export DATABASE_URL="postgres://username:password@localhost/crypto_pocket_butler"
+
+# Connection Pool (Optional - defaults shown)
+export DB_MAX_CONNECTIONS=100        # Maximum concurrent database connections
+export DB_MIN_CONNECTIONS=5          # Minimum idle connections
+export DB_CONNECT_TIMEOUT_SECS=30    # Connection timeout
+export DB_ACQUIRE_TIMEOUT_SECS=30    # Pool acquisition timeout
+export DB_IDLE_TIMEOUT_SECS=600      # Idle connection timeout (10 min)
+export DB_MAX_LIFETIME_SECS=1800     # Max connection lifetime (30 min)
 ```
 
 ### Running the Server

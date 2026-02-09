@@ -19,6 +19,14 @@ pub struct SyncResult {
 }
 
 /// Decrypt API credentials (placeholder - implement proper encryption/decryption)
+/// 
+/// SECURITY WARNING: This is a placeholder implementation that stores credentials in plain text.
+/// Before production deployment, this MUST be replaced with proper encryption using:
+/// - AWS KMS (Key Management Service)
+/// - HashiCorp Vault
+/// - Google Cloud KMS
+/// - Azure Key Vault
+/// or similar key management solution.
 fn decrypt_credential(encrypted: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
     // TODO: Implement proper decryption using a key management service
     // For now, assuming credentials are stored as-is (not recommended for production)

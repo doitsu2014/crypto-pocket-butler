@@ -207,6 +207,9 @@ async fn sync_all_accounts_handler(
 }
 
 /// Create router for account sync endpoints
+/// 
+/// Note: Axum uses curly braces for path parameters {param}, not colon notation :param
+/// This is different from Express.js and some other frameworks
 pub fn create_router() -> Router<DatabaseConnection> {
     Router::new()
         .route("/api/v1/accounts/{account_id}/sync", post(sync_account_handler))

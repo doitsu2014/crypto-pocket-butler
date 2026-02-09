@@ -19,6 +19,7 @@ pub struct Model {
     pub wallet_address: Option<String>,
     pub is_active: bool,
     pub last_synced_at: Option<DateTimeWithTimeZone>,
+    pub holdings: Option<Json>, // JSON array of asset holdings
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

@@ -20,4 +20,10 @@ migration = { path = "./migration" }
 log = "0.4"
 uuid = { version = "1.0", features = ["serde", "v4"] }
 num_cpus = "1.16"
+reqwest = { version = "0.12", features = ["json"] }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+rust_decimal = { version = "1.35", features = ["serde-with-str"] }
+async-trait = "0.1"
 

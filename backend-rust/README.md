@@ -373,7 +373,60 @@ For SeaORM documentation:
 ## Next Steps
 
 - ✅ Define DB schema (accounts, portfolios, snapshots)
-- Implement OKX read-only connector
+- ✅ Implement OKX read-only connector
+- ✅ Implement account sync jobs
+- ✅ Add API endpoints for manual account sync
 - Add authorization checks (roles, resource ownership)
 - Split routes into public and protected routers
 - Implement API endpoints for CRUD operations on entities
+- Add automatic scheduled syncing
+- Add price data fetching
+- Calculate total portfolio values in USD
+
+## Account Sync Feature
+
+The backend now includes a complete account synchronization system for fetching balances from exchanges.
+
+### OKX Connector
+
+A read-only connector for OKX exchange that:
+- Uses API keys with read-only permissions
+- Implements HMAC-SHA256 signature authentication
+- Fetches spot balances from trading accounts
+- Returns balance data including available and frozen amounts
+
+See [connectors/README.md](src/connectors/README.md) for detailed documentation.
+
+### Sync Jobs
+
+Background jobs for synchronizing account balances:
+- `sync_account(account_id)`: Sync a single account
+- `sync_user_accounts(user_id)`: Sync all active accounts for a user
+
+### API Endpoints
+
+New endpoints for triggering account syncs:
+
+- **POST /api/v1/accounts/:account_id/sync**: Sync a specific account
+- **POST /api/v1/accounts/sync-all**: Sync all accounts for the authenticated user
+
+Both endpoints require authentication and return detailed sync results including:
+- Number of holdings fetched
+- Success/failure status
+- Error messages if any
+
+Example response:
+```json
+{
+  "total": 3,
+  "successful": 2,
+  "failed": 1,
+  "results": [
+    {
+      "account_id": "uuid",
+      "success": true,
+      "holdings_count": 5
+    }
+  ]
+}
+```

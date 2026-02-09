@@ -107,12 +107,13 @@ frontend-react/
 3. **User clicks "Sign in with Keycloak"**
 4. **Authorization Code + PKCE flow**:
    - App generates code verifier and challenge
-   - Redirects to Keycloak with challenge
+   - Redirects to Keycloak with challenge and `offline_access` scope
    - User authenticates in Keycloak
    - Keycloak redirects back with authorization code
-   - App exchanges code + verifier for tokens
+   - App exchanges code + verifier for tokens (including refresh token)
 5. **Tokens stored securely** in session (JWT strategy)
-6. **API calls include Bearer token** automatically via proxy routes
+6. **Automatic token refresh**: When a token has lived more than 50% of its lifetime, it is automatically refreshed using the refresh token
+7. **API calls include Bearer token** automatically via proxy routes
 
 ## Making API Calls
 
@@ -140,6 +141,8 @@ const data = await directBackendClient("/api/protected", session.accessToken);
 - ✅ Authorization Code flow with PKCE (no client secret exposed to browser)
 - ✅ Tokens stored server-side in JWT session
 - ✅ Access token never exposed to client-side JavaScript
+- ✅ **Automatic token refresh**: Tokens are refreshed when they pass 50% of their lifetime
+- ✅ **Refresh tokens**: `offline_access` scope enables long-lived refresh tokens
 - ✅ CSRF protection via NextAuth.js
 - ✅ Secure HTTP-only cookies
 - ✅ Route protection via middleware

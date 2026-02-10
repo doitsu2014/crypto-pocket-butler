@@ -266,7 +266,7 @@ export default function PortfoliosPage() {
                     </p>
                   )}
                   <div className="text-xs text-slate-500 space-y-1">
-                    <p>Created: {new Date(portfolio.created_at).toLocaleDateString()}</p>
+                    <p>Created: {portfolio.created_at ? new Date(portfolio.created_at).toLocaleDateString() : 'N/A'}</p>
                   </div>
                 </div>
               ))}

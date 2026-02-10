@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { SignOutButton } from "@/components/SignOutButton";
 import { UserInfo } from "@/components/UserInfo";
+import Link from "next/link";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -57,21 +58,26 @@ export default async function DashboardPage() {
             <UserInfo />
           </div>
 
-          <div className="mt-6 bg-slate-950/70 backdrop-blur-sm border-2 border-cyan-500/40 shadow-[0_0_40px_rgba(34,211,238,0.4)] rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-[0_0_30px_rgba(34,211,238,0.8)] animate-pulse">
-                <svg className="w-7 h-7 text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
+          <Link href="/portfolios" className="block mt-6 bg-slate-950/70 backdrop-blur-sm border-2 border-cyan-500/40 shadow-[0_0_40px_rgba(34,211,238,0.4)] hover:shadow-[0_0_60px_rgba(34,211,238,0.6)] hover:border-cyan-300 rounded-2xl p-6 transition-all duration-300 hover:scale-[1.02] group">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-[0_0_30px_rgba(34,211,238,0.8)] animate-pulse group-hover:shadow-[0_0_40px_rgba(34,211,238,1)]">
+                  <svg className="w-7 h-7 text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-cyan-300 group-hover:text-cyan-200 drop-shadow-[0_0_15px_rgba(103,232,249,0.6)]">
+                  Portfolios
+                </h3>
               </div>
-              <h3 className="text-xl font-bold text-cyan-300 drop-shadow-[0_0_15px_rgba(103,232,249,0.6)]">
-                Portfolio Overview
-              </h3>
+              <svg className="w-6 h-6 text-cyan-400 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
             </div>
             <p className="text-slate-300">
-              Your portfolio management features will be displayed here.
+              Manage your portfolios, create new ones, and track your holdings across wallets and exchanges.
             </p>
-          </div>
+          </Link>
         </div>
       </main>
     </div>

@@ -14,6 +14,18 @@ interface Portfolio {
   updated_at: string;
 }
 
+function formatDate(dateString: string): string {
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      return 'N/A';
+    }
+    return date.toLocaleDateString();
+  } catch {
+    return 'N/A';
+  }
+}
+
 export default function PortfoliosPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [loading, setLoading] = useState(true);
@@ -266,7 +278,7 @@ export default function PortfoliosPage() {
                     </p>
                   )}
                   <div className="text-xs text-slate-500 space-y-1">
-                    <p>Created: {portfolio.created_at ? new Date(portfolio.created_at).toLocaleDateString() : 'N/A'}</p>
+                    <p>Created: {formatDate(portfolio.created_at)}</p>
                   </div>
                 </div>
               ))}

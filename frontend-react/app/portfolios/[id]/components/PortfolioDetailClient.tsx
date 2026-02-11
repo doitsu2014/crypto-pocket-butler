@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
 import Link from "next/link";
+
+const MAX_ALLOCATION_ITEMS = 10;
 
 interface Portfolio {
   id: string;
@@ -96,12 +98,7 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
   const [sortField, setSortField] = useState<'asset' | 'quantity' | 'value'>('value');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [portfolioId]);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -119,7 +116,11 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
     } finally {
       setLoading(false);
     }
-  }
+  }, [portfolioId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   function handleSort(field: 'asset' | 'quantity' | 'value') {
     if (sortField === field) {
@@ -251,7 +252,7 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
           <p className="text-slate-400 text-center py-4">No holdings to display</p>
         ) : (
           <div className="space-y-3">
-            {holdings.allocation.slice(0, 10).map((item) => (
+            {holdings.allocation.slice(0, MAX_ALLOCATION_ITEMS).map((item) => (
               <div key={item.asset} className="flex items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">

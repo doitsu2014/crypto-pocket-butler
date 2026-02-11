@@ -212,9 +212,10 @@ export default function PortfoliosClient() {
       {!loading && portfolios.length > 0 && (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {portfolios.map((portfolio) => (
-            <div
+            <Link
               key={portfolio.id}
-              className="group bg-slate-900/60 backdrop-blur-sm rounded-xl border-2 border-fuchsia-500/50 hover:border-fuchsia-400 p-6 transition-all duration-300 shadow-[0_0_20px_rgba(217,70,239,0.25)] hover:shadow-[0_0_35px_rgba(217,70,239,0.45)] hover:transform hover:scale-[1.03] cursor-pointer"
+              href={`/portfolios/${portfolio.id}`}
+              className="group bg-slate-900/60 backdrop-blur-sm rounded-xl border-2 border-fuchsia-500/50 hover:border-fuchsia-400 p-6 transition-all duration-300 shadow-[0_0_20px_rgba(217,70,239,0.25)] hover:shadow-[0_0_35px_rgba(217,70,239,0.45)] hover:transform hover:scale-[1.03] cursor-pointer block"
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
@@ -244,7 +245,7 @@ export default function PortfoliosClient() {
               <div className="text-xs text-slate-500 space-y-1">
                 <p>Created: {formatDate(portfolio.created_at)}</p>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

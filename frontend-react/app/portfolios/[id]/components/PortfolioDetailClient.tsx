@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
 import Link from "next/link";
+import PortfolioCompositionEditor from "./PortfolioCompositionEditor";
 
 const MAX_ALLOCATION_ITEMS = 10;
 
@@ -188,26 +189,33 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
     <>
       {/* Portfolio Header */}
       <div className="mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Link
-            href="/portfolios"
-            className="text-cyan-300 hover:text-cyan-200 transition-colors drop-shadow-[0_0_6px_rgba(103,232,249,0.4)]"
-          >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-          </Link>
-          <h2 className="text-3xl font-extrabold bg-gradient-to-r from-fuchsia-300 via-violet-300 to-purple-300 bg-clip-text text-transparent drop-shadow-[0_0_12px_rgba(232,121,249,0.4)]">
-            {portfolio.name}
-          </h2>
-          {portfolio.is_default && (
-            <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-cyan-400 border-2 border-cyan-500/50 rounded-lg shadow-[0_0_10px_rgba(34,211,238,0.3)]">
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/portfolios"
+              className="text-cyan-300 hover:text-cyan-200 transition-colors drop-shadow-[0_0_6px_rgba(103,232,249,0.4)]"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
-              Default
-            </span>
-          )}
+            </Link>
+            <h2 className="text-3xl font-extrabold bg-gradient-to-r from-fuchsia-300 via-violet-300 to-purple-300 bg-clip-text text-transparent drop-shadow-[0_0_12px_rgba(232,121,249,0.4)]">
+              {portfolio.name}
+            </h2>
+            {portfolio.is_default && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-cyan-400 border-2 border-cyan-500/50 rounded-lg shadow-[0_0_10px_rgba(34,211,238,0.3)]">
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                Default
+              </span>
+            )}
+          </div>
+          <PortfolioCompositionEditor
+            portfolioId={portfolioId}
+            portfolioName={portfolio.name}
+            onUpdate={loadData}
+          />
         </div>
         {portfolio.description && (
           <p className="text-slate-400 text-sm">{portfolio.description}</p>

@@ -9,6 +9,10 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:300
  * 
  * Supports all HTTP methods: GET, POST, PUT, DELETE, PATCH, etc.
  * Forwards query parameters, headers, and request body to the backend.
+ * 
+ * Note: More specific routes (e.g., /api/backend/me/route.ts) take precedence
+ * over this catch-all. This acts as a fallback for any endpoint that doesn't
+ * have a dedicated route handler.
  */
 async function handleRequest(
   request: NextRequest,

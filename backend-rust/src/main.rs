@@ -303,12 +303,10 @@ async fn main() {
         .unwrap_or_else(|_| "3001".to_string())
         .parse::<u16>()
         .expect("SERVER_PORT must be a valid port number");
-    let host = std::env::var("SERVER_HOST")
-        .unwrap_or_else(|_| "0.0.0.0".to_string());
     
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("Starting server on {}", addr);
-    tracing::info!("Swagger UI available at http://{}:{}/swagger-ui", host, port);
+    tracing::info!("Swagger UI available at http://localhost:{}/swagger-ui", port);
     tracing::info!("Server ready to handle concurrent requests");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

@@ -69,6 +69,7 @@ struct HealthResponse {
         handlers::accounts::sync_all_accounts_handler,
         handlers::snapshots::create_portfolio_snapshot_handler,
         handlers::snapshots::create_all_user_snapshots_handler,
+        handlers::snapshots::list_portfolio_snapshots_handler,
     ),
     components(
         schemas(
@@ -90,6 +91,9 @@ struct HealthResponse {
             handlers::snapshots::CreateSnapshotRequest,
             handlers::snapshots::SnapshotResultResponse,
             handlers::snapshots::CreateAllSnapshotsResponse,
+            handlers::snapshots::SnapshotResponse,
+            handlers::snapshots::ListSnapshotsQuery,
+            handlers::snapshots::ListSnapshotsResponse,
         )
     ),
     modifiers(&SecurityAddon),

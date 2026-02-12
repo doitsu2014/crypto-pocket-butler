@@ -1,18 +1,18 @@
 use axum::{
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use axum_keycloak_auth::decode::KeycloakToken;
 use chrono::NaiveDate;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::{portfolios, users};
+use crate::entities::{portfolios, snapshots, users};
 use crate::jobs::portfolio_snapshot;
 
 // === Request/Response DTOs ===
@@ -62,6 +62,53 @@ pub struct CreateAllSnapshotsResponse {
     pub successful: usize,
     pub failed: usize,
     pub results: Vec<SnapshotResultResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SnapshotResponse {
+    pub id: Uuid,
+    pub portfolio_id: Uuid,
+    pub snapshot_date: String, // ISO 8601 date
+    pub snapshot_type: String,
+    pub total_value_usd: String,
+    pub holdings: serde_json::Value, // JSON holdings data
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: String, // ISO 8601 datetime
+}
+
+impl From<snapshots::Model> for SnapshotResponse {
+    fn from(model: snapshots::Model) -> Self {
+        Self {
+            id: model.id,
+            portfolio_id: model.portfolio_id,
+            snapshot_date: model.snapshot_date.to_string(),
+            snapshot_type: model.snapshot_type,
+            total_value_usd: model.total_value_usd.to_string(),
+            holdings: model.holdings,
+            metadata: model.metadata,
+            created_at: model.created_at.to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ListSnapshotsQuery {
+    /// Filter by start date (ISO 8601 format, inclusive)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_date: Option<String>,
+    /// Filter by end date (ISO 8601 format, inclusive)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_date: Option<String>,
+    /// Filter by snapshot type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_type: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ListSnapshotsResponse {
+    pub portfolio_id: Uuid,
+    pub snapshots: Vec<SnapshotResponse>,
+    pub total_count: usize,
 }
 
 // === Helper Functions ===
@@ -139,6 +186,99 @@ async fn check_portfolio_ownership(
 }
 
 // === API Handlers ===
+
+/// Get snapshots for a specific portfolio
+///
+/// Retrieves all snapshots for the specified portfolio, with optional date and type filtering.
+#[utoipa::path(
+    get,
+    path = "/api/v1/portfolios/{portfolio_id}/snapshots",
+    params(
+        ("portfolio_id" = Uuid, Path, description = "Portfolio ID"),
+        ("start_date" = Option<String>, Query, description = "Start date filter (YYYY-MM-DD, inclusive)"),
+        ("end_date" = Option<String>, Query, description = "End date filter (YYYY-MM-DD, inclusive)"),
+        ("snapshot_type" = Option<String>, Query, description = "Snapshot type filter (eod, manual, hourly)")
+    ),
+    responses(
+        (status = 200, description = "Snapshots retrieved successfully", body = ListSnapshotsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - portfolio does not belong to user"),
+        (status = 404, description = "Portfolio not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "snapshots"
+)]
+async fn list_portfolio_snapshots_handler(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path(portfolio_id): Path<Uuid>,
+    Query(query): Query<ListSnapshotsQuery>,
+) -> Result<Json<ListSnapshotsResponse>, Response> {
+    // Get or create user
+    let user = get_or_create_user(&db, &token).await?;
+
+    // Verify portfolio belongs to user
+    check_portfolio_ownership(&db, portfolio_id, user.id).await?;
+
+    // Build query
+    let mut snapshot_query = snapshots::Entity::find()
+        .filter(snapshots::Column::PortfolioId.eq(portfolio_id));
+
+    // Apply date filters if provided
+    if let Some(start_date_str) = query.start_date {
+        let start_date = NaiveDate::parse_from_str(&start_date_str, "%Y-%m-%d").map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid start_date format: {}. Expected YYYY-MM-DD", e),
+            )
+                .into_response()
+        })?;
+        snapshot_query = snapshot_query.filter(snapshots::Column::SnapshotDate.gte(start_date));
+    }
+
+    if let Some(end_date_str) = query.end_date {
+        let end_date = NaiveDate::parse_from_str(&end_date_str, "%Y-%m-%d").map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid end_date format: {}. Expected YYYY-MM-DD", e),
+            )
+                .into_response()
+        })?;
+        snapshot_query = snapshot_query.filter(snapshots::Column::SnapshotDate.lte(end_date));
+    }
+
+    // Apply type filter if provided
+    if let Some(snapshot_type) = query.snapshot_type {
+        snapshot_query = snapshot_query.filter(snapshots::Column::SnapshotType.eq(snapshot_type));
+    }
+
+    // Order by date descending (most recent first)
+    snapshot_query = snapshot_query.order_by_desc(snapshots::Column::SnapshotDate);
+
+    // Execute query
+    let snapshot_models = snapshot_query.all(&db).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
+
+    let total_count = snapshot_models.len();
+    let snapshots: Vec<SnapshotResponse> = snapshot_models
+        .into_iter()
+        .map(|model| model.into())
+        .collect();
+
+    Ok(Json(ListSnapshotsResponse {
+        portfolio_id,
+        snapshots,
+        total_count,
+    }))
+}
 
 /// Create a snapshot for a specific portfolio
 ///
@@ -302,7 +442,7 @@ pub fn create_router() -> Router<DatabaseConnection> {
     Router::new()
         .route(
             "/api/v1/portfolios/{portfolio_id}/snapshots",
-            post(create_portfolio_snapshot_handler),
+            get(list_portfolio_snapshots_handler).post(create_portfolio_snapshot_handler),
         )
         .route(
             "/api/v1/snapshots/create-all",

@@ -74,6 +74,7 @@ struct HealthResponse {
         handlers::recommendations::get_recommendation,
         handlers::recommendations::create_recommendation,
         handlers::recommendations::generate_mock_recommendations,
+        handlers::migrations::migrate_handler,
     ),
     components(
         schemas(
@@ -102,6 +103,7 @@ struct HealthResponse {
             handlers::recommendations::ListRecommendationsResponse,
             handlers::recommendations::ListRecommendationsQuery,
             handlers::recommendations::CreateRecommendationRequest,
+            handlers::migrations::MigrationResponse,
         )
     ),
     modifiers(&SecurityAddon),
@@ -110,7 +112,8 @@ struct HealthResponse {
         (name = "portfolios", description = "Portfolio management endpoints"),
         (name = "accounts", description = "Account management and sync endpoints"),
         (name = "snapshots", description = "Portfolio snapshot endpoints"),
-        (name = "recommendations", description = "Portfolio recommendation endpoints")
+        (name = "recommendations", description = "Portfolio recommendation endpoints"),
+        (name = "migrations", description = "Database migration endpoints")
     ),
     info(
         title = "Crypto Pocket Butler API",
@@ -276,6 +279,8 @@ async fn main() {
         .merge(handlers::snapshots::create_router())
         // Recommendation API routes (protected)
         .merge(handlers::recommendations::create_router())
+        // Migration API routes (protected)
+        .merge(handlers::migrations::create_router())
         .layer(auth_layer);
 
     // Build application with public and protected routes

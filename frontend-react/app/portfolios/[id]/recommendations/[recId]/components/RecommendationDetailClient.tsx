@@ -277,7 +277,7 @@ export default function RecommendationDetailClient({
                 </div>
                 <div>
                   <span className="text-slate-400">Estimated Price: </span>
-                  <span className="text-white font-medium">{order.estimated_price}</span>
+                  <span className="text-white font-medium">{formatCurrency(order.estimated_price)}</span>
                 </div>
               </div>
             </div>

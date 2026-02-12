@@ -404,14 +404,14 @@ pub async fn generate_mock_recommendations(
                     "action": "sell",
                     "asset": "BTC",
                     "quantity": "0.05",
-                    "estimated_price": "$65,000",
+                    "estimated_price": "65000",
                     "estimated_value_usd": "3250.00"
                 },
                 {
                     "action": "buy",
                     "asset": "ETH",
                     "quantity": "1.2",
-                    "estimated_price": "$3,200",
+                    "estimated_price": "3200",
                     "estimated_value_usd": "3840.00"
                 }
             ])),
@@ -437,7 +437,7 @@ pub async fn generate_mock_recommendations(
                     "action": "sell",
                     "asset": "SOL",
                     "quantity": "50",
-                    "estimated_price": "$145",
+                    "estimated_price": "145",
                     "estimated_value_usd": "7250.00"
                 }
             ])),

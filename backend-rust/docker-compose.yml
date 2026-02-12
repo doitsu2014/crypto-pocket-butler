@@ -15,6 +15,34 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - crypto-pocket-butler-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crypto-pocket-butler-backend
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/crypto_pocket_butler
+      KEYCLOAK_SERVER: ${KEYCLOAK_SERVER:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-myrealm}
+      KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE:-crypto-pocket-butler}
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 3000
+      RUST_LOG: ${RUST_LOG:-crypto_pocket_butler_backend=debug}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - crypto-pocket-butler-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+
+networks:
+  crypto-pocket-butler-network:
+    driver: bridge

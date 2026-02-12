@@ -94,8 +94,8 @@ export default function SnapshotsClient({
         params.append("snapshot_type", selectedType);
       }
 
-      const url = `/api/backend/v1/portfolios/${portfolioId}/snapshots?${params.toString()}`;
-      const response = await apiClient.get<ListSnapshotsResponse>(url);
+      const url = `/v1/portfolios/${portfolioId}/snapshots?${params.toString()}`;
+      const response = await apiClient<ListSnapshotsResponse>(url);
 
       setSnapshots(response.snapshots);
     } catch (err) {
@@ -224,10 +224,10 @@ export default function SnapshotsClient({
                       }}
                       labelStyle={{ color: "#67e8f9" }}
                       itemStyle={{ color: "#d946ef" }}
-                      formatter={(value: number) => [
-                        formatCurrency(value),
-                        "Value",
-                      ]}
+                      formatter={(value: number | undefined) => {
+                        if (value === undefined) return ["", ""];
+                        return [formatCurrency(value), "Value"];
+                      }}
                       labelFormatter={(label) => `Date: ${formatDate(label)}`}
                     />
                     <Line

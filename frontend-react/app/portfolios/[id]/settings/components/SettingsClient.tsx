@@ -82,7 +82,6 @@ export default function SettingsClient({ portfolioId }: { portfolioId: string })
     } catch (err) {
       const errorMessage = err instanceof ApiError ? err.message : "Failed to load portfolio";
       setError(errorMessage);
-      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

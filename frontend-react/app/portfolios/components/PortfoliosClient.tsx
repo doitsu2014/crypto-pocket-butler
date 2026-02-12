@@ -188,8 +188,8 @@ export default function PortfoliosClient() {
               <button
                 type="button"
                 onClick={() => {
-                  setShowCreateForm(false);
                   setError(null);
+                  setShowCreateForm(false);
                   setFormData({ name: "", description: "", is_default: false });
                 }}
                 className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"

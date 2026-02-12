@@ -92,7 +92,6 @@ export default function PortfolioCompositionEditor({
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to save portfolio composition";
-      setError(errorMessage);
       toast.error(errorMessage);
     } finally {
       setSaving(false);

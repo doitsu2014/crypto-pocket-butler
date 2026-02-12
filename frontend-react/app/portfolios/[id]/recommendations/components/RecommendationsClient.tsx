@@ -132,7 +132,6 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
       await fetchRecommendations();
     } catch (err) {
       const errorMessage = err instanceof ApiError ? err.message : 'Failed to generate recommendations';
-      setError(errorMessage);
       toast.error(errorMessage);
     } finally {
       setGenerating(false);

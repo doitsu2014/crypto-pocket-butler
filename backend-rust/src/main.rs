@@ -115,7 +115,13 @@ struct HealthResponse {
     info(
         title = "Crypto Pocket Butler API",
         version = "0.1.0",
-        description = "API for managing crypto portfolio with Keycloak JWT authentication",
+        description = "API for managing crypto portfolio with Keycloak authentication.\n\n\
+        ## Authentication\n\n\
+        This API supports multiple authentication methods:\n\n\
+        1. **Bearer Token (JWT)**: Use a Keycloak JWT token obtained from a successful login\n\
+        2. **OAuth2 Client Credentials**: Authenticate using client ID and client secret (for service-to-service)\n\
+        3. **OAuth2 Authorization Code**: Authenticate using client ID via authorization code flow (for user authentication)\n\n\
+        To use OAuth2 flows in Swagger UI, click the 'Authorize' button and enter your Keycloak credentials.",
     ),
     servers(
         (url = "http://localhost:3000", description = "Local development server")
@@ -130,6 +136,7 @@ struct SecurityAddon;
 impl Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         if let Some(components) = openapi.components.as_mut() {
+            // Bearer token authentication (JWT)
             components.add_security_scheme(
                 "bearer_auth",
                 utoipa::openapi::security::SecurityScheme::Http(
@@ -139,7 +146,48 @@ impl Modify for SecurityAddon {
                         .description(Some("Enter your Keycloak JWT token"))
                         .build(),
                 ),
-            )
+            );
+
+            // Get Keycloak configuration from environment
+            let keycloak_server = std::env::var("KEYCLOAK_SERVER")
+                .unwrap_or_else(|_| "http://localhost:8080".to_string());
+            let keycloak_realm = std::env::var("KEYCLOAK_REALM")
+                .unwrap_or_else(|_| "myrealm".to_string());
+            
+            let token_url = format!("{}/realms/{}/protocol/openid-connect/token", keycloak_server, keycloak_realm);
+            let auth_url = format!("{}/realms/{}/protocol/openid-connect/auth", keycloak_server, keycloak_realm);
+
+            // Create empty scopes (Keycloak handles scopes via client configuration)
+            use utoipa::openapi::security::Scopes;
+            let scopes = Scopes::new();
+
+            // OAuth2 Client Credentials flow
+            components.add_security_scheme(
+                "oauth2_client_credentials",
+                utoipa::openapi::security::SecurityScheme::OAuth2(
+                    utoipa::openapi::security::OAuth2::new([
+                        utoipa::openapi::security::Flow::ClientCredentials(
+                            utoipa::openapi::security::ClientCredentials::new(token_url.clone(), scopes.clone())
+                        )
+                    ])
+                ),
+            );
+
+            // OAuth2 Authorization Code flow
+            components.add_security_scheme(
+                "oauth2_authorization_code",
+                utoipa::openapi::security::SecurityScheme::OAuth2(
+                    utoipa::openapi::security::OAuth2::new([
+                        utoipa::openapi::security::Flow::AuthorizationCode(
+                            utoipa::openapi::security::AuthorizationCode::new(
+                                auth_url,
+                                token_url,
+                                scopes
+                            )
+                        )
+                    ])
+                ),
+            );
         }
     }
 }
@@ -208,15 +256,8 @@ async fn main() {
         .required_roles(vec![]) // No required roles for basic authentication
         .build();
 
-    // Build application with public and protected routes
-    // Axum handles concurrent requests efficiently using Tokio's async runtime
-    // Each request is processed asynchronously without blocking other requests
-    let app = Router::new()
-        // Swagger UI - publicly accessible
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // Public routes (no auth required)
-        .route("/", get(root))
-        .route("/health", get(health))
+    // Build protected routes that require authentication
+    let protected_routes = Router::new()
         // Protected routes that require authentication
         .route("/api/me", get(get_user_info))
         .route("/api/protected", get(protected_endpoint))
@@ -228,7 +269,20 @@ async fn main() {
         .merge(handlers::snapshots::create_router())
         // Recommendation API routes (protected)
         .merge(handlers::recommendations::create_router())
-        .layer(auth_layer)
+        .layer(auth_layer);
+
+    // Build application with public and protected routes
+    // Axum handles concurrent requests efficiently using Tokio's async runtime
+    // Each request is processed asynchronously without blocking other requests
+    let app = Router::new()
+        // Swagger UI - publicly accessible (no authentication required)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        // Public routes (no auth required)
+        .route("/", get(root))
+        .route("/health", get(health))
+        // Merge protected routes
+        .merge(protected_routes)
+        // Apply database state to all routes
         .with_state(db);
 
     // Run the server

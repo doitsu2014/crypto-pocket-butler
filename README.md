@@ -8,7 +8,7 @@ A small (but serious) pet project: **crypto portfolio management** across wallet
 - **Framework**: Axum 0.8
 - **Authentication**: Keycloak JWT validation with axum-keycloak-auth
 - **Database**: PostgreSQL with SeaORM
-- **API Documentation**: Swagger UI with utoipa
+- **API Documentation**: Swagger UI with utoipa (publicly accessible at `/swagger-ui`)
 - **Location**: `backend-rust/`
 
 ### Frontend (Next.js)
@@ -241,6 +241,7 @@ See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for frontend configuration.
 
 - [Frontend Setup Guide](docs/FRONTEND_SETUP.md)
 - [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
+- [Swagger UI Guide](docs/SWAGGER_UI_GUIDE.md)
 - [UI Style Guide](docs/UI-STYLE-GUIDE.md)
 - [Backend README](backend-rust/README.md)
 - [Technical Design](docs/TECHNICAL_DESIGN.md)

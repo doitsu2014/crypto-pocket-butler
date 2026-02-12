@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
+import { useToast } from "@/contexts/ToastContext";
+import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
+import EmptyState from "@/components/EmptyState";
+import ErrorAlert from "@/components/ErrorAlert";
 import Link from "next/link";
 
 interface Portfolio {
@@ -37,6 +41,7 @@ export default function PortfoliosClient() {
     description: "",
     is_default: false,
   });
+  const toast = useToast();
 
   useEffect(() => {
     loadPortfolios();
@@ -49,7 +54,8 @@ export default function PortfoliosClient() {
       const data = await apiClient<Portfolio[]>("/v1/portfolios");
       setPortfolios(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load portfolios");
+      const message = err instanceof ApiError ? err.message : "Failed to load portfolios";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -58,7 +64,7 @@ export default function PortfoliosClient() {
   async function handleCreatePortfolio(e: React.FormEvent) {
     e.preventDefault();
     if (!formData.name.trim()) {
-      setError("Portfolio name is required");
+      toast.error("Portfolio name is required");
       return;
     }
 
@@ -74,12 +80,15 @@ export default function PortfoliosClient() {
         },
       });
       
+      toast.success("Portfolio created successfully!");
+      
       // Reset form and reload portfolios
       setFormData({ name: "", description: "", is_default: false });
       setShowCreateForm(false);
       await loadPortfolios();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create portfolio");
+      const message = err instanceof ApiError ? err.message : "Failed to create portfolio";
+      toast.error(message);
     } finally {
       setCreating(false);
     }
@@ -112,10 +121,13 @@ export default function PortfoliosClient() {
 
       {/* Error Display */}
       {error && (
-        <div className="mb-6 bg-red-950/30 border-2 border-red-500/50 rounded-xl p-4 shadow-[0_0_20px_rgba(239,68,68,0.25)]">
-          <p className="text-red-300 text-sm">
-            {error}
-          </p>
+        <div className="mb-6">
+          <ErrorAlert 
+            message={error} 
+            onRetry={loadPortfolios}
+            onDismiss={() => setError(null)}
+            type="banner"
+          />
         </div>
       )}
 
@@ -165,19 +177,19 @@ export default function PortfoliosClient() {
               </label>
             </div>
             <div className="flex gap-3">
-              <button
+              <LoadingButton
                 type="submit"
+                loading={creating}
                 disabled={creating}
                 className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
               >
                 {creating ? "Creating..." : "Create Portfolio"}
-              </button>
+              </LoadingButton>
               <button
                 type="button"
                 onClick={() => {
                   setShowCreateForm(false);
                   setFormData({ name: "", description: "", is_default: false });
-                  setError(null);
                 }}
                 className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
               >
@@ -189,26 +201,22 @@ export default function PortfoliosClient() {
       )}
 
       {/* Loading State */}
-      {loading && (
-        <div className="bg-slate-950/70 backdrop-blur-sm border-2 border-violet-500/40 shadow-[0_0_25px_rgba(139,92,246,0.3)] rounded-2xl p-8">
-          <div className="animate-pulse space-y-4">
-            <div className="h-6 bg-violet-900/50 rounded w-3/4 shadow-[0_0_10px_rgba(139,92,246,0.2)]"></div>
-            <div className="h-4 bg-violet-900/50 rounded w-1/2 shadow-[0_0_10px_rgba(139,92,246,0.2)]"></div>
-          </div>
-        </div>
+      {loading && <LoadingSkeleton count={3} type="card" />}
+
+      {/* Empty State */}
+      {!loading && portfolios.length === 0 && (
+        <EmptyState
+          icon="portfolio"
+          title="No portfolios yet"
+          description="Create your first portfolio to get started"
+          action={{
+            label: "Create Portfolio",
+            onClick: () => setShowCreateForm(true),
+          }}
+        />
       )}
 
       {/* Portfolios List */}
-      {!loading && portfolios.length === 0 && (
-        <div className="bg-slate-950/70 backdrop-blur-sm border-2 border-cyan-500/40 shadow-[0_0_25px_rgba(34,211,238,0.3)] rounded-2xl p-8 text-center">
-          <svg className="w-16 h-16 mx-auto mb-4 text-cyan-400 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-          <p className="text-slate-300 text-lg mb-2">No portfolios yet</p>
-          <p className="text-slate-400 text-sm">Create your first portfolio to get started</p>
-        </div>
-      )}
-
       {!loading && portfolios.length > 0 && (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {portfolios.map((portfolio) => (

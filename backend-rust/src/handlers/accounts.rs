@@ -305,6 +305,9 @@ async fn create_account_handler(
     }
 
     // Create account
+    // SECURITY NOTE: API credentials should be encrypted before storage
+    // Current implementation stores credentials in plaintext with _encrypted suffix as placeholder
+    // TODO: Implement proper encryption/decryption for api_key, api_secret, and passphrase fields
     let new_account = accounts::ActiveModel {
         id: Set(Uuid::new_v4()),
         user_id: Set(user.id),
@@ -312,9 +315,9 @@ async fn create_account_handler(
         account_type: Set(req.account_type),
         exchange_name: Set(req.exchange_name),
         wallet_address: Set(req.wallet_address),
-        api_key_encrypted: Set(req.api_key), // TODO: Encrypt these fields
-        api_secret_encrypted: Set(req.api_secret),
-        passphrase_encrypted: Set(req.passphrase),
+        api_key_encrypted: Set(req.api_key), // TODO: Encrypt before storing
+        api_secret_encrypted: Set(req.api_secret), // TODO: Encrypt before storing
+        passphrase_encrypted: Set(req.passphrase), // TODO: Encrypt before storing
         is_active: Set(true),
         ..Default::default()
     };
@@ -376,6 +379,8 @@ async fn update_account_handler(
     }
 
     // Update account
+    // SECURITY NOTE: When updating API credentials, they should be encrypted before storage
+    // TODO: Implement proper encryption for credential updates
     let mut active_account: accounts::ActiveModel = account.into();
     
     if let Some(name) = req.name {
@@ -385,13 +390,13 @@ async fn update_account_handler(
         active_account.is_active = Set(is_active);
     }
     if let Some(api_key) = req.api_key {
-        active_account.api_key_encrypted = Set(Some(api_key)); // TODO: Encrypt
+        active_account.api_key_encrypted = Set(Some(api_key)); // TODO: Encrypt before storing
     }
     if let Some(api_secret) = req.api_secret {
-        active_account.api_secret_encrypted = Set(Some(api_secret)); // TODO: Encrypt
+        active_account.api_secret_encrypted = Set(Some(api_secret)); // TODO: Encrypt before storing
     }
     if let Some(passphrase) = req.passphrase {
-        active_account.passphrase_encrypted = Set(Some(passphrase)); // TODO: Encrypt
+        active_account.passphrase_encrypted = Set(Some(passphrase)); // TODO: Encrypt before storing
     }
 
     let updated_account = active_account.update(&db).await.map_err(|e| {

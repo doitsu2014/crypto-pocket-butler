@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
+import { useToast } from "@/contexts/ToastContext";
 import Link from "next/link";
+import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
+import EmptyState from "@/components/EmptyState";
+import ErrorAlert from "@/components/ErrorAlert";
 
 const MAX_ORDERS_PREVIEW = 4; // Maximum number of orders to show in list view
 
@@ -89,6 +93,7 @@ function getTypeColor(type: string): string {
 }
 
 export default function RecommendationsClient({ portfolioId }: { portfolioId: string }) {
+  const toast = useToast();
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,8 +110,8 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
       
       setRecommendations(data.recommendations || []);
     } catch (err) {
-      console.error('Error fetching recommendations:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load recommendations');
+      const errorMessage = err instanceof ApiError ? err.message : 'Failed to load recommendations';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -122,11 +127,12 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
         { method: 'POST' }
       );
       
+      toast.success('Recommendations generated successfully');
       // Refetch after generation
       await fetchRecommendations();
     } catch (err) {
-      console.error('Error generating recommendations:', err);
-      setError(err instanceof Error ? err.message : 'Failed to generate recommendations');
+      const errorMessage = err instanceof ApiError ? err.message : 'Failed to generate recommendations';
+      toast.error(errorMessage);
     } finally {
       setGenerating(false);
     }
@@ -137,22 +143,16 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
   }, [fetchRecommendations]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-pulse text-cyan-300 text-lg drop-shadow-[0_0_10px_rgba(103,232,249,0.6)]">
-          Loading recommendations...
-        </div>
-      </div>
-    );
+    return <LoadingSkeleton type="list" count={3} />;
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-red-400 text-lg drop-shadow-[0_0_10px_rgba(239,68,68,0.6)]">
-          Error: {error}
-        </div>
-      </div>
+      <ErrorAlert 
+        message={error}
+        onRetry={fetchRecommendations}
+        onDismiss={() => setError(null)}
+      />
     );
   }
 
@@ -166,23 +166,25 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
           </h2>
           <p className="mt-2 text-slate-400">AI-powered rebalancing suggestions (suggest-only, no execution)</p>
         </div>
-        <button
+        <LoadingButton
+          loading={generating}
           onClick={generateMockRecommendations}
-          disabled={generating}
           className="px-6 py-3 bg-gradient-to-r from-fuchsia-600 to-violet-600 hover:from-fuchsia-500 hover:to-violet-500 text-white font-medium rounded-lg border-2 border-fuchsia-500/50 shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {generating ? 'Generating...' : 'Generate Mock Recommendations'}
-        </button>
+        </LoadingButton>
       </div>
 
       {recommendations.length === 0 ? (
-        <div className="bg-slate-950/70 backdrop-blur-sm rounded-xl border-2 border-fuchsia-500/30 p-12 text-center shadow-[0_0_20px_rgba(217,70,239,0.2)]">
-          <svg className="mx-auto h-16 w-16 text-fuchsia-400/50 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-          </svg>
-          <p className="text-lg text-slate-300 mb-4">No recommendations available yet</p>
-          <p className="text-sm text-slate-400">Click "Generate Mock Recommendations" to create sample recommendations for this portfolio.</p>
-        </div>
+        <EmptyState
+          icon="recommendation"
+          title="No recommendations available yet"
+          description='Click "Generate Mock Recommendations" to create sample recommendations for this portfolio.'
+          action={{
+            label: "Generate Recommendations",
+            onClick: generateMockRecommendations
+          }}
+        />
       ) : (
         <div className="grid gap-6">
           {recommendations.map((rec) => (

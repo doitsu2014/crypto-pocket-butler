@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -48,11 +48,7 @@ export default function SettingsClient({ portfolioId }: { portfolioId: string })
     max_alt_cap: 100,
   });
 
-  useEffect(() => {
-    loadPortfolio();
-  }, [portfolioId]);
-
-  async function loadPortfolio() {
+  const loadPortfolio = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -84,7 +80,11 @@ export default function SettingsClient({ portfolioId }: { portfolioId: string })
     } finally {
       setLoading(false);
     }
-  }
+  }, [portfolioId]);
+
+  useEffect(() => {
+    loadPortfolio();
+  }, [loadPortfolio]);
 
   function addTargetEntry() {
     setTargetEntries([...targetEntries, { asset: "", percentage: 0 }]);
@@ -285,7 +285,7 @@ export default function SettingsClient({ portfolioId }: { portfolioId: string })
                 Define your desired asset allocation. Total must equal 100%.
               </p>
             </div>
-            <div className={`text-lg font-bold ${isValidTotal ? 'text-green-400' : 'text-red-400'} drop-shadow-[0_0_8px_rgba(${isValidTotal ? '34,197,94' : '239,68,68'},0.4)]`}>
+            <div className={`text-lg font-bold ${isValidTotal ? 'text-green-400' : 'text-red-400'} ${isValidTotal ? 'drop-shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'drop-shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`}>
               Total: {totalPercentage.toFixed(2)}%
             </div>
           </div>

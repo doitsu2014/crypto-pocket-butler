@@ -503,7 +503,10 @@ export default function AccountsClient() {
               
               {account.account_type === "wallet" && account.wallet_address && (
                 <p className="text-slate-400 text-xs mb-3 font-mono break-all">
-                  {account.wallet_address.slice(0, 10)}...{account.wallet_address.slice(-8)}
+                  {account.wallet_address.length > 18 
+                    ? `${account.wallet_address.slice(0, 10)}...${account.wallet_address.slice(-8)}`
+                    : account.wallet_address
+                  }
                 </p>
               )}
               

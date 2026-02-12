@@ -2,7 +2,7 @@ use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::{delete, get, put},
+    routing::{delete, get},
     Router,
 };
 use axum_keycloak_auth::decode::KeycloakToken;

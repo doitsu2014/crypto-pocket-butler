@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
+import { useToast } from "@/contexts/ToastContext";
+import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
+import EmptyState from "@/components/EmptyState";
+import ErrorAlert from "@/components/ErrorAlert";
 
 interface Account {
   id: string;
@@ -59,6 +63,7 @@ export default function AccountsClient() {
     api_secret: "",
     passphrase: "",
   });
+  const toast = useToast();
 
   useEffect(() => {
     loadAccounts();
@@ -71,7 +76,8 @@ export default function AccountsClient() {
       const data = await apiClient<Account[]>("/v1/accounts");
       setAccounts(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load accounts");
+      const message = err instanceof ApiError ? err.message : "Failed to load accounts";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -80,7 +86,7 @@ export default function AccountsClient() {
   async function handleCreateWallet(e: React.FormEvent) {
     e.preventDefault();
     if (!walletFormData.name.trim() || !walletFormData.wallet_address.trim()) {
-      setError("Name and wallet address are required");
+      toast.error("Name and wallet address are required");
       return;
     }
 
@@ -96,12 +102,15 @@ export default function AccountsClient() {
         },
       });
       
+      toast.success("Wallet created successfully!");
+      
       setWalletFormData({ name: "", wallet_address: "" });
       setShowCreateForm(false);
       setFormType(null);
       await loadAccounts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create wallet");
+      const message = err instanceof ApiError ? err.message : "Failed to create wallet";
+      toast.error(message);
     } finally {
       setCreating(false);
     }
@@ -110,7 +119,7 @@ export default function AccountsClient() {
   async function handleCreateExchange(e: React.FormEvent) {
     e.preventDefault();
     if (!exchangeFormData.name.trim() || !exchangeFormData.api_key.trim() || !exchangeFormData.api_secret.trim()) {
-      setError("Name, API key, and API secret are required");
+      toast.error("Name, API key, and API secret are required");
       return;
     }
 
@@ -129,12 +138,15 @@ export default function AccountsClient() {
         },
       });
       
+      toast.success("Exchange account created successfully!");
+      
       setExchangeFormData({ name: "", exchange_name: "okx", api_key: "", api_secret: "", passphrase: "" });
       setShowCreateForm(false);
       setFormType(null);
       await loadAccounts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create exchange account");
+      const message = err instanceof ApiError ? err.message : "Failed to create exchange account";
+      toast.error(message);
     } finally {
       setCreating(false);
     }
@@ -148,12 +160,14 @@ export default function AccountsClient() {
         method: "POST",
       });
       if (result.success) {
+        toast.success(`Account synced successfully! ${result.holdings_count} holdings updated.`);
         await loadAccounts();
       } else {
-        setError(result.error || "Sync failed");
+        toast.error(result.error || "Sync failed");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to sync account");
+      const message = err instanceof ApiError ? err.message : "Failed to sync account";
+      toast.error(message);
     } finally {
       setSyncing(null);
     }
@@ -166,9 +180,11 @@ export default function AccountsClient() {
       await apiClient("/v1/accounts/sync-all", {
         method: "POST",
       });
+      toast.success("All accounts synced successfully!");
       await loadAccounts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to sync accounts");
+      const message = err instanceof ApiError ? err.message : "Failed to sync accounts";
+      toast.error(message);
     } finally {
       setSyncing(null);
     }
@@ -180,10 +196,12 @@ export default function AccountsClient() {
       await apiClient(`/v1/accounts/${accountId}`, {
         method: "DELETE",
       });
+      toast.success("Account deleted successfully!");
       setDeletingAccount(null);
       await loadAccounts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete account");
+      const message = err instanceof ApiError ? err.message : "Failed to delete account";
+      toast.error(message);
       setDeletingAccount(null);
     }
   }
@@ -224,8 +242,9 @@ export default function AccountsClient() {
           </h2>
         </div>
         <div className="flex gap-3">
-          <button
+          <LoadingButton
             onClick={handleSyncAll}
+            loading={syncing === "all"}
             disabled={syncing === "all" || accounts.length === 0}
             className="inline-flex items-center px-4 py-2 border-2 border-cyan-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transition-all duration-300 transform hover:scale-105"
           >
@@ -233,7 +252,7 @@ export default function AccountsClient() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             {syncing === "all" ? "Syncing..." : "Sync All"}
-          </button>
+          </LoadingButton>
           <button
             onClick={() => openCreateForm(null)}
             className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300 transform hover:scale-105"
@@ -248,10 +267,13 @@ export default function AccountsClient() {
 
       {/* Error Display */}
       {error && (
-        <div className="mb-6 bg-red-950/30 border-2 border-red-500/50 rounded-xl p-4 shadow-[0_0_20px_rgba(239,68,68,0.25)]">
-          <p className="text-red-300 text-sm">
-            {error}
-          </p>
+        <div className="mb-6">
+          <ErrorAlert 
+            message={error} 
+            onRetry={loadAccounts}
+            onDismiss={() => setError(null)}
+            type="banner"
+          />
         </div>
       )}
 
@@ -329,13 +351,14 @@ export default function AccountsClient() {
                   />
                 </div>
                 <div className="flex gap-3">
-                  <button
+                  <LoadingButton
                     type="submit"
+                    loading={creating}
                     disabled={creating}
                     className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
                   >
                     {creating ? "Creating..." : "Create Wallet"}
-                  </button>
+                  </LoadingButton>
                   <button
                     type="button"
                     onClick={closeForm}
@@ -421,13 +444,14 @@ export default function AccountsClient() {
                   />
                 </div>
                 <div className="flex gap-3">
-                  <button
+                  <LoadingButton
                     type="submit"
+                    loading={creating}
                     disabled={creating}
                     className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
                   >
                     {creating ? "Creating..." : "Create Exchange Account"}
-                  </button>
+                  </LoadingButton>
                   <button
                     type="button"
                     onClick={closeForm}
@@ -443,24 +467,19 @@ export default function AccountsClient() {
       )}
 
       {/* Loading State */}
-      {loading && (
-        <div className="bg-slate-950/70 backdrop-blur-sm border-2 border-violet-500/40 shadow-[0_0_25px_rgba(139,92,246,0.3)] rounded-2xl p-8">
-          <div className="animate-pulse space-y-4">
-            <div className="h-6 bg-violet-900/50 rounded w-3/4 shadow-[0_0_10px_rgba(139,92,246,0.2)]"></div>
-            <div className="h-4 bg-violet-900/50 rounded w-1/2 shadow-[0_0_10px_rgba(139,92,246,0.2)]"></div>
-          </div>
-        </div>
-      )}
+      {loading && <LoadingSkeleton count={3} type="card" />}
 
-      {/* Accounts List */}
+      {/* Empty State */}
       {!loading && accounts.length === 0 && (
-        <div className="bg-slate-950/70 backdrop-blur-sm border-2 border-cyan-500/40 shadow-[0_0_25px_rgba(34,211,238,0.3)] rounded-2xl p-8 text-center">
-          <svg className="w-16 h-16 mx-auto mb-4 text-cyan-400 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-          </svg>
-          <p className="text-slate-300 text-lg mb-2">No accounts yet</p>
-          <p className="text-slate-400 text-sm">Add a wallet or exchange account to get started</p>
-        </div>
+        <EmptyState
+          icon="account"
+          title="No accounts yet"
+          description="Add a wallet or exchange account to get started"
+          action={{
+            label: "New Account",
+            onClick: () => openCreateForm(null),
+          }}
+        />
       )}
 
       {!loading && accounts.length > 0 && (
@@ -526,8 +545,9 @@ export default function AccountsClient() {
               </div>
 
               <div className="flex gap-2">
-                <button
+                <LoadingButton
                   onClick={() => handleSyncAccount(account.id)}
+                  loading={syncing === account.id}
                   disabled={syncing === account.id}
                   className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-cyan-500/50 text-xs font-medium rounded-lg text-cyan-300 bg-cyan-950/30 hover:bg-cyan-900/50 hover:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
@@ -535,7 +555,7 @@ export default function AccountsClient() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                   {syncing === account.id ? "Syncing..." : "Sync"}
-                </button>
+                </LoadingButton>
                 {deletingAccount === account.id ? (
                   <>
                     <button

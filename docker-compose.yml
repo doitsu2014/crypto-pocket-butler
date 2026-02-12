@@ -75,14 +75,14 @@ services:
     container_name: crypto-pocket-butler-frontend
     environment:
       # NextAuth Configuration
-      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-in-production-use-openssl-rand-base64-32}
-      # Keycloak Configuration
+      # Keycloak Configuration (server-side, accessed from container)
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-crypto-pocket-butler}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
-      KEYCLOAK_ISSUER: http://keycloak:8080/realms/${KEYCLOAK_REALM:-myrealm}
-      # Backend API Configuration
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:3000
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/myrealm}
+      # Backend API Configuration (client-side, accessed from browser)
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:3000}
     ports:
       - "3001:3001"
     depends_on:

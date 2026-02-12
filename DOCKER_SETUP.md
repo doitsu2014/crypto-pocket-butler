@@ -23,6 +23,8 @@ Required configuration in `.env`:
 - `KEYCLOAK_CLIENT_SECRET`: Your Keycloak client secret (leave empty for public client)
 - `NEXTAUTH_SECRET`: Generate a secure secret with `openssl rand -base64 32`
 
+**Note**: The default configuration uses internal Docker network names for service-to-service communication (e.g., `http://keycloak:8080`), while external access uses `localhost`. This is the recommended setup for Docker Compose.
+
 ### 2. Start All Services
 
 Start the entire stack (database, Keycloak, backend, frontend):

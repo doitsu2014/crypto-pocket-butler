@@ -739,10 +739,14 @@ pub async fn update_portfolio_accounts(
     }
     
     // Get updated accounts list
-    let updated_accounts = accounts::Entity::find()
-        .filter(accounts::Column::Id.is_in(req.account_ids))
-        .all(&db)
-        .await?;
+    let updated_accounts = if req.account_ids.is_empty() {
+        Vec::new()
+    } else {
+        accounts::Entity::find()
+            .filter(accounts::Column::Id.is_in(req.account_ids))
+            .all(&db)
+            .await?
+    };
     
     let response: Vec<AccountInPortfolioResponse> = updated_accounts
         .into_iter()

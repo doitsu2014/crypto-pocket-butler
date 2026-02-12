@@ -1,21 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
 
 interface Account {
-  id: string;
-  name: string;
-  account_type: string;
-  exchange_name?: string;
-  wallet_address?: string;
-  is_active: boolean;
-  last_synced_at?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface AccountInPortfolio {
   id: string;
   name: string;
   account_type: string;
@@ -40,19 +28,13 @@ export default function PortfolioCompositionEditor({
 }: PortfolioCompositionEditorProps) {
   const [showEditor, setShowEditor] = useState(false);
   const [allAccounts, setAllAccounts] = useState<Account[]>([]);
-  const [portfolioAccounts, setPortfolioAccounts] = useState<AccountInPortfolio[]>([]);
+  const [portfolioAccounts, setPortfolioAccounts] = useState<Account[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (showEditor) {
-      loadData();
-    }
-  }, [showEditor, portfolioId]);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -60,7 +42,7 @@ export default function PortfolioCompositionEditor({
       // Load all user accounts and portfolio accounts in parallel
       const [accounts, portAccounts] = await Promise.all([
         apiClient<Account[]>("/v1/accounts"),
-        apiClient<AccountInPortfolio[]>(`/v1/portfolios/${portfolioId}/accounts`),
+        apiClient<Account[]>(`/v1/portfolios/${portfolioId}/accounts`),
       ]);
 
       setAllAccounts(accounts);
@@ -74,7 +56,13 @@ export default function PortfolioCompositionEditor({
     } finally {
       setLoading(false);
     }
-  }
+  }, [portfolioId]);
+
+  useEffect(() => {
+    if (showEditor) {
+      loadData();
+    }
+  }, [showEditor, loadData]);
 
   async function handleSave() {
     try {

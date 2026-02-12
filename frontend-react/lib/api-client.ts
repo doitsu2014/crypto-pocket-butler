@@ -2,7 +2,7 @@
  * Utility functions for making authenticated API calls to the backend
  */
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
 export interface ApiClientOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";

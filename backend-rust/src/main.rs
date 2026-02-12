@@ -127,7 +127,8 @@ struct HealthResponse {
         To use OAuth2 flows in Swagger UI, click the 'Authorize' button and enter your Keycloak credentials.",
     ),
     servers(
-        (url = "http://localhost:3001", description = "Local development server")
+        (url = "http://localhost:3001", description = "Local development server (standalone)"),
+        (url = "http://localhost:3000", description = "Docker backend server")
     )
 )]
 struct ApiDoc;
@@ -298,9 +299,16 @@ async fn main() {
         .with_state(db);
 
     // Run the server
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3001));
+    let port = std::env::var("SERVER_PORT")
+        .unwrap_or_else(|_| "3001".to_string())
+        .parse::<u16>()
+        .expect("SERVER_PORT must be a valid port number");
+    let host = std::env::var("SERVER_HOST")
+        .unwrap_or_else(|_| "0.0.0.0".to_string());
+    
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("Starting server on {}", addr);
-    tracing::info!("Swagger UI available at http://localhost:3001/swagger-ui");
+    tracing::info!("Swagger UI available at http://{}:{}/swagger-ui", host, port);
     tracing::info!("Server ready to handle concurrent requests");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

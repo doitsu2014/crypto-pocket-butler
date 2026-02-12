@@ -360,9 +360,6 @@ async fn unset_other_default_portfolios(
         (status = 200, description = "List of portfolios", body = Vec<PortfolioResponse>),
         (status = 401, description = "Unauthorized")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
     tag = "portfolios"
 )]
 pub async fn list_portfolios(
@@ -393,9 +390,7 @@ pub async fn list_portfolios(
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Portfolio not found")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "portfolios"
 )]
 pub async fn get_portfolio(
@@ -418,9 +413,7 @@ pub async fn get_portfolio(
         (status = 400, description = "Bad request"),
         (status = 401, description = "Unauthorized")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "portfolios"
 )]
 pub async fn create_portfolio(
@@ -466,9 +459,7 @@ pub async fn create_portfolio(
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Portfolio not found")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "portfolios"
 )]
 pub async fn update_portfolio(
@@ -520,9 +511,7 @@ pub async fn update_portfolio(
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Portfolio not found")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "portfolios"
 )]
 pub async fn delete_portfolio(
@@ -550,9 +539,7 @@ pub async fn delete_portfolio(
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Portfolio not found")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "portfolios"
 )]
 pub async fn list_portfolio_accounts(
@@ -598,9 +585,7 @@ pub async fn list_portfolio_accounts(
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Portfolio or account not found")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "portfolios"
 )]
 pub async fn add_account_to_portfolio(
@@ -656,9 +641,7 @@ pub async fn add_account_to_portfolio(
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Portfolio or account association not found")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "portfolios"
 )]
 pub async fn remove_account_from_portfolio(
@@ -698,9 +681,7 @@ pub async fn remove_account_from_portfolio(
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Portfolio not found")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "portfolios"
 )]
 pub async fn update_portfolio_accounts(
@@ -795,9 +776,7 @@ pub async fn update_portfolio_accounts(
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Portfolio not found")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "portfolios"
 )]
 pub async fn get_portfolio_holdings(

@@ -5,7 +5,7 @@ Cargo.lock
 
 # Environment
 .env
-.env.local
+.env
 
 # IDE
 .idea/

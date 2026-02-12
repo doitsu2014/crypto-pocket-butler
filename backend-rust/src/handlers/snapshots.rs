@@ -206,9 +206,6 @@ async fn check_portfolio_ownership(
         (status = 404, description = "Portfolio not found"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
     tag = "snapshots"
 )]
 async fn list_portfolio_snapshots_handler(
@@ -298,9 +295,7 @@ async fn list_portfolio_snapshots_handler(
         (status = 404, description = "Portfolio not found"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "snapshots"
 )]
 async fn create_portfolio_snapshot_handler(
@@ -360,9 +355,7 @@ async fn create_portfolio_snapshot_handler(
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "snapshots"
 )]
 async fn create_all_user_snapshots_handler(

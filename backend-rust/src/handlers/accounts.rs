@@ -184,9 +184,6 @@ async fn get_or_create_user(
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
     tag = "accounts"
 )]
 async fn list_accounts_handler(
@@ -224,9 +221,7 @@ async fn list_accounts_handler(
         (status = 404, description = "Account not found"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "accounts"
 )]
 async fn get_account_handler(
@@ -266,9 +261,7 @@ async fn get_account_handler(
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "accounts"
 )]
 async fn create_account_handler(
@@ -348,9 +341,7 @@ async fn create_account_handler(
         (status = 404, description = "Account not found"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "accounts"
 )]
 async fn update_account_handler(
@@ -424,9 +415,7 @@ async fn update_account_handler(
         (status = 404, description = "Account not found"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "accounts"
 )]
 async fn delete_account_handler(
@@ -481,9 +470,7 @@ async fn delete_account_handler(
         (status = 404, description = "Account not found"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "accounts"
 )]
 async fn sync_account_handler(
@@ -538,9 +525,7 @@ async fn sync_account_handler(
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
+
     tag = "accounts"
 )]
 async fn sync_all_accounts_handler(

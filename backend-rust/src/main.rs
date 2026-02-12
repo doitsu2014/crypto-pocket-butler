@@ -124,7 +124,7 @@ struct HealthResponse {
         To use OAuth2 flows in Swagger UI, click the 'Authorize' button and enter your Keycloak credentials.",
     ),
     servers(
-        (url = "http://localhost:3000", description = "Local development server")
+        (url = "http://localhost:3001", description = "Local development server")
     )
 )]
 struct ApiDoc;
@@ -188,6 +188,13 @@ impl Modify for SecurityAddon {
                     ])
                 ),
             );
+
+            use utoipa::openapi::security::SecurityRequirement;
+            openapi.security = Some(vec![
+                SecurityRequirement::new("bearer_auth", Vec::<String>::new()),
+                SecurityRequirement::new("oauth2_client_credentials", Vec::<String>::new()),
+                SecurityRequirement::new("oauth2_authorization_code", Vec::<String>::new()),
+            ]);
         }
     }
 }
@@ -286,9 +293,9 @@ async fn main() {
         .with_state(db);
 
     // Run the server
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3001));
     tracing::info!("Starting server on {}", addr);
-    tracing::info!("Swagger UI available at http://localhost:3000/swagger-ui");
+    tracing::info!("Swagger UI available at http://localhost:3001/swagger-ui");
     tracing::info!("Server ready to handle concurrent requests");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
@@ -338,9 +345,6 @@ async fn health() -> Json<HealthResponse> {
         (status = 200, description = "User information", body = UserInfo),
         (status = 401, description = "Unauthorized - invalid or missing JWT token")
     ),
-    security(
-        ("bearer_auth" = [])
-    ),
     tag = "crypto-pocket-butler"
 )]
 async fn get_user_info(Extension(token): Extension<KeycloakToken<String>>) -> Json<UserInfo> {
@@ -363,7 +367,9 @@ async fn get_user_info(Extension(token): Extension<KeycloakToken<String>>) -> Js
         (status = 401, description = "Unauthorized - invalid or missing JWT token")
     ),
     security(
-        ("bearer_auth" = [])
+        ("bearer_auth" = []),
+        ("oauth2_client_credentials" = []),
+        ("oauth2_authorization_code" = [])
     ),
     tag = "crypto-pocket-butler"
 )]

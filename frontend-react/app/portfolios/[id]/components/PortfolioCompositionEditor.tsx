@@ -8,7 +8,6 @@ import ErrorAlert from "@/components/ErrorAlert";
 import { LoadingSkeleton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import { LoadingButton } from "@/components/Loading";
-import { ApiError } from "@/lib/api-client";
 
 interface Account {
   id: string;
@@ -40,7 +39,7 @@ export default function PortfolioCompositionEditor({
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const toast = useToast();
 
   const loadData = useCallback(async () => {
@@ -61,7 +60,7 @@ export default function PortfolioCompositionEditor({
       const selectedIds = new Set(portAccounts.map(a => a.id));
       setSelectedAccountIds(selectedIds);
     } catch (err) {
-      setError(err as ApiError);
+      setError(err instanceof Error ? err : new Error('Failed to load data'));
     } finally {
       setLoading(false);
     }
@@ -92,8 +91,9 @@ export default function PortfolioCompositionEditor({
         onUpdate();
       }
     } catch (err) {
-      setError(err as ApiError);
-      toast.error(err instanceof Error ? err.message : "Failed to save portfolio composition");
+      const errorObj = err instanceof Error ? err : new Error("Failed to save portfolio composition");
+      setError(errorObj);
+      toast.error(errorObj.message);
     } finally {
       setSaving(false);
     }

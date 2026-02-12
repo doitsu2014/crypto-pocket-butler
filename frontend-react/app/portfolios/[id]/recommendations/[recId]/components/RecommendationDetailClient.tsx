@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useToast } from "@/contexts/ToastContext";
 import ErrorAlert from "@/components/ErrorAlert";
 import { LoadingSpinner, LoadingButton } from "@/components/Loading";
-import { ApiError } from "@/lib/api-client";
 
 interface ProposedOrder {
   action: string;
@@ -97,7 +96,7 @@ export default function RecommendationDetailClient({
 }) {
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const toast = useToast();
@@ -114,7 +113,7 @@ export default function RecommendationDetailClient({
       setRecommendation(data);
     } catch (err) {
       console.error('Error fetching recommendation:', err);
-      setError(err as ApiError);
+      setError(err instanceof Error ? err : new Error('Failed to load recommendation'));
     } finally {
       setLoading(false);
     }
@@ -131,7 +130,8 @@ export default function RecommendationDetailClient({
       fetchRecommendation();
     } catch (err) {
       console.error('Error approving recommendation:', err);
-      toast.error(err instanceof Error ? err.message : "Failed to approve recommendation");
+      const message = err instanceof Error ? err.message : "Failed to approve recommendation";
+      toast.error(message);
     } finally {
       setApproving(false);
     }
@@ -148,7 +148,8 @@ export default function RecommendationDetailClient({
       fetchRecommendation();
     } catch (err) {
       console.error('Error rejecting recommendation:', err);
-      toast.error(err instanceof Error ? err.message : "Failed to reject recommendation");
+      const message = err instanceof Error ? err.message : "Failed to reject recommendation";
+      toast.error(message);
     } finally {
       setRejecting(false);
     }

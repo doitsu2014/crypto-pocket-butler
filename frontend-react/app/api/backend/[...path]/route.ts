@@ -78,9 +78,17 @@ async function handleRequest(
     }
 
     if (!response.ok) {
-      const errorText = await response.text();
+      // Check if error response is JSON or text
+      const errorContentType = response.headers.get("content-type");
+      let errorDetails;
+      if (errorContentType?.includes("application/json")) {
+        const errorJson = await response.json();
+        errorDetails = JSON.stringify(errorJson);
+      } else {
+        errorDetails = await response.text();
+      }
       return NextResponse.json(
-        { error: `Backend error: ${response.statusText}`, details: errorText },
+        { error: `Backend error: ${response.statusText}`, details: errorDetails },
         { status: response.status }
       );
     }
@@ -101,7 +109,8 @@ async function handleRequest(
   } catch (error) {
     return NextResponse.json(
       { 
-        error: "Failed to proxy request to backend", 
+        error: "Failed to proxy request to backend",
+        endpoint: backendPath,
         details: error instanceof Error ? error.message : String(error) 
       },
       { status: 500 }

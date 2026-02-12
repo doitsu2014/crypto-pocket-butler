@@ -150,7 +150,7 @@ impl Modify for SecurityAddon {
 
             // Get Keycloak configuration from environment
             let keycloak_server = std::env::var("KEYCLOAK_SERVER")
-                .unwrap_or_else(|_| "https://keycloak.example.com".to_string());
+                .unwrap_or_else(|_| "http://localhost:8080".to_string());
             let keycloak_realm = std::env::var("KEYCLOAK_REALM")
                 .unwrap_or_else(|_| "myrealm".to_string());
             
@@ -269,8 +269,7 @@ async fn main() {
         .merge(handlers::snapshots::create_router())
         // Recommendation API routes (protected)
         .merge(handlers::recommendations::create_router())
-        .layer(auth_layer)
-        .with_state(db.clone());
+        .layer(auth_layer);
 
     // Build application with public and protected routes
     // Axum handles concurrent requests efficiently using Tokio's async runtime
@@ -282,7 +281,9 @@ async fn main() {
         .route("/", get(root))
         .route("/health", get(health))
         // Merge protected routes
-        .merge(protected_routes);
+        .merge(protected_routes)
+        // Apply database state to all routes
+        .with_state(db);
 
     // Run the server
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));

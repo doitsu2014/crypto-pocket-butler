@@ -1,9 +1,9 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import PortfoliosClient from "./components/PortfoliosClient";
+import AccountsClient from "./components/AccountsClient";
 
-export default async function PortfoliosPage() {
+export default async function AccountsPage() {
   const session = await auth();
 
   if (!session?.user) {
@@ -42,10 +42,10 @@ export default async function PortfoliosPage() {
                 Dashboard
               </Link>
               <Link
-                href="/accounts"
+                href="/portfolios"
                 className="text-sm text-cyan-300 hover:text-cyan-200 transition-colors drop-shadow-[0_0_6px_rgba(103,232,249,0.4)]"
               >
-                Accounts
+                Portfolios
               </Link>
             </div>
           </div>
@@ -54,7 +54,7 @@ export default async function PortfoliosPage() {
 
       <main className="relative max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
-          <PortfoliosClient />
+          <AccountsClient />
         </div>
       </main>
     </div>

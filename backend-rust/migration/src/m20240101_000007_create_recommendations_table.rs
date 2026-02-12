@@ -16,7 +16,7 @@ impl MigrationTrait for Migration {
                     .col(string(Recommendations::Status).not_null()) // "pending", "approved", "rejected", "executed"
                     .col(string(Recommendations::RecommendationType).not_null()) // "rebalance", "take_profit", "stop_loss"
                     .col(text(Recommendations::Rationale).not_null()) // Why this recommendation was made
-                    .col(json(Recommendations::ProposedOrders)) // Array of order objects
+                    .col(json(Recommendations::ProposedOrders).not_null()) // Array of order objects (required: action, asset, quantity, estimated_price, estimated_value_usd)
                     .col(decimal_null(Recommendations::ExpectedImpact)) // Expected value impact (USD)
                     .col(json_null(Recommendations::Metadata)) // Additional data (risk score, confidence, etc.)
                     .col(timestamp_with_time_zone(Recommendations::CreatedAt).default(Expr::current_timestamp()).not_null())

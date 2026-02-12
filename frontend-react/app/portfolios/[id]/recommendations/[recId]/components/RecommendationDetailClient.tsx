@@ -267,7 +267,7 @@ export default function RecommendationDetailClient({
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-slate-400">Estimated Value</div>
-                  <div className="text-lg font-bold text-cyan-300">{order.estimated_value_usd}</div>
+                  <div className="text-lg font-bold text-cyan-300">{formatCurrency(order.estimated_value_usd)}</div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">

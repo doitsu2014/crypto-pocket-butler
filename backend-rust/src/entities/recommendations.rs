@@ -10,7 +10,7 @@ pub struct Model {
     pub status: String, // "pending", "approved", "rejected", "executed"
     pub recommendation_type: String, // "rebalance", "take_profit", "stop_loss"
     pub rationale: String,
-    pub proposed_orders: Json, // Array of order objects
+    pub proposed_orders: Json, // Array of order objects: [{action, asset, quantity, estimated_price, estimated_value_usd}]
     pub expected_impact: Option<Decimal>,
     pub metadata: Option<Json>,
     pub created_at: DateTimeWithTimeZone,

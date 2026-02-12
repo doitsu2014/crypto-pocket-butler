@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
 import Link from "next/link";
 
+const MAX_ORDERS_PREVIEW = 4; // Maximum number of orders to show in list view
+
 interface ProposedOrder {
   action: string;
   asset: string;
@@ -214,7 +216,7 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
                     Proposed Orders ({rec.proposed_orders.length})
                   </h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {rec.proposed_orders.slice(0, 4).map((order, idx) => (
+                    {rec.proposed_orders.slice(0, MAX_ORDERS_PREVIEW).map((order, idx) => (
                       <div key={idx} className="text-xs">
                         <span className={`font-medium ${order.action === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
                           {order.action.toUpperCase()}

@@ -355,7 +355,7 @@ async fn unset_other_default_portfolios(
 /// List all portfolios for the authenticated user
 #[utoipa::path(
     get,
-    path = "/v1/portfolios",
+    path = "/api/v1/portfolios",
     responses(
         (status = 200, description = "List of portfolios", body = Vec<PortfolioResponse>),
         (status = 401, description = "Unauthorized")
@@ -380,7 +380,7 @@ pub async fn list_portfolios(
 /// Get a single portfolio by ID
 #[utoipa::path(
     get,
-    path = "/v1/portfolios/{id}",
+    path = "/api/v1/portfolios/{id}",
     params(
         ("id" = Uuid, Path, description = "Portfolio ID")
     ),
@@ -406,7 +406,7 @@ pub async fn get_portfolio(
 /// Create a new portfolio
 #[utoipa::path(
     post,
-    path = "/v1/portfolios",
+    path = "/api/v1/portfolios",
     request_body = CreatePortfolioRequest,
     responses(
         (status = 201, description = "Portfolio created", body = PortfolioResponse),
@@ -447,7 +447,7 @@ pub async fn create_portfolio(
 /// Update a portfolio
 #[utoipa::path(
     put,
-    path = "/v1/portfolios/{id}",
+    path = "/api/v1/portfolios/{id}",
     params(
         ("id" = Uuid, Path, description = "Portfolio ID")
     ),
@@ -501,7 +501,7 @@ pub async fn update_portfolio(
 /// Delete a portfolio
 #[utoipa::path(
     delete,
-    path = "/v1/portfolios/{id}",
+    path = "/api/v1/portfolios/{id}",
     params(
         ("id" = Uuid, Path, description = "Portfolio ID")
     ),
@@ -529,7 +529,7 @@ pub async fn delete_portfolio(
 /// List all accounts in a portfolio
 #[utoipa::path(
     get,
-    path = "/v1/portfolios/{id}/accounts",
+    path = "/api/v1/portfolios/{id}/accounts",
     params(
         ("id" = Uuid, Path, description = "Portfolio ID")
     ),
@@ -573,7 +573,7 @@ pub async fn list_portfolio_accounts(
 /// Add an account to a portfolio
 #[utoipa::path(
     post,
-    path = "/v1/portfolios/{id}/accounts",
+    path = "/api/v1/portfolios/{id}/accounts",
     params(
         ("id" = Uuid, Path, description = "Portfolio ID")
     ),
@@ -630,7 +630,7 @@ pub async fn add_account_to_portfolio(
 /// Remove an account from a portfolio
 #[utoipa::path(
     delete,
-    path = "/v1/portfolios/{id}/accounts/{account_id}",
+    path = "/api/v1/portfolios/{id}/accounts/{account_id}",
     params(
         ("id" = Uuid, Path, description = "Portfolio ID"),
         ("account_id" = Uuid, Path, description = "Account ID")
@@ -669,7 +669,7 @@ pub async fn remove_account_from_portfolio(
 /// Update portfolio accounts (batch replace)
 #[utoipa::path(
     put,
-    path = "/v1/portfolios/{id}/accounts",
+    path = "/api/v1/portfolios/{id}/accounts",
     params(
         ("id" = Uuid, Path, description = "Portfolio ID")
     ),
@@ -766,7 +766,7 @@ pub async fn update_portfolio_accounts(
 /// Get portfolio holdings and allocation
 #[utoipa::path(
     get,
-    path = "/v1/portfolios/{id}/holdings",
+    path = "/api/v1/portfolios/{id}/holdings",
     params(
         ("id" = Uuid, Path, description = "Portfolio ID")
     ),
@@ -904,25 +904,25 @@ pub async fn get_portfolio_holdings(
 
 pub fn create_router() -> Router<DatabaseConnection> {
     Router::new()
-        .route("/v1/portfolios", get(list_portfolios).post(create_portfolio))
+        .route("/api/v1/portfolios", get(list_portfolios).post(create_portfolio))
         .route(
-            "/v1/portfolios/{id}",
+            "/api/v1/portfolios/{id}",
             get(get_portfolio)
                 .put(update_portfolio)
                 .delete(delete_portfolio),
         )
         .route(
-            "/v1/portfolios/{id}/accounts",
+            "/api/v1/portfolios/{id}/accounts",
             get(list_portfolio_accounts)
                 .post(add_account_to_portfolio)
                 .put(update_portfolio_accounts),
         )
         .route(
-            "/v1/portfolios/{id}/accounts/{account_id}",
+            "/api/v1/portfolios/{id}/accounts/{account_id}",
             delete(remove_account_from_portfolio),
         )
         .route(
-            "/v1/portfolios/{id}/holdings",
+            "/api/v1/portfolios/{id}/holdings",
             get(get_portfolio_holdings),
         )
 }

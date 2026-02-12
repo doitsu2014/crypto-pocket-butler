@@ -1,0 +1,10 @@
+target/
+.env
+.env.local
+*.log
+.git/
+.gitignore
+README.md
+docker-compose.yml
+Dockerfile
+.dockerignore

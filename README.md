@@ -22,6 +22,23 @@ See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for detailed setup instruct
 
 ## Quick Start
 
+### Option 1: Docker Compose (Recommended)
+
+The easiest way to get started is using Docker Compose, which sets up the entire stack (database, Keycloak, backend, frontend):
+
+```bash
+# Copy environment variables
+cp .env.example .env
+# Edit .env and set NEXTAUTH_SECRET (generate with: openssl rand -base64 32)
+
+# Start all services
+docker-compose up -d
+```
+
+See [DOCKER_SETUP.md](DOCKER_SETUP.md) for detailed Docker instructions.
+
+### Option 2: Local Development Setup
+
 ### Prerequisites
 
 - **Rust** 1.70+ with Cargo
@@ -239,6 +256,7 @@ See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for frontend configuration.
 
 ## Documentation
 
+- [Docker Setup Guide](DOCKER_SETUP.md) **← Start here for quickest setup**
 - [Frontend Setup Guide](docs/FRONTEND_SETUP.md)
 - [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
 - [Swagger UI Guide](docs/SWAGGER_UI_GUIDE.md)

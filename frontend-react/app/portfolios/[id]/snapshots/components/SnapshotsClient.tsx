@@ -225,7 +225,7 @@ export default function SnapshotsClient({
                       labelStyle={{ color: "#67e8f9" }}
                       itemStyle={{ color: "#d946ef" }}
                       formatter={(value: number | undefined) => {
-                        if (value === undefined) return ["", ""];
+                        if (value === undefined) return null;
                         return [formatCurrency(value), "Value"];
                       }}
                       labelFormatter={(label) => `Date: ${formatDate(label)}`}

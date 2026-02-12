@@ -24,7 +24,7 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Revert to NOT NULL (original incorrect state)
+        // Revert to NOT NULL (previous state for rollback)
         // Note: This will fail if there are NULL values in the column
         manager
             .alter_table(

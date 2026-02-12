@@ -86,7 +86,7 @@ export default function SettingsClient({ portfolioId }: { portfolioId: string })
     } finally {
       setLoading(false);
     }
-  }, [portfolioId, toast]);
+  }, [portfolioId]);
 
   useEffect(() => {
     loadPortfolio();

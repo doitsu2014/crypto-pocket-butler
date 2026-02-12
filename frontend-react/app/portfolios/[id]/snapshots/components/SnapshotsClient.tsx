@@ -109,7 +109,7 @@ export default function SnapshotsClient({
     } finally {
       setLoading(false);
     }
-  }, [portfolioId, dateRange, selectedType, toast]);
+  }, [portfolioId, dateRange, selectedType]);
 
   useEffect(() => {
     fetchSnapshots();

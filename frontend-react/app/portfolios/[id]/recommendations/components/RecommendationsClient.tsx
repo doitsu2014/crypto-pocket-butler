@@ -115,7 +115,7 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
     } finally {
       setLoading(false);
     }
-  }, [portfolioId, toast]);
+  }, [portfolioId]);
 
   const generateMockRecommendations = async () => {
     try {

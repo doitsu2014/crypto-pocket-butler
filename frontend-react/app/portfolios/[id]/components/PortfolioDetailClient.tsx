@@ -123,7 +123,7 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
     } finally {
       setLoading(false);
     }
-  }, [portfolioId, toast]);
+  }, [portfolioId]);
 
   useEffect(() => {
     loadData();

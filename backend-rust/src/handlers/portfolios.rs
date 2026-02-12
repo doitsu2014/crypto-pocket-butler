@@ -112,6 +112,12 @@ impl From<portfolio_accounts::Model> for PortfolioAccountResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdatePortfolioAccountsRequest {
+    /// List of account IDs to include in the portfolio
+    pub account_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AccountInPortfolioResponse {
     pub id: Uuid,
     pub name: String,
@@ -651,6 +657,105 @@ pub async fn remove_account_from_portfolio(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Update portfolio accounts (batch replace)
+#[utoipa::path(
+    put,
+    path = "/v1/portfolios/{id}/accounts",
+    params(
+        ("id" = Uuid, Path, description = "Portfolio ID")
+    ),
+    request_body = UpdatePortfolioAccountsRequest,
+    responses(
+        (status = 200, description = "Portfolio accounts updated successfully", body = Vec<AccountInPortfolioResponse>),
+        (status = 400, description = "Bad request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Portfolio not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "portfolios"
+)]
+pub async fn update_portfolio_accounts(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdatePortfolioAccountsRequest>,
+) -> Result<Json<Vec<AccountInPortfolioResponse>>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
+    
+    // Check portfolio ownership
+    check_portfolio_ownership(&db, id, user.id).await?;
+    
+    // Verify all accounts belong to the user
+    for account_id in &req.account_ids {
+        check_account_ownership(&db, *account_id, user.id).await?;
+    }
+    
+    // Get current portfolio accounts
+    let existing_accounts = portfolio_accounts::Entity::find()
+        .filter(portfolio_accounts::Column::PortfolioId.eq(id))
+        .all(&db)
+        .await?;
+    
+    let existing_ids: Vec<Uuid> = existing_accounts
+        .iter()
+        .map(|pa| pa.account_id)
+        .collect();
+    
+    // Find accounts to add
+    let to_add: Vec<Uuid> = req.account_ids
+        .iter()
+        .filter(|id| !existing_ids.contains(id))
+        .copied()
+        .collect();
+    
+    // Find accounts to remove
+    let to_remove: Vec<Uuid> = existing_ids
+        .iter()
+        .filter(|id| !req.account_ids.contains(id))
+        .copied()
+        .collect();
+    
+    // Remove accounts
+    if !to_remove.is_empty() {
+        portfolio_accounts::Entity::delete_many()
+            .filter(portfolio_accounts::Column::PortfolioId.eq(id))
+            .filter(portfolio_accounts::Column::AccountId.is_in(to_remove))
+            .exec(&db)
+            .await?;
+    }
+    
+    // Add new accounts
+    for account_id in to_add {
+        let portfolio_account = portfolio_accounts::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            portfolio_id: ActiveValue::Set(id),
+            account_id: ActiveValue::Set(account_id),
+            added_at: ActiveValue::NotSet,
+        };
+        portfolio_account.insert(&db).await?;
+    }
+    
+    // Get updated accounts list
+    let updated_accounts = if req.account_ids.is_empty() {
+        Vec::new()
+    } else {
+        accounts::Entity::find()
+            .filter(accounts::Column::Id.is_in(req.account_ids))
+            .all(&db)
+            .await?
+    };
+    
+    let response: Vec<AccountInPortfolioResponse> = updated_accounts
+        .into_iter()
+        .map(|a| a.into())
+        .collect();
+    
+    Ok(Json(response))
+}
+
 /// Get portfolio holdings and allocation
 #[utoipa::path(
     get,
@@ -803,7 +908,9 @@ pub fn create_router() -> Router<DatabaseConnection> {
         )
         .route(
             "/v1/portfolios/:id/accounts",
-            get(list_portfolio_accounts).post(add_account_to_portfolio),
+            get(list_portfolio_accounts)
+                .post(add_account_to_portfolio)
+                .put(update_portfolio_accounts),
         )
         .route(
             "/v1/portfolios/:id/accounts/:account_id",

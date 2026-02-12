@@ -7,6 +7,7 @@ mod m20240101_000004_create_portfolio_accounts_table;
 mod m20240101_000005_create_snapshots_table;
 mod m20240101_000006_add_holdings_to_accounts;
 mod m20240101_000007_create_recommendations_table;
+mod m20240101_000008_add_settings_to_portfolios;
 
 pub struct Migrator;
 
@@ -21,6 +22,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240101_000005_create_snapshots_table::Migration),
             Box::new(m20240101_000006_add_holdings_to_accounts::Migration),
             Box::new(m20240101_000007_create_recommendations_table::Migration),
+            Box::new(m20240101_000008_add_settings_to_portfolios::Migration),
         ]
     }
 }

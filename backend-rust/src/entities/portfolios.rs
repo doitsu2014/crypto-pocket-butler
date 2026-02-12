@@ -10,6 +10,8 @@ pub struct Model {
     pub name: String,
     pub description: Option<String>,
     pub is_default: bool,
+    pub target_allocation: Option<serde_json::Value>,
+    pub guardrails: Option<serde_json::Value>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

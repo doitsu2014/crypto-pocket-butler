@@ -112,7 +112,6 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
     } catch (err) {
       const errorMessage = err instanceof ApiError ? err.message : 'Failed to load recommendations';
       setError(errorMessage);
-      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

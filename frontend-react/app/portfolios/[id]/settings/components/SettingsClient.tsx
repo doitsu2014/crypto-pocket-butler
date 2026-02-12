@@ -192,7 +192,6 @@ export default function SettingsClient({ portfolioId }: { portfolioId: string })
     } catch (err) {
       const errorMessage = err instanceof ApiError ? err.message : "Failed to save settings";
       setError(errorMessage);
-      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }

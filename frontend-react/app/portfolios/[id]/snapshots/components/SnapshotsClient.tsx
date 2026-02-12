@@ -106,7 +106,6 @@ export default function SnapshotsClient({
     } catch (err) {
       const errorMessage = err instanceof ApiError ? err.message : "Failed to fetch snapshots";
       setError(errorMessage);
-      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

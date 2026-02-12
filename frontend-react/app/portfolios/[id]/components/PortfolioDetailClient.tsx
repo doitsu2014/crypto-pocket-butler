@@ -120,7 +120,6 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
     } catch (err) {
       const errorMessage = err instanceof ApiError ? err.message : "Failed to load portfolio data";
       setError(errorMessage);
-      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

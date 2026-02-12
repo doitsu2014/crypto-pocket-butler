@@ -1,19 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
 import { useToast, type Toast as ToastType } from "@/contexts/ToastContext";
 
 function ToastItem({ toast }: { toast: ToastType }) {
   const { removeToast } = useToast();
-
-  useEffect(() => {
-    if (toast.duration && toast.duration > 0) {
-      const timer = setTimeout(() => {
-        removeToast(toast.id);
-      }, toast.duration);
-      return () => clearTimeout(timer);
-    }
-  }, [toast.id, toast.duration, removeToast]);
 
   const getToastStyles = () => {
     switch (toast.type) {

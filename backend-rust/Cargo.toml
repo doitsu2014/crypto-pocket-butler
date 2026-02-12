@@ -27,6 +27,7 @@ base64 = "0.22"
 rust_decimal = { version = "1.35", features = ["serde-with-str"] }
 async-trait = "0.1"
 alloy = { version = "1.6", features = ["full", "node-bindings", "rpc-types"] }
+dotenvy = "0.15"
 # Solana support temporarily disabled due to dependency conflicts with existing stack
 # Will be enabled in a future update after dependency version alignment
 # solana-client = "1.18"

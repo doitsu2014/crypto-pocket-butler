@@ -146,6 +146,13 @@ impl Modify for SecurityAddon {
 
 #[tokio::main]
 async fn main() {
+    // Load environment variables from .env file if it exists
+    // This will not override existing environment variables
+    if let Err(e) = dotenvy::dotenv() {
+        // It's okay if .env file doesn't exist, we'll use system environment variables
+        eprintln!("Warning: Could not load .env file: {}", e);
+    }
+
     // Initialize tracing
     tracing_subscriber::registry()
         .with(

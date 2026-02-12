@@ -43,7 +43,16 @@ The backend uses [`utoipa`](https://github.com/juhaku/utoipa) for compile-time O
 
 ### Environment Variables
 
-Configure Keycloak connection and database using environment variables:
+The backend supports configuration via environment variables or a `.env` file. For local development, create a `.env` file in the `backend-rust/` directory:
+
+```bash
+cp .env.example .env
+# Edit .env with your actual configuration
+```
+
+The `.env` file will be automatically loaded when the application starts. You can also set environment variables directly in your shell.
+
+**Configuration options:**
 
 ```bash
 # Keycloak Configuration
@@ -62,6 +71,8 @@ export DB_ACQUIRE_TIMEOUT_SECS=30    # Pool acquisition timeout
 export DB_IDLE_TIMEOUT_SECS=600      # Idle connection timeout (10 min)
 export DB_MAX_LIFETIME_SECS=1800     # Max connection lifetime (30 min)
 ```
+
+**Note:** Environment variables set in your shell take precedence over values in the `.env` file.
 
 ### Running the Server
 

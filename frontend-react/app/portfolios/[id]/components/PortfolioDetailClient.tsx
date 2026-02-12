@@ -1,9 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
+import { useToast } from "@/contexts/ToastContext";
 import Link from "next/link";
 import PortfolioCompositionEditor from "./PortfolioCompositionEditor";
+import { LoadingSkeleton } from "@/components/Loading";
+import EmptyState from "@/components/EmptyState";
+import ErrorAlert from "@/components/ErrorAlert";
 
 const MAX_ALLOCATION_ITEMS = 10;
 
@@ -92,6 +96,7 @@ function formatQuantity(quantity: string): string {
 }
 
 export default function PortfolioDetailClient({ portfolioId }: { portfolioId: string }) {
+  const toast = useToast();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [holdings, setHoldings] = useState<PortfolioHoldingsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,11 +118,13 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
       setPortfolio(portfolioData);
       setHoldings(holdingsData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load portfolio data");
+      const errorMessage = err instanceof ApiError ? err.message : "Failed to load portfolio data";
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [portfolioId]);
+  }, [portfolioId, toast]);
 
   useEffect(() => {
     loadData();
@@ -151,37 +158,26 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
   });
 
   if (loading) {
-    return (
-      <div className="bg-slate-950/70 backdrop-blur-sm border-2 border-violet-500/40 shadow-[0_0_25px_rgba(139,92,246,0.3)] rounded-2xl p-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-violet-900/50 rounded w-1/3 shadow-[0_0_10px_rgba(139,92,246,0.2)]"></div>
-          <div className="h-20 bg-violet-900/50 rounded w-full shadow-[0_0_10px_rgba(139,92,246,0.2)]"></div>
-          <div className="h-40 bg-violet-900/50 rounded w-full shadow-[0_0_10px_rgba(139,92,246,0.2)]"></div>
-        </div>
-      </div>
-    );
+    return <LoadingSkeleton type="card" count={1} />;
   }
 
   if (error) {
     return (
-      <div className="bg-red-950/30 border-2 border-red-500/50 rounded-xl p-6 shadow-[0_0_20px_rgba(239,68,68,0.25)]">
-        <h3 className="text-lg font-bold text-red-300 mb-2">Error</h3>
-        <p className="text-red-300 text-sm">{error}</p>
-        <button
-          onClick={loadData}
-          className="mt-4 inline-flex items-center px-4 py-2 border-2 border-red-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all"
-        >
-          Retry
-        </button>
-      </div>
+      <ErrorAlert 
+        message={error}
+        onRetry={loadData}
+        onDismiss={() => setError(null)}
+      />
     );
   }
 
   if (!portfolio || !holdings) {
     return (
-      <div className="bg-slate-950/70 backdrop-blur-sm border-2 border-cyan-500/40 shadow-[0_0_25px_rgba(34,211,238,0.3)] rounded-2xl p-8 text-center">
-        <p className="text-slate-300 text-lg">Portfolio not found</p>
-      </div>
+      <EmptyState
+        icon="portfolio"
+        title="Portfolio not found"
+        description="This portfolio doesn't exist or you don't have access to it"
+      />
     );
   }
 
@@ -289,7 +285,11 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
         </div>
         
         {holdings.allocation.length === 0 ? (
-          <p className="text-slate-400 text-center py-4">No holdings to display</p>
+          <EmptyState
+            icon="portfolio"
+            title="No holdings to display"
+            description="This portfolio doesn't have any assets yet"
+          />
         ) : (
           <div className="space-y-3">
             {holdings.allocation.slice(0, MAX_ALLOCATION_ITEMS).map((item) => (
@@ -435,13 +435,11 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
             </table>
           </div>
         ) : (
-          <div className="p-8 text-center">
-            <svg className="w-16 h-16 mx-auto mb-4 text-cyan-400 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-            </svg>
-            <p className="text-slate-300 text-lg mb-2">No holdings found</p>
-            <p className="text-slate-400 text-sm">This portfolio doesn&apos;t have any assets yet</p>
-          </div>
+          <EmptyState
+            icon="portfolio"
+            title="No holdings found"
+            description="This portfolio doesn't have any assets yet"
+          />
         )}
       </div>
 

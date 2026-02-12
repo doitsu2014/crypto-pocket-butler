@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
+import { useToast } from "@/contexts/ToastContext";
 import Link from "next/link";
+import { LoadingSpinner, LoadingButton } from "@/components/Loading";
+import EmptyState from "@/components/EmptyState";
+import ErrorAlert from "@/components/ErrorAlert";
 import {
   LineChart,
   Line,
@@ -70,6 +74,7 @@ export default function SnapshotsClient({
 }: {
   portfolioId: string;
 }) {
+  const toast = useToast();
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,14 +104,13 @@ export default function SnapshotsClient({
 
       setSnapshots(response.snapshots);
     } catch (err) {
-      console.error("Failed to fetch snapshots:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to fetch snapshots"
-      );
+      const errorMessage = err instanceof ApiError ? err.message : "Failed to fetch snapshots";
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [portfolioId, dateRange, selectedType]);
+  }, [portfolioId, dateRange, selectedType, toast]);
 
   useEffect(() => {
     fetchSnapshots();
@@ -162,28 +166,28 @@ export default function SnapshotsClient({
           </select>
 
           {/* Refresh Button */}
-          <button
+          <LoadingButton
+            loading={loading}
             onClick={fetchSnapshots}
-            disabled={loading}
             className="px-4 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-semibold rounded-lg border-2 border-fuchsia-500 shadow-[0_0_20px_rgba(217,70,239,0.5)] hover:shadow-[0_0_25px_rgba(217,70,239,0.7)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Loading..." : "Refresh"}
-          </button>
+            Refresh
+          </LoadingButton>
         </div>
       </div>
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-900/20 border-2 border-red-500 rounded-lg p-4">
-          <p className="text-red-300">{error}</p>
-        </div>
+        <ErrorAlert 
+          message={error}
+          onRetry={fetchSnapshots}
+          onDismiss={() => setError(null)}
+        />
       )}
 
       {/* Loading State */}
       {loading && !error && (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-fuchsia-500"></div>
-        </div>
+        <LoadingSpinner size="lg" message="Loading snapshots..." />
       )}
 
       {/* Content */}
@@ -243,15 +247,11 @@ export default function SnapshotsClient({
               </div>
             </div>
           ) : (
-            <div className="bg-slate-900/60 backdrop-blur-md rounded-lg p-12 border-2 border-violet-500/30 text-center">
-              <p className="text-cyan-300/70 text-lg">
-                No snapshots found for the selected date range.
-              </p>
-              <p className="text-cyan-300/50 text-sm mt-2">
-                Snapshots are created automatically by the EOD job or can be
-                created manually.
-              </p>
-            </div>
+            <EmptyState
+              icon="snapshot"
+              title="No snapshots found"
+              description="No snapshots found for the selected date range. Snapshots are created automatically by the EOD job or can be created manually."
+            />
           )}
 
           {/* Snapshots Table */}

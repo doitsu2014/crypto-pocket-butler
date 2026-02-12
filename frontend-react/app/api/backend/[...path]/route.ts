@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 /**
  * Catch-all route handler for proxying requests to the Rust backend.
@@ -62,12 +62,20 @@ async function handleRequest(
           fetchOptions.body = body;
         }
       } catch (error) {
-        // If reading body fails, continue without it
-        console.warn("Failed to read request body:", error);
+        // If reading body fails, log with context and continue without it
+        console.warn(
+          `Failed to read request body for ${request.method} ${backendPath}:`,
+          error instanceof Error ? error.message : String(error)
+        );
       }
     }
 
     const response = await fetch(backendUrl, fetchOptions);
+
+    // Handle 204 No Content responses first (before consuming body)
+    if (response.status === 204) {
+      return new NextResponse(null, { status: 204 });
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -77,14 +85,19 @@ async function handleRequest(
       );
     }
 
-    // Handle 204 No Content responses
-    if (response.status === 204) {
-      return new NextResponse(null, { status: 204 });
+    // For successful responses with content, check content type
+    const responseContentType = response.headers.get("content-type");
+    if (responseContentType?.includes("application/json")) {
+      const data = await response.json();
+      return NextResponse.json(data, { status: response.status });
+    } else {
+      // For non-JSON responses, return as text
+      const text = await response.text();
+      return new NextResponse(text, { 
+        status: response.status,
+        headers: { "Content-Type": responseContentType || "text/plain" }
+      });
     }
-
-    // For successful responses with content, parse and return JSON
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
   } catch (error) {
     return NextResponse.json(
       { 

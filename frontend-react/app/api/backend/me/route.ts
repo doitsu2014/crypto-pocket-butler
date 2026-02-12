@@ -11,7 +11,7 @@ export async function GET() {
     );
   }
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
   try {
     const response = await fetch(`${backendUrl}/api/me`, {

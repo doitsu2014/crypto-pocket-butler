@@ -39,7 +39,7 @@ export default function PortfolioCompositionEditor({
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const toast = useToast();
 
   const loadData = useCallback(async () => {
@@ -60,7 +60,7 @@ export default function PortfolioCompositionEditor({
       const selectedIds = new Set(portAccounts.map(a => a.id));
       setSelectedAccountIds(selectedIds);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to load data'));
+      setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -91,9 +91,9 @@ export default function PortfolioCompositionEditor({
         onUpdate();
       }
     } catch (err) {
-      const errorObj = err instanceof Error ? err : new Error("Failed to save portfolio composition");
-      setError(errorObj);
-      toast.error(errorObj.message);
+      const errorMessage = err instanceof Error ? err.message : "Failed to save portfolio composition";
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -161,7 +161,7 @@ export default function PortfolioCompositionEditor({
               {loading ? (
                 <LoadingSkeleton type="list" count={4} />
               ) : error ? (
-                <ErrorAlert message={error.message} onRetry={loadData} />
+                <ErrorAlert message={error} onRetry={loadData} />
               ) : allAccounts.length === 0 ? (
                 <EmptyState
                   icon="account"

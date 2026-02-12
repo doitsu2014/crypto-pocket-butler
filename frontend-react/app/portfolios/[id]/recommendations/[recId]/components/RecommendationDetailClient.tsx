@@ -96,7 +96,7 @@ export default function RecommendationDetailClient({
 }) {
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const toast = useToast();
@@ -113,7 +113,7 @@ export default function RecommendationDetailClient({
       setRecommendation(data);
     } catch (err) {
       console.error('Error fetching recommendation:', err);
-      setError(err instanceof Error ? err : new Error('Failed to load recommendation'));
+      setError(err instanceof Error ? err.message : 'Failed to load recommendation');
     } finally {
       setLoading(false);
     }
@@ -164,7 +164,7 @@ export default function RecommendationDetailClient({
   }
 
   if (error) {
-    return <ErrorAlert message={error.message} onRetry={fetchRecommendation} type="banner" />;
+    return <ErrorAlert message={error} onRetry={fetchRecommendation} type="banner" />;
   }
 
   if (!recommendation) {

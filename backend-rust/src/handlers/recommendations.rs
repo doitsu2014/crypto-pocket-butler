@@ -480,15 +480,15 @@ pub async fn generate_mock_recommendations(
 pub fn create_router() -> Router<DatabaseConnection> {
     Router::new()
         .route(
-            "/api/v1/portfolios/:portfolio_id/recommendations",
+            "/api/v1/portfolios/{portfolio_id}/recommendations",
             get(list_portfolio_recommendations).post(create_recommendation),
         )
         .route(
-            "/api/v1/portfolios/:portfolio_id/recommendations/generate",
+            "/api/v1/portfolios/{portfolio_id}/recommendations/generate",
             post(generate_mock_recommendations),
         )
         .route(
-            "/api/v1/portfolios/:portfolio_id/recommendations/:recommendation_id",
+            "/api/v1/portfolios/{portfolio_id}/recommendations/{recommendation_id}",
             get(get_recommendation),
         )
 }

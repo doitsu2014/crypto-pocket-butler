@@ -927,23 +927,23 @@ pub fn create_router() -> Router<DatabaseConnection> {
     Router::new()
         .route("/v1/portfolios", get(list_portfolios).post(create_portfolio))
         .route(
-            "/v1/portfolios/:id",
+            "/v1/portfolios/{id}",
             get(get_portfolio)
                 .put(update_portfolio)
                 .delete(delete_portfolio),
         )
         .route(
-            "/v1/portfolios/:id/accounts",
+            "/v1/portfolios/{id}/accounts",
             get(list_portfolio_accounts)
                 .post(add_account_to_portfolio)
                 .put(update_portfolio_accounts),
         )
         .route(
-            "/v1/portfolios/:id/accounts/:account_id",
+            "/v1/portfolios/{id}/accounts/{account_id}",
             delete(remove_account_from_portfolio),
         )
         .route(
-            "/v1/portfolios/:id/holdings",
+            "/v1/portfolios/{id}/holdings",
             get(get_portfolio_holdings),
         )
 }

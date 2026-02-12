@@ -220,6 +220,19 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
         {portfolio.description && (
           <p className="text-slate-400 text-sm">{portfolio.description}</p>
         )}
+        
+        {/* Quick Actions */}
+        <div className="mt-4 flex gap-3">
+          <Link
+            href={`/portfolios/${portfolioId}/snapshots`}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-semibold rounded-lg border-2 border-fuchsia-500 shadow-[0_0_20px_rgba(217,70,239,0.5)] hover:shadow-[0_0_25px_rgba(217,70,239,0.7)] hover:scale-105 transition-all"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            View Snapshots
+          </Link>
+        </div>
       </div>
 
       {/* Total Value Hero Section */}

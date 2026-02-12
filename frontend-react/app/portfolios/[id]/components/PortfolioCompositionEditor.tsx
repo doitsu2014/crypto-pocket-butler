@@ -1,7 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
+import { useToast } from "@/contexts/ToastContext";
+import ErrorAlert from "@/components/ErrorAlert";
+import { LoadingSkeleton } from "@/components/Loading";
+import EmptyState from "@/components/EmptyState";
+import { LoadingButton } from "@/components/Loading";
+import { ApiError } from "@/lib/api-client";
 
 interface Account {
   id: string;
@@ -26,13 +33,15 @@ export default function PortfolioCompositionEditor({
   portfolioName,
   onUpdate,
 }: PortfolioCompositionEditorProps) {
+  const router = useRouter();
   const [showEditor, setShowEditor] = useState(false);
   const [allAccounts, setAllAccounts] = useState<Account[]>([]);
   const [portfolioAccounts, setPortfolioAccounts] = useState<Account[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const toast = useToast();
 
   const loadData = useCallback(async () => {
     try {
@@ -52,7 +61,7 @@ export default function PortfolioCompositionEditor({
       const selectedIds = new Set(portAccounts.map(a => a.id));
       setSelectedAccountIds(selectedIds);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load data");
+      setError(err as ApiError);
     } finally {
       setLoading(false);
     }
@@ -76,12 +85,15 @@ export default function PortfolioCompositionEditor({
         },
       });
 
+      toast.success("Portfolio composition updated successfully");
+
       setShowEditor(false);
       if (onUpdate) {
         onUpdate();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save portfolio composition");
+      setError(err as ApiError);
+      toast.error(err instanceof Error ? err.message : "Failed to save portfolio composition");
     } finally {
       setSaving(false);
     }
@@ -147,28 +159,19 @@ export default function PortfolioCompositionEditor({
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
               {loading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div
-                      key={i}
-                      className="h-16 bg-violet-900/30 rounded-lg animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.2)]"
-                    />
-                  ))}
-                </div>
+                <LoadingSkeleton type="list" count={4} />
               ) : error ? (
-                <div className="bg-red-950/30 border-2 border-red-500/50 rounded-xl p-4 shadow-[0_0_20px_rgba(239,68,68,0.25)]">
-                  <p className="text-red-300 text-sm">{error}</p>
-                </div>
+                <ErrorAlert message={error.message} onRetry={loadData} />
               ) : allAccounts.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-slate-400 mb-4">No accounts available. Create an account first.</p>
-                  <a
-                    href="/accounts"
-                    className="inline-flex items-center gap-2 px-4 py-2 border-2 border-cyan-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 shadow-[0_0_15px_rgba(34,211,238,0.4)] transition-all"
-                  >
-                    Go to Accounts
-                  </a>
-                </div>
+                <EmptyState
+                  icon="account"
+                  title="No accounts available"
+                  description="Create an account first to add it to this portfolio."
+                  action={{
+                    label: "Go to Accounts",
+                    onClick: () => router.push("/accounts")
+                  }}
+                />
               ) : (
                 <>
                   {/* Select/Deselect All */}
@@ -278,43 +281,17 @@ export default function PortfolioCompositionEditor({
               >
                 Cancel
               </button>
-              <button
+              <LoadingButton
                 onClick={handleSave}
-                disabled={saving || allAccounts.length === 0}
+                loading={saving}
+                disabled={allAccounts.length === 0}
                 className="inline-flex items-center gap-2 px-4 py-2 border-2 border-violet-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-violet-600 to-purple-700 hover:from-violet-500 hover:to-purple-600 shadow-[0_0_15px_rgba(139,92,246,0.4)] hover:shadow-[0_0_20px_rgba(139,92,246,0.6)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {saving ? (
-                  <>
-                    <svg
-                      className="animate-spin w-4 h-4"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Save Changes
-                  </>
-                )}
-              </button>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Save Changes
+              </LoadingButton>
             </div>
           </div>
         </div>

@@ -3,6 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiClient } from "@/lib/api-client";
 import Link from "next/link";
+import { useToast } from "@/contexts/ToastContext";
+import ErrorAlert from "@/components/ErrorAlert";
+import { LoadingSpinner, LoadingButton } from "@/components/Loading";
+import { ApiError } from "@/lib/api-client";
 
 interface ProposedOrder {
   action: string;
@@ -93,7 +97,10 @@ export default function RecommendationDetailClient({
 }) {
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const toast = useToast();
 
   const fetchRecommendation = useCallback(async () => {
     try {
@@ -107,34 +114,60 @@ export default function RecommendationDetailClient({
       setRecommendation(data);
     } catch (err) {
       console.error('Error fetching recommendation:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load recommendation');
+      setError(err as ApiError);
     } finally {
       setLoading(false);
     }
   }, [portfolioId, recommendationId]);
+
+  const handleApprove = async () => {
+    try {
+      setApproving(true);
+      await apiClient(
+        `/v1/portfolios/${portfolioId}/recommendations/${recommendationId}/approve`,
+        { method: 'POST' }
+      );
+      toast.success("Recommendation approved successfully");
+      fetchRecommendation();
+    } catch (err) {
+      console.error('Error approving recommendation:', err);
+      toast.error(err instanceof Error ? err.message : "Failed to approve recommendation");
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const handleReject = async () => {
+    try {
+      setRejecting(true);
+      await apiClient(
+        `/v1/portfolios/${portfolioId}/recommendations/${recommendationId}/reject`,
+        { method: 'POST' }
+      );
+      toast.success("Recommendation rejected successfully");
+      fetchRecommendation();
+    } catch (err) {
+      console.error('Error rejecting recommendation:', err);
+      toast.error(err instanceof Error ? err.message : "Failed to reject recommendation");
+    } finally {
+      setRejecting(false);
+    }
+  };
 
   useEffect(() => {
     fetchRecommendation();
   }, [fetchRecommendation]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-pulse text-cyan-300 text-lg drop-shadow-[0_0_10px_rgba(103,232,249,0.6)]">
-          Loading recommendation details...
-        </div>
-      </div>
-    );
+    return <LoadingSpinner message="Loading recommendation details..." />;
   }
 
-  if (error || !recommendation) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-red-400 text-lg drop-shadow-[0_0_10px_rgba(239,68,68,0.6)]">
-          Error: {error || 'Recommendation not found'}
-        </div>
-      </div>
-    );
+  if (error) {
+    return <ErrorAlert message={error.message} onRetry={fetchRecommendation} type="banner" />;
+  }
+
+  if (!recommendation) {
+    return <ErrorAlert message="Recommendation not found" onRetry={fetchRecommendation} type="banner" />;
   }
 
   return (
@@ -285,34 +318,40 @@ export default function RecommendationDetailClient({
         </div>
       </div>
 
-      {/* Action Buttons (Placeholder - no execution in this version) */}
-      <div className="bg-slate-950/70 backdrop-blur-sm rounded-xl border-2 border-yellow-500/30 p-6 shadow-[0_0_20px_rgba(234,179,8,0.2)]">
-        <div className="flex items-start gap-4">
-          <svg className="w-6 h-6 text-yellow-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div className="flex-1">
-            <h4 className="text-lg font-bold text-yellow-300 mb-2">Suggest-Only Mode</h4>
-            <p className="text-slate-300 mb-4">
-              This is a suggest-only interface. No orders will be executed automatically. Review the recommendations and execute trades manually through your exchange or wallet if you choose to proceed.
-            </p>
-            <div className="flex gap-3">
-              <button
-                disabled
-                className="px-6 py-2 bg-slate-700/50 text-slate-400 font-medium rounded-lg border border-slate-600 cursor-not-allowed"
-              >
-                Approve (Coming Soon)
-              </button>
-              <button
-                disabled
-                className="px-6 py-2 bg-slate-700/50 text-slate-400 font-medium rounded-lg border border-slate-600 cursor-not-allowed"
-              >
-                Reject (Coming Soon)
-              </button>
+      {/* Action Buttons */}
+      {recommendation.status === 'pending' && (
+        <div className="bg-slate-950/70 backdrop-blur-sm rounded-xl border-2 border-yellow-500/30 p-6 shadow-[0_0_20px_rgba(234,179,8,0.2)]">
+          <div className="flex items-start gap-4">
+            <svg className="w-6 h-6 text-yellow-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <h4 className="text-lg font-bold text-yellow-300 mb-2">Suggest-Only Mode</h4>
+              <p className="text-slate-300 mb-4">
+                This is a suggest-only interface. No orders will be executed automatically. Review the recommendations and execute trades manually through your exchange or wallet if you choose to proceed.
+              </p>
+              <div className="flex gap-3">
+                <LoadingButton
+                  onClick={handleApprove}
+                  loading={approving}
+                  disabled={rejecting}
+                  className="px-6 py-2 bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-white font-medium rounded-lg border-2 border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)] hover:shadow-[0_0_20px_rgba(34,197,94,0.6)] transition-all"
+                >
+                  Approve
+                </LoadingButton>
+                <LoadingButton
+                  onClick={handleReject}
+                  loading={rejecting}
+                  disabled={approving}
+                  className="px-6 py-2 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-medium rounded-lg border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] hover:shadow-[0_0_20px_rgba(239,68,68,0.6)] transition-all"
+                >
+                  Reject
+                </LoadingButton>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

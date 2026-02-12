@@ -70,6 +70,10 @@ struct HealthResponse {
         handlers::snapshots::create_portfolio_snapshot_handler,
         handlers::snapshots::create_all_user_snapshots_handler,
         handlers::snapshots::list_portfolio_snapshots_handler,
+        handlers::recommendations::list_portfolio_recommendations,
+        handlers::recommendations::get_recommendation,
+        handlers::recommendations::create_recommendation,
+        handlers::recommendations::generate_mock_recommendations,
     ),
     components(
         schemas(
@@ -94,6 +98,10 @@ struct HealthResponse {
             handlers::snapshots::SnapshotResponse,
             handlers::snapshots::ListSnapshotsQuery,
             handlers::snapshots::ListSnapshotsResponse,
+            handlers::recommendations::RecommendationResponse,
+            handlers::recommendations::ListRecommendationsResponse,
+            handlers::recommendations::ListRecommendationsQuery,
+            handlers::recommendations::CreateRecommendationRequest,
         )
     ),
     modifiers(&SecurityAddon),
@@ -101,7 +109,8 @@ struct HealthResponse {
         (name = "crypto-pocket-butler", description = "Crypto Pocket Butler API endpoints"),
         (name = "portfolios", description = "Portfolio management endpoints"),
         (name = "accounts", description = "Account management and sync endpoints"),
-        (name = "snapshots", description = "Portfolio snapshot endpoints")
+        (name = "snapshots", description = "Portfolio snapshot endpoints"),
+        (name = "recommendations", description = "Portfolio recommendation endpoints")
     ),
     info(
         title = "Crypto Pocket Butler API",
@@ -210,6 +219,8 @@ async fn main() {
         .merge(handlers::accounts::create_router())
         // Snapshot API routes (protected)
         .merge(handlers::snapshots::create_router())
+        // Recommendation API routes (protected)
+        .merge(handlers::recommendations::create_router())
         .layer(auth_layer)
         .with_state(db);
 

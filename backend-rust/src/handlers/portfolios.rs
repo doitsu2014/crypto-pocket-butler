@@ -45,6 +45,12 @@ pub struct CreatePortfolioRequest {
     /// Whether this is the default portfolio
     #[serde(default)]
     pub is_default: bool,
+    /// Target allocation as JSON (e.g., {"BTC": 40, "ETH": 30, "USDT": 30})
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_allocation: Option<serde_json::Value>,
+    /// Guardrails as JSON (e.g., {"drift_band": 5, "stablecoin_min": 10, "futures_cap": 20, "max_alt_cap": 50})
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guardrails: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -58,6 +64,12 @@ pub struct UpdatePortfolioRequest {
     /// Whether this is the default portfolio
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_default: Option<bool>,
+    /// Target allocation as JSON (e.g., {"BTC": 40, "ETH": 30, "USDT": 30})
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_allocation: Option<serde_json::Value>,
+    /// Guardrails as JSON (e.g., {"drift_band": 5, "stablecoin_min": 10, "futures_cap": 20, "max_alt_cap": 50})
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guardrails: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -68,6 +80,10 @@ pub struct PortfolioResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub is_default: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_allocation: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guardrails: Option<serde_json::Value>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -80,6 +96,8 @@ impl From<portfolios::Model> for PortfolioResponse {
             name: model.name,
             description: model.description,
             is_default: model.is_default,
+            target_allocation: model.target_allocation,
+            guardrails: model.guardrails,
             created_at: model.created_at.to_string(),
             updated_at: model.updated_at.to_string(),
         }
@@ -423,6 +441,8 @@ pub async fn create_portfolio(
         name: ActiveValue::Set(req.name),
         description: ActiveValue::Set(req.description),
         is_default: ActiveValue::Set(req.is_default),
+        target_allocation: ActiveValue::Set(req.target_allocation),
+        guardrails: ActiveValue::Set(req.guardrails),
         created_at: ActiveValue::NotSet,
         updated_at: ActiveValue::NotSet,
     };
@@ -475,6 +495,12 @@ pub async fn update_portfolio(
     }
     if let Some(is_default) = req.is_default {
         active_portfolio.is_default = ActiveValue::Set(is_default);
+    }
+    if req.target_allocation.is_some() {
+        active_portfolio.target_allocation = ActiveValue::Set(req.target_allocation);
+    }
+    if req.guardrails.is_some() {
+        active_portfolio.guardrails = ActiveValue::Set(req.guardrails);
     }
 
     let updated_portfolio = active_portfolio.update(&db).await?;

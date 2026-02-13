@@ -302,6 +302,62 @@ async fn main() {
         tracing::info!("Top coins collection job is disabled");
     }
 
+    // Configure price collection job
+    let price_collection_enabled = std::env::var("PRICE_COLLECTION_ENABLED")
+        .unwrap_or_else(|_| "true".to_string())
+        .parse::<bool>()
+        .unwrap_or(true);
+    
+    if price_collection_enabled {
+        let price_collection_schedule = std::env::var("PRICE_COLLECTION_SCHEDULE")
+            .unwrap_or_else(|_| "0 */15 * * * *".to_string()); // Default: every 15 minutes
+        let price_collection_limit = std::env::var("PRICE_COLLECTION_LIMIT")
+            .unwrap_or_else(|_| "100".to_string())
+            .parse::<usize>()
+            .unwrap_or(100);
+        
+        tracing::info!(
+            "Scheduling price collection job: schedule='{}', limit={}",
+            price_collection_schedule,
+            price_collection_limit
+        );
+
+        let db_clone = db.clone();
+        let job = Job::new_async(price_collection_schedule.as_str(), move |_job_id, _scheduler| {
+            let db = db_clone.clone();
+            let limit = price_collection_limit;
+            Box::pin(async move {
+                tracing::info!("Running scheduled price collection job");
+                match jobs::price_collection::collect_prices(&db, limit).await {
+                    Ok(result) => {
+                        if result.success {
+                            tracing::info!(
+                                "Price collection job completed successfully: {} assets tracked, {} prices collected, {} prices stored",
+                                result.assets_tracked,
+                                result.prices_collected,
+                                result.prices_stored
+                            );
+                        } else {
+                            tracing::error!(
+                                "Price collection job failed: {}",
+                                result.error.unwrap_or_else(|| "Unknown error".to_string())
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Price collection job failed with error: {}", e);
+                    }
+                }
+            })
+        })
+        .expect("Failed to create price collection job");
+
+        scheduler.add(job).await.expect("Failed to add price collection job to scheduler");
+        tracing::info!("Price collection job scheduled successfully");
+    } else {
+        tracing::info!("Price collection job is disabled");
+    }
+
     // Start the scheduler
     scheduler.start().await.expect("Failed to start job scheduler");
     tracing::info!("Job scheduler started");

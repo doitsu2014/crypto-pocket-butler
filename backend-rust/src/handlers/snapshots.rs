@@ -73,6 +73,8 @@ pub struct SnapshotResponse {
     pub total_value_usd: String,
     pub holdings: serde_json::Value, // JSON holdings data
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allocation_id: Option<Uuid>, // Reference to portfolio_allocations
     pub created_at: String, // ISO 8601 datetime
 }
 
@@ -86,6 +88,7 @@ impl From<snapshots::Model> for SnapshotResponse {
             total_value_usd: model.total_value_usd.to_string(),
             holdings: model.holdings,
             metadata: model.metadata,
+            allocation_id: model.allocation_id,
             created_at: model.created_at.to_rfc3339(),
         }
     }

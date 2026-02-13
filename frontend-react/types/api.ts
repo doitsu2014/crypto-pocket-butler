@@ -118,7 +118,9 @@ export interface SnapshotsQueryParams {
 }
 
 export interface CreateSnapshotInput {
+  /** Snapshot type (e.g., 'manual', 'eod', 'hourly'). Defaults to 'manual' if not specified. */
   snapshot_type?: string;
+  /** Snapshot date in ISO 8601 format (YYYY-MM-DD). Defaults to current date if not specified. */
   snapshot_date?: string;
 }
 

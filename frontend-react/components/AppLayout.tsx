@@ -103,8 +103,8 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
 
       <div className="flex">
         {/* Sidebar */}
-        <aside className="relative w-64 min-h-[calc(100vh-4rem)] bg-slate-950/60 backdrop-blur-sm border-r-2 border-fuchsia-500/20" role="navigation" aria-label="Main navigation">
-          <nav className="p-4 space-y-2">
+        <aside className="relative w-64 min-h-[calc(100vh-4rem)] bg-slate-950/60 backdrop-blur-sm border-r-2 border-fuchsia-500/20">
+          <nav className="p-4 space-y-2" aria-label="Main navigation">
             {navigation.map((item) => {
               const active = isActive(item.href);
               return (
@@ -132,7 +132,7 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
         </aside>
 
         {/* Main content */}
-        <main className="relative flex-1 px-4 sm:px-6 lg:px-8 py-6" role="main" aria-label="Main content">
+        <main className="relative flex-1 px-4 sm:px-6 lg:px-8 py-6">
           {children}
         </main>
       </div>

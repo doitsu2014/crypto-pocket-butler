@@ -8,6 +8,7 @@ mod m20240101_000005_create_snapshots_table;
 mod m20240101_000006_add_holdings_to_accounts;
 mod m20240101_000007_create_recommendations_table;
 mod m20240101_000008_add_settings_to_portfolios;
+mod m20240101_000009_fix_accounts_last_synced_at_nullable;
 
 pub struct Migrator;
 
@@ -23,6 +24,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240101_000006_add_holdings_to_accounts::Migration),
             Box::new(m20240101_000007_create_recommendations_table::Migration),
             Box::new(m20240101_000008_add_settings_to_portfolios::Migration),
+            Box::new(m20240101_000009_fix_accounts_last_synced_at_nullable::Migration),
         ]
     }
 }

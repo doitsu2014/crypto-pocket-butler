@@ -51,6 +51,7 @@ export interface Account {
   account_type: string;
   exchange_name?: string;
   wallet_address?: string;
+  enabled_chains?: string[];
   is_active: boolean;
   last_synced_at?: string;
   created_at: string;
@@ -61,6 +62,7 @@ export interface CreateWalletAccountInput {
   name: string;
   account_type: "wallet";
   wallet_address: string;
+  enabled_chains?: string[];
 }
 
 export interface CreateExchangeAccountInput {

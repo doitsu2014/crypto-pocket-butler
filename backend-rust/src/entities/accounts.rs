@@ -20,6 +20,7 @@ pub struct Model {
     pub is_active: bool,
     pub last_synced_at: Option<DateTimeWithTimeZone>,
     pub holdings: Option<Json>, // JSON array of asset holdings
+    pub enabled_chains: Option<Json>, // JSON array of enabled chain names for EVM wallets
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

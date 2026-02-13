@@ -11,6 +11,18 @@ import type { CreateAccountInput } from "@/types/api";
 
 type AccountFormType = "wallet" | "exchange" | null;
 
+// Helper function to get user-friendly chain name
+function getChainDisplayName(chainId: string): string {
+  const chainMap: Record<string, string> = {
+    ethereum: 'Ethereum',
+    arbitrum: 'Arbitrum',
+    optimism: 'Optimism',
+    base: 'Base',
+    bsc: 'BNB Chain',
+  };
+  return chainMap[chainId] || chainId;
+}
+
 function formatDate(dateString: string | undefined): string {
   if (!dateString) return 'Never';
   try {
@@ -31,6 +43,7 @@ export default function AccountsClient() {
   const [walletFormData, setWalletFormData] = useState({
     name: "",
     wallet_address: "",
+    enabled_chains: [] as string[],
   });
   const [exchangeFormData, setExchangeFormData] = useState({
     name: "",
@@ -58,16 +71,22 @@ export default function AccountsClient() {
       return;
     }
 
+    if (walletFormData.enabled_chains.length === 0) {
+      toast.error("Please select at least one chain");
+      return;
+    }
+
     try {
       await createAccount.mutateAsync({
         name: walletFormData.name.trim(),
         account_type: "wallet",
         wallet_address: walletFormData.wallet_address.trim(),
+        enabled_chains: walletFormData.enabled_chains,
       });
       
       toast.success("Wallet created successfully!");
       
-      setWalletFormData({ name: "", wallet_address: "" });
+      setWalletFormData({ name: "", wallet_address: "", enabled_chains: [] });
       setShowCreateForm(false);
       setFormType(null);
     } catch (err) {
@@ -167,6 +186,18 @@ export default function AccountsClient() {
 
   function cancelDelete() {
     setDeletingAccount(null);
+  }
+
+  function toggleChain(chain: string) {
+    setWalletFormData(prev => {
+      const enabled = prev.enabled_chains.includes(chain);
+      return {
+        ...prev,
+        enabled_chains: enabled
+          ? prev.enabled_chains.filter(c => c !== chain)
+          : [...prev.enabled_chains, chain]
+      };
+    });
   }
 
   function openCreateForm(type: AccountFormType) {
@@ -300,6 +331,43 @@ export default function AccountsClient() {
                     className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
                     required
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-3">
+                    Enabled Chains <span className="text-fuchsia-400">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: 'ethereum', name: 'Ethereum', symbol: 'ETH' },
+                      { id: 'arbitrum', name: 'Arbitrum', symbol: 'ARB' },
+                      { id: 'optimism', name: 'Optimism', symbol: 'OP' },
+                      { id: 'base', name: 'Base', symbol: 'BASE' },
+                      { id: 'bsc', name: 'BNB Chain', symbol: 'BNB' },
+                    ].map((chain) => (
+                      <button
+                        key={chain.id}
+                        type="button"
+                        onClick={() => toggleChain(chain.id)}
+                        className={`p-3 rounded-lg border-2 text-left transition-all ${
+                          walletFormData.enabled_chains.includes(chain.id)
+                            ? 'border-fuchsia-500 bg-fuchsia-900/30 text-fuchsia-300'
+                            : 'border-violet-500/50 bg-slate-900/50 text-slate-400 hover:border-violet-400 hover:bg-slate-800/70'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-bold text-sm">{chain.name}</div>
+                            <div className="text-xs opacity-75">{chain.symbol}</div>
+                          </div>
+                          {walletFormData.enabled_chains.includes(chain.id) && (
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="flex gap-3">
                   <LoadingButton
@@ -472,12 +540,26 @@ export default function AccountsClient() {
               </div>
               
               {account.account_type === "wallet" && account.wallet_address && (
-                <p className="text-slate-400 text-xs mb-3 font-mono break-all">
-                  {account.wallet_address.length > 18 
-                    ? `${account.wallet_address.slice(0, 10)}...${account.wallet_address.slice(-8)}`
-                    : account.wallet_address
-                  }
-                </p>
+                <>
+                  <p className="text-slate-400 text-xs mb-2 font-mono break-all">
+                    {account.wallet_address.length > 18 
+                      ? `${account.wallet_address.slice(0, 10)}...${account.wallet_address.slice(-8)}`
+                      : account.wallet_address
+                    }
+                  </p>
+                  {account.enabled_chains && account.enabled_chains.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {account.enabled_chains.map((chain) => (
+                        <span 
+                          key={chain}
+                          className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-500/40"
+                        >
+                          {getChainDisplayName(chain)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
               
               {account.account_type === "exchange" && account.exchange_name && (

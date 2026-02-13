@@ -1130,16 +1130,38 @@ pub async fn construct_portfolio_allocation(
         allocation_active.holdings = Set(allocation_json);
         allocation_active.update(&txn).await?;
     } else {
-        // Insert new allocation
+        // Insert new allocation - if unique constraint violation occurs,
+        // it means another concurrent request inserted first. In that case,
+        // we'll retry the operation by rolling back and starting over.
         let new_allocation = portfolio_allocations::ActiveModel {
             id: Set(Uuid::new_v4()),
             portfolio_id: Set(id),
             as_of: Set(as_of),
             total_value_usd: Set(total_value),
-            holdings: Set(allocation_json),
+            holdings: Set(allocation_json.clone()),
             created_at: ActiveValue::NotSet,
         };
-        new_allocation.insert(&txn).await?;
+        
+        // Try to insert - if it fails due to unique constraint, update instead
+        match new_allocation.insert(&txn).await {
+            Ok(_) => {}, // Insert succeeded
+            Err(sea_orm::DbErr::Exec(ref err)) if err.to_string().contains("duplicate key") || err.to_string().contains("unique constraint") => {
+                // Unique constraint violation - another request inserted first
+                // Fetch the row and update it instead
+                let existing = portfolio_allocations::Entity::find()
+                    .filter(portfolio_allocations::Column::PortfolioId.eq(id))
+                    .one(&txn)
+                    .await?
+                    .ok_or_else(|| ApiError::DatabaseError(sea_orm::DbErr::Custom("Allocation disappeared after conflict".to_string())))?;
+                
+                let mut allocation_active: portfolio_allocations::ActiveModel = existing.into();
+                allocation_active.as_of = Set(as_of);
+                allocation_active.total_value_usd = Set(total_value);
+                allocation_active.holdings = Set(allocation_json);
+                allocation_active.update(&txn).await?;
+            },
+            Err(e) => return Err(ApiError::DatabaseError(e)),
+        }
     }
 
     // Update portfolio's last_constructed_at

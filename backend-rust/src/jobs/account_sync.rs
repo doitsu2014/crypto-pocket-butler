@@ -11,6 +11,15 @@ use std::error::Error;
 use tracing;
 use uuid::Uuid;
 
+/// Default EVM chains to use when no specific chains are configured
+const DEFAULT_EVM_CHAINS: [EvmChain; 5] = [
+    EvmChain::Ethereum,
+    EvmChain::Arbitrum,
+    EvmChain::Optimism,
+    EvmChain::Base,
+    EvmChain::BinanceSmartChain,
+];
+
 /// Result of syncing an account
 #[derive(Debug)]
 pub struct SyncResult {
@@ -141,37 +150,19 @@ pub async fn sync_account(
                                 }
                                 if chains.is_empty() {
                                     // If no valid chains were found, use all chains
-                                    vec![
-                                        EvmChain::Ethereum,
-                                        EvmChain::Arbitrum,
-                                        EvmChain::Optimism,
-                                        EvmChain::Base,
-                                        EvmChain::BinanceSmartChain,
-                                    ]
+                                    DEFAULT_EVM_CHAINS.to_vec()
                                 } else {
                                     chains
                                 }
                             }
                             Err(e) => {
                                 tracing::warn!("Failed to parse enabled_chains: {}, using all chains", e);
-                                vec![
-                                    EvmChain::Ethereum,
-                                    EvmChain::Arbitrum,
-                                    EvmChain::Optimism,
-                                    EvmChain::Base,
-                                    EvmChain::BinanceSmartChain,
-                                ]
+                                DEFAULT_EVM_CHAINS.to_vec()
                             }
                         }
                     } else {
                         // No enabled_chains specified, use all chains
-                        vec![
-                            EvmChain::Ethereum,
-                            EvmChain::Arbitrum,
-                            EvmChain::Optimism,
-                            EvmChain::Base,
-                            EvmChain::BinanceSmartChain,
-                        ]
+                        DEFAULT_EVM_CHAINS.to_vec()
                     };
 
                     // Create EVM connector

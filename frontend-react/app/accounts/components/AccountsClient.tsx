@@ -11,6 +11,18 @@ import type { CreateAccountInput } from "@/types/api";
 
 type AccountFormType = "wallet" | "exchange" | null;
 
+// Helper function to get user-friendly chain name
+function getChainDisplayName(chainId: string): string {
+  const chainMap: Record<string, string> = {
+    ethereum: 'Ethereum',
+    arbitrum: 'Arbitrum',
+    optimism: 'Optimism',
+    base: 'Base',
+    bsc: 'BNB Chain',
+  };
+  return chainMap[chainId] || chainId;
+}
+
 function formatDate(dateString: string | undefined): string {
   if (!dateString) return 'Never';
   try {
@@ -542,7 +554,7 @@ export default function AccountsClient() {
                           key={chain}
                           className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-500/40"
                         >
-                          {chain}
+                          {getChainDisplayName(chain)}
                         </span>
                       ))}
                     </div>

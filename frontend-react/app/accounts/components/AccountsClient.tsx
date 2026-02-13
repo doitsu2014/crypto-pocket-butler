@@ -119,15 +119,33 @@ export default function AccountsClient() {
   }
 
   async function handleSyncAll() {
-    // Sync all accounts sequentially
-    try {
-      for (const account of accounts) {
-        await handleSyncAccount(account.id);
+    // Sync all accounts sequentially and track results
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const account of accounts) {
+      try {
+        const result = await syncAccount.mutateAsync(account.id);
+        if (result.success) {
+          successCount++;
+        } else {
+          failCount++;
+          toast.error(`${account.name}: ${result.error || "Sync failed"}`);
+        }
+      } catch (err) {
+        failCount++;
+        const message = err instanceof ApiError ? err.message : "Failed to sync account";
+        toast.error(`${account.name}: ${message}`);
       }
-      toast.success("All accounts synced successfully!");
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to sync accounts";
-      toast.error(message);
+    }
+
+    // Show summary
+    if (failCount === 0) {
+      toast.success(`All ${successCount} accounts synced successfully!`);
+    } else if (successCount > 0) {
+      toast.warning(`Synced ${successCount} accounts, ${failCount} failed`);
+    } else {
+      toast.error("All account syncs failed");
     }
   }
 

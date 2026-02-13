@@ -499,3 +499,78 @@ The snapshot system is designed to support scheduled execution for automated EOD
 3. **Execution**: Designed to be called by a cron job or task scheduler
 
 **Future Enhancement**: Add cron-based scheduling to automatically trigger EOD snapshots at configured time (e.g., using `tokio-cron-scheduler` crate).
+
+## Top 100 Coins Collection Job
+
+The backend includes an automated job system for collecting and tracking the top 100 cryptocurrencies by market cap.
+
+### Features
+
+- **Automated Collection**: Scheduled job that fetches top coins from CoinGecko API
+- **Asset Management**: Automatically creates or updates asset metadata in the `assets` table
+- **Ranking Snapshots**: Stores daily ranking data in the `asset_rankings` table
+- **Configurable Schedule**: Fully configurable via environment variables
+- **Manual Trigger**: REST API endpoint for on-demand collection
+
+### Configuration
+
+Configure the job via environment variables (see `.env.example`):
+
+```bash
+# Enable/disable the job (default: true)
+TOP_COINS_COLLECTION_ENABLED=true
+
+# Cron schedule (default: daily at midnight UTC)
+# Format: "sec min hour day_of_month month day_of_week year"
+TOP_COINS_COLLECTION_SCHEDULE=0 0 0 * * *
+
+# Number of top coins to collect (default: 100, max: 250)
+TOP_COINS_COLLECTION_LIMIT=100
+```
+
+### API Endpoint
+
+Manually trigger the collection job:
+
+**POST /api/v1/jobs/collect-top-coins**
+
+Request body:
+```json
+{
+  "limit": 100
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "coins_collected": 100,
+  "assets_created": 50,
+  "assets_updated": 50,
+  "rankings_created": 100
+}
+```
+
+### Job Scheduler
+
+The backend uses `tokio-cron-scheduler` for robust job scheduling:
+
+- **Non-blocking**: Jobs run in the background without affecting API performance
+- **Cron Expression Support**: Standard cron syntax for flexible scheduling
+- **Automatic Retry**: Failed jobs are logged for monitoring
+- **Database Connection Pooling**: Efficient concurrent database access
+
+### Data Storage
+
+The job stores data in two tables:
+
+1. **assets**: Asset metadata (symbol, name, logo, CoinGecko ID, etc.)
+2. **asset_rankings**: Daily ranking snapshots with market data (rank, price, market cap, volume, etc.)
+
+### Use Cases
+
+- **Market Reference**: Provides normalized asset data for portfolio tracking
+- **UX Selection**: Powers asset selection dropdowns and autocomplete
+- **Price Discovery**: Stores current prices for portfolio valuation
+- **Trend Analysis**: Historical ranking data for market insights

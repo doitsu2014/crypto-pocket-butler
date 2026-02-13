@@ -6,6 +6,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // Create portfolio_allocations table with unique constraint from the start
         manager
             .create_table(
                 Table::create()
@@ -48,6 +49,18 @@ impl MigrationTrait for Migration {
                     .table(PortfolioAllocations::Table)
                     .col(PortfolioAllocations::PortfolioId)
                     .col(PortfolioAllocations::AsOf)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Create unique constraint on portfolio_id to ensure only one allocation per portfolio (from m000017)
+        manager
+            .create_index(
+                Index::create()
+                    .name("uq_portfolio_allocations_portfolio_id")
+                    .table(PortfolioAllocations::Table)
+                    .col(PortfolioAllocations::PortfolioId)
+                    .unique()
                     .to_owned(),
             )
             .await

@@ -6,6 +6,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // Create snapshots table with allocation_id from the start
         manager
             .create_table(
                 Table::create()
@@ -18,6 +19,7 @@ impl MigrationTrait for Migration {
                     .col(decimal(Snapshots::TotalValueUsd).not_null()) // DECIMAL for precision
                     .col(json(Snapshots::Holdings)) // JSON array of asset holdings
                     .col(json_null(Snapshots::Metadata)) // Optional metadata (exchange rates, etc.)
+                    .col(uuid_null(Snapshots::AllocationId)) // Reference to portfolio_allocations (from m000018)
                     .col(timestamp_with_time_zone(Snapshots::CreatedAt).default(Expr::current_timestamp()).not_null())
                     .foreign_key(
                         ForeignKey::create()
@@ -25,6 +27,25 @@ impl MigrationTrait for Migration {
                             .from(Snapshots::Table, Snapshots::PortfolioId)
                             .to(Portfolios::Table, Portfolios::Id)
                             .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // Add foreign key to portfolio_allocations (from m000018)
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Snapshots::Table)
+                    .add_foreign_key(
+                        TableForeignKey::new()
+                            .name("fk_snapshots_allocation_id")
+                            .from_tbl(Snapshots::Table)
+                            .from_col(Snapshots::AllocationId)
+                            .to_tbl(PortfolioAllocations::Table)
+                            .to_col(PortfolioAllocations::Id)
+                            .on_delete(ForeignKeyAction::SetNull)
                             .on_update(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
@@ -65,6 +86,31 @@ impl MigrationTrait for Migration {
                     .unique()
                     .to_owned(),
             )
+            .await?;
+
+        // Add index on allocation_id for faster lookups (from m000018)
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_snapshots_allocation_id")
+                    .table(Snapshots::Table)
+                    .col(Snapshots::AllocationId)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Add composite index for optimizing latest snapshot queries (from m000019)
+        // This index supports the query pattern: WHERE portfolio_id = ? ORDER BY snapshot_date DESC, created_at DESC
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_snapshots_latest")
+                    .table(Snapshots::Table)
+                    .col(Snapshots::PortfolioId)
+                    .col((Snapshots::SnapshotDate, IndexOrder::Desc))
+                    .col((Snapshots::CreatedAt, IndexOrder::Desc))
+                    .to_owned(),
+            )
             .await
     }
 
@@ -85,11 +131,18 @@ enum Snapshots {
     TotalValueUsd,
     Holdings,
     Metadata,
+    AllocationId,
     CreatedAt,
 }
 
 #[derive(DeriveIden)]
 enum Portfolios {
+    Table,
+    Id,
+}
+
+#[derive(DeriveIden)]
+enum PortfolioAllocations {
     Table,
     Id,
 }

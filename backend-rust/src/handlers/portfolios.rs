@@ -1109,20 +1109,35 @@ pub async fn construct_portfolio_allocation(
 
     let as_of = chrono::Utc::now().fixed_offset();
 
-    // Step 6: Persist the allocation
+    // Step 6: Persist the allocation (UPSERT to maintain one row per portfolio)
     let allocation_json = serde_json::to_value(&allocation_holdings)
         .map_err(|e| ApiError::BadRequest(format!("Failed to serialize allocation: {}", e)))?;
 
-    let new_allocation = portfolio_allocations::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        portfolio_id: Set(id),
-        as_of: Set(as_of),
-        total_value_usd: Set(total_value),
-        holdings: Set(allocation_json),
-        created_at: ActiveValue::NotSet,
-    };
+    // Check if allocation exists for this portfolio
+    let existing_allocation = portfolio_allocations::Entity::find()
+        .filter(portfolio_allocations::Column::PortfolioId.eq(id))
+        .one(&db)
+        .await?;
 
-    new_allocation.insert(&db).await?;
+    if let Some(existing) = existing_allocation {
+        // Update existing allocation
+        let mut allocation_active: portfolio_allocations::ActiveModel = existing.into();
+        allocation_active.as_of = Set(as_of);
+        allocation_active.total_value_usd = Set(total_value);
+        allocation_active.holdings = Set(allocation_json);
+        allocation_active.update(&db).await?;
+    } else {
+        // Insert new allocation
+        let new_allocation = portfolio_allocations::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            portfolio_id: Set(id),
+            as_of: Set(as_of),
+            total_value_usd: Set(total_value),
+            holdings: Set(allocation_json),
+            created_at: ActiveValue::NotSet,
+        };
+        new_allocation.insert(&db).await?;
+    }
 
     // Update portfolio's last_constructed_at
     let mut portfolio_active: portfolios::ActiveModel = portfolio.into();
@@ -1134,6 +1149,53 @@ pub async fn construct_portfolio_allocation(
         total_value_usd: total_value_f64,
         holdings: allocation_holdings,
         as_of: as_of.to_rfc3339(),
+    }))
+}
+
+/// Get portfolio allocation
+#[utoipa::path(
+    get,
+    path = "/api/v1/portfolios/{id}/allocation",
+    params(
+        ("id" = Uuid, Path, description = "Portfolio ID")
+    ),
+    responses(
+        (status = 200, description = "Latest portfolio allocation", body = ConstructAllocationResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Portfolio or allocation not found")
+    ),
+    tag = "portfolios"
+)]
+pub async fn get_portfolio_allocation(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ConstructAllocationResponse>, ApiError> {
+    use crate::entities::portfolio_allocations;
+
+    let user = get_or_create_user(&db, &token).await?;
+    check_portfolio_ownership(&db, id, user.id).await?;
+
+    // Find the latest allocation for this portfolio
+    let allocation = portfolio_allocations::Entity::find()
+        .filter(portfolio_allocations::Column::PortfolioId.eq(id))
+        .one(&db)
+        .await?;
+
+    let allocation = allocation.ok_or(ApiError::NotFound)?;
+
+    // Deserialize holdings from JSON
+    let holdings: Vec<AllocationHolding> = serde_json::from_value(allocation.holdings.clone())
+        .map_err(|e| ApiError::BadRequest(format!("Failed to deserialize allocation: {}", e)))?;
+
+    let total_value_f64 = allocation.total_value_usd.to_string().parse::<f64>().unwrap_or(0.0);
+
+    Ok(Json(ConstructAllocationResponse {
+        portfolio_id: id,
+        total_value_usd: total_value_f64,
+        holdings,
+        as_of: allocation.as_of.to_rfc3339(),
     }))
 }
 
@@ -1165,5 +1227,9 @@ pub fn create_router() -> Router<DatabaseConnection> {
         .route(
             "/api/v1/portfolios/{id}/construct",
             axum::routing::post(construct_portfolio_allocation),
+        )
+        .route(
+            "/api/v1/portfolios/{id}/allocation",
+            get(get_portfolio_allocation),
         )
 }

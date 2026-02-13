@@ -33,6 +33,7 @@ See also: `docs/planning/10-core-split-infra-vs-portfolios.md`.
   - aggregates account holdings
   - values using market reference prices
   - stores/returns Portfolio Allocation
+  - **Persist** allocation and expose last_constructed_at
 
 ### B2) Snapshots
 

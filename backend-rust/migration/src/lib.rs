@@ -16,6 +16,7 @@ mod m20240101_000013_create_asset_rankings_table;
 mod m20240101_000014_add_enabled_chains_to_accounts;
 mod m20240101_000015_create_portfolio_allocations_table;
 mod m20240101_000016_add_last_constructed_at_to_portfolios;
+mod m20240101_000017_add_unique_portfolio_id_to_allocations;
 
 pub struct Migrator;
 
@@ -39,6 +40,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240101_000014_add_enabled_chains_to_accounts::Migration),
             Box::new(m20240101_000015_create_portfolio_allocations_table::Migration),
             Box::new(m20240101_000016_add_last_constructed_at_to_portfolios::Migration),
+            Box::new(m20240101_000017_add_unique_portfolio_id_to_allocations::Migration),
         ]
     }
 }

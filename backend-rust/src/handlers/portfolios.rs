@@ -7,9 +7,10 @@ use axum::{
 };
 use axum_keycloak_auth::decode::KeycloakToken;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, ModelTrait,
-    QueryFilter,
+    QueryFilter, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -1109,31 +1110,128 @@ pub async fn construct_portfolio_allocation(
 
     let as_of = chrono::Utc::now().fixed_offset();
 
-    // Step 6: Persist the allocation
+    // Step 6: Persist the allocation (UPSERT to maintain one row per portfolio)
     let allocation_json = serde_json::to_value(&allocation_holdings)
         .map_err(|e| ApiError::BadRequest(format!("Failed to serialize allocation: {}", e)))?;
 
-    let new_allocation = portfolio_allocations::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        portfolio_id: Set(id),
-        as_of: Set(as_of),
-        total_value_usd: Set(total_value),
-        holdings: Set(allocation_json),
-        created_at: ActiveValue::NotSet,
-    };
+    // Use a transaction to ensure atomic UPSERT
+    let txn = db.begin().await?;
+    
+    // Try to find existing allocation
+    let existing_allocation = portfolio_allocations::Entity::find()
+        .filter(portfolio_allocations::Column::PortfolioId.eq(id))
+        .one(&txn)
+        .await?;
 
-    new_allocation.insert(&db).await?;
+    if let Some(existing) = existing_allocation {
+        // Update existing allocation
+        let mut allocation_active: portfolio_allocations::ActiveModel = existing.into();
+        allocation_active.as_of = Set(as_of);
+        allocation_active.total_value_usd = Set(total_value);
+        allocation_active.holdings = Set(allocation_json);
+        allocation_active.update(&txn).await?;
+    } else {
+        // Insert new allocation - if unique constraint violation occurs,
+        // it means another concurrent request inserted first. In that case,
+        // we'll fetch and update the existing row.
+        
+        // Try to insert - if it fails due to unique constraint, update instead
+        let new_allocation = portfolio_allocations::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            portfolio_id: Set(id),
+            as_of: Set(as_of),
+            total_value_usd: Set(total_value),
+            holdings: Set(allocation_json),
+            created_at: ActiveValue::NotSet,
+        };
+        
+        match new_allocation.insert(&txn).await {
+            Ok(_) => {}, // Insert succeeded
+            Err(sea_orm::DbErr::Exec(ref err)) if err.to_string().contains("duplicate key") || err.to_string().contains("unique constraint") => {
+                // Unique constraint violation - another request inserted first (PostgreSQL-specific error detection)
+                // Fetch the row and update it instead
+                let existing = portfolio_allocations::Entity::find()
+                    .filter(portfolio_allocations::Column::PortfolioId.eq(id))
+                    .one(&txn)
+                    .await?
+                    .ok_or_else(|| ApiError::DatabaseError(sea_orm::DbErr::Custom("Allocation disappeared after conflict".to_string())))?;
+                
+                // Re-serialize allocation for the update
+                let allocation_json_retry = serde_json::to_value(&allocation_holdings)
+                    .map_err(|e| ApiError::BadRequest(format!("Failed to serialize allocation: {}", e)))?;
+                
+                let mut allocation_active: portfolio_allocations::ActiveModel = existing.into();
+                allocation_active.as_of = Set(as_of);
+                allocation_active.total_value_usd = Set(total_value);
+                allocation_active.holdings = Set(allocation_json_retry);
+                allocation_active.update(&txn).await?;
+            },
+            Err(e) => return Err(ApiError::DatabaseError(e)),
+        }
+    }
 
     // Update portfolio's last_constructed_at
     let mut portfolio_active: portfolios::ActiveModel = portfolio.into();
     portfolio_active.last_constructed_at = Set(Some(as_of));
-    portfolio_active.update(&db).await?;
+    portfolio_active.update(&txn).await?;
+    
+    // Commit transaction
+    txn.commit().await?;
 
     Ok(Json(ConstructAllocationResponse {
         portfolio_id: id,
         total_value_usd: total_value_f64,
         holdings: allocation_holdings,
         as_of: as_of.to_rfc3339(),
+    }))
+}
+
+/// Get portfolio allocation
+#[utoipa::path(
+    get,
+    path = "/api/v1/portfolios/{id}/allocation",
+    params(
+        ("id" = Uuid, Path, description = "Portfolio ID")
+    ),
+    responses(
+        (status = 200, description = "Latest portfolio allocation", body = ConstructAllocationResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Portfolio or allocation not found")
+    ),
+    tag = "portfolios"
+)]
+pub async fn get_portfolio_allocation(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ConstructAllocationResponse>, ApiError> {
+    use crate::entities::portfolio_allocations;
+
+    let user = get_or_create_user(&db, &token).await?;
+    check_portfolio_ownership(&db, id, user.id).await?;
+
+    // Find the latest allocation for this portfolio
+    let allocation = portfolio_allocations::Entity::find()
+        .filter(portfolio_allocations::Column::PortfolioId.eq(id))
+        .one(&db)
+        .await?;
+
+    let allocation = allocation.ok_or(ApiError::NotFound)?;
+
+    // Deserialize holdings from JSON
+    let holdings: Vec<AllocationHolding> = serde_json::from_value(allocation.holdings.clone())
+        .map_err(|e| ApiError::BadRequest(format!("Failed to deserialize allocation: {}", e)))?;
+
+    let total_value_f64 = allocation.total_value_usd
+        .to_f64()
+        .ok_or_else(|| ApiError::BadRequest("Failed to convert total value to f64".to_string()))?;
+
+    Ok(Json(ConstructAllocationResponse {
+        portfolio_id: id,
+        total_value_usd: total_value_f64,
+        holdings,
+        as_of: allocation.as_of.to_rfc3339(),
     }))
 }
 
@@ -1165,5 +1263,9 @@ pub fn create_router() -> Router<DatabaseConnection> {
         .route(
             "/api/v1/portfolios/{id}/construct",
             axum::routing::post(construct_portfolio_allocation),
+        )
+        .route(
+            "/api/v1/portfolios/{id}/allocation",
+            get(get_portfolio_allocation),
         )
 }

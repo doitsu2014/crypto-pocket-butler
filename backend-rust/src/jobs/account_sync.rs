@@ -120,13 +120,59 @@ pub async fn sync_account(
                 }
                 _ => {
                     // Default to EVM chains (Ethereum, Arbitrum, Optimism, Base, BSC)
-                    let chains = vec![
-                        EvmChain::Ethereum,
-                        EvmChain::Arbitrum,
-                        EvmChain::Optimism,
-                        EvmChain::Base,
-                        EvmChain::BinanceSmartChain,
-                    ];
+                    // Use enabled_chains if available, otherwise use all chains
+                    let chains = if let Some(enabled_chains_json) = &account.enabled_chains {
+                        // Parse enabled chains from JSON
+                        match serde_json::from_value::<Vec<String>>(enabled_chains_json.clone()) {
+                            Ok(chain_names) => {
+                                // Convert chain names to EvmChain enum
+                                let mut chains = Vec::new();
+                                for name in chain_names {
+                                    match name.as_str() {
+                                        "ethereum" => chains.push(EvmChain::Ethereum),
+                                        "arbitrum" => chains.push(EvmChain::Arbitrum),
+                                        "optimism" => chains.push(EvmChain::Optimism),
+                                        "base" => chains.push(EvmChain::Base),
+                                        "bsc" => chains.push(EvmChain::BinanceSmartChain),
+                                        _ => {
+                                            tracing::warn!("Unknown chain name: {}", name);
+                                        }
+                                    }
+                                }
+                                if chains.is_empty() {
+                                    // If no valid chains found, use all as fallback
+                                    vec![
+                                        EvmChain::Ethereum,
+                                        EvmChain::Arbitrum,
+                                        EvmChain::Optimism,
+                                        EvmChain::Base,
+                                        EvmChain::BinanceSmartChain,
+                                    ]
+                                } else {
+                                    chains
+                                }
+                            }
+                            Err(_) => {
+                                // If parsing fails, use all chains as fallback
+                                vec![
+                                    EvmChain::Ethereum,
+                                    EvmChain::Arbitrum,
+                                    EvmChain::Optimism,
+                                    EvmChain::Base,
+                                    EvmChain::BinanceSmartChain,
+                                ]
+                            }
+                        }
+                    } else {
+                        // If no enabled_chains specified, use all chains
+                        vec![
+                            EvmChain::Ethereum,
+                            EvmChain::Arbitrum,
+                            EvmChain::Optimism,
+                            EvmChain::Base,
+                            EvmChain::BinanceSmartChain,
+                        ]
+                    };
 
                     // Create EVM connector
                     match EvmConnector::new(wallet_address.clone(), chains) {
@@ -174,19 +220,13 @@ pub async fn sync_account(
     );
 
     // Convert balances to holdings JSON format
-    // For now, we don't have price data, so value_usd will be 0
+    // Store only asset and quantity (no price/value)
     let holdings: Vec<serde_json::Value> = balances
         .iter()
         .map(|b| {
             json!({
                 "asset": b.asset,
                 "quantity": b.quantity,
-                "available": b.available,
-                "frozen": b.frozen,
-                "price_usd": 0,
-                "value_usd": 0,
-                "account_id": account_id.to_string(),
-                "account_name": account.name.clone(),
             })
         })
         .collect();

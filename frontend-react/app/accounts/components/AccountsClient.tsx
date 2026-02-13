@@ -31,6 +31,7 @@ export default function AccountsClient() {
   const [walletFormData, setWalletFormData] = useState({
     name: "",
     wallet_address: "",
+    enabled_chains: [] as string[],
   });
   const [exchangeFormData, setExchangeFormData] = useState({
     name: "",
@@ -63,11 +64,12 @@ export default function AccountsClient() {
         name: walletFormData.name.trim(),
         account_type: "wallet",
         wallet_address: walletFormData.wallet_address.trim(),
+        enabled_chains: walletFormData.enabled_chains.length > 0 ? walletFormData.enabled_chains : undefined,
       });
-      
+
       toast.success("Wallet created successfully!");
-      
-      setWalletFormData({ name: "", wallet_address: "" });
+
+      setWalletFormData({ name: "", wallet_address: "", enabled_chains: [] });
       setShowCreateForm(false);
       setFormType(null);
     } catch (err) {
@@ -300,6 +302,45 @@ export default function AccountsClient() {
                     className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
                     required
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-3">
+                    Enabled Chains <span className="text-slate-500">(optional, defaults to all)</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: "ethereum", label: "Ethereum" },
+                      { id: "arbitrum", label: "Arbitrum" },
+                      { id: "optimism", label: "Optimism" },
+                      { id: "base", label: "Base" },
+                      { id: "bsc", label: "BSC" },
+                    ].map((chain) => (
+                      <label
+                        key={chain.id}
+                        className="flex items-center gap-2 p-3 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg hover:border-fuchsia-500/50 cursor-pointer transition-all"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={walletFormData.enabled_chains.includes(chain.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setWalletFormData({
+                                ...walletFormData,
+                                enabled_chains: [...walletFormData.enabled_chains, chain.id],
+                              });
+                            } else {
+                              setWalletFormData({
+                                ...walletFormData,
+                                enabled_chains: walletFormData.enabled_chains.filter((c) => c !== chain.id),
+                              });
+                            }
+                          }}
+                          className="w-4 h-4 text-fuchsia-500 bg-slate-900 border-violet-500 rounded focus:ring-fuchsia-500 focus:ring-2"
+                        />
+                        <span className="text-sm text-slate-300">{chain.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="flex gap-3">
                   <LoadingButton

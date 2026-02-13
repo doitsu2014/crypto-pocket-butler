@@ -28,6 +28,9 @@ pub struct CreateAccountRequest {
     /// Wallet address (required if account_type is "wallet")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wallet_address: Option<String>,
+    /// Enabled EVM chains (optional for wallet accounts, e.g., ["ethereum", "arbitrum", "bsc"])
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled_chains: Option<Vec<String>>,
     /// API key (for exchange accounts)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
@@ -68,6 +71,8 @@ pub struct AccountResponse {
     pub exchange_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wallet_address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled_chains: Option<Vec<String>>,
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_synced_at: Option<String>,
@@ -77,6 +82,11 @@ pub struct AccountResponse {
 
 impl From<accounts::Model> for AccountResponse {
     fn from(account: accounts::Model) -> Self {
+        // Parse enabled_chains from JSON
+        let enabled_chains = account.enabled_chains.as_ref().and_then(|json| {
+            serde_json::from_value::<Vec<String>>(json.clone()).ok()
+        });
+
         Self {
             id: account.id,
             user_id: account.user_id,
@@ -84,6 +94,7 @@ impl From<accounts::Model> for AccountResponse {
             account_type: account.account_type,
             exchange_name: account.exchange_name,
             wallet_address: account.wallet_address,
+            enabled_chains,
             is_active: account.is_active,
             last_synced_at: account.last_synced_at.map(|dt| dt.to_rfc3339()),
             created_at: account.created_at.to_rfc3339(),
@@ -297,10 +308,31 @@ async fn create_account_handler(
             .into_response());
     }
 
+    // Validate enabled_chains if provided for wallet accounts
+    let valid_chains = vec!["ethereum", "arbitrum", "optimism", "base", "bsc"];
+    if let Some(ref chains) = req.enabled_chains {
+        if req.account_type == "wallet" {
+            for chain in chains {
+                if !valid_chains.contains(&chain.as_str()) {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        format!("Invalid chain: {}. Valid chains are: ethereum, arbitrum, optimism, base, bsc", chain),
+                    )
+                        .into_response());
+                }
+            }
+        }
+    }
+
     // Create account
     // SECURITY NOTE: API credentials should be encrypted before storage
     // Current implementation stores credentials in plaintext with _encrypted suffix as placeholder
     // TODO: Implement proper encryption/decryption for api_key, api_secret, and passphrase fields
+    let enabled_chains_json = req.enabled_chains
+        .map(|chains| serde_json::to_value(chains).ok())
+        .flatten()
+        .map(|v| v.into());
+
     let new_account = accounts::ActiveModel {
         id: Set(Uuid::new_v4()),
         user_id: Set(user.id),
@@ -308,6 +340,7 @@ async fn create_account_handler(
         account_type: Set(req.account_type),
         exchange_name: Set(req.exchange_name),
         wallet_address: Set(req.wallet_address),
+        enabled_chains: Set(enabled_chains_json),
         api_key_encrypted: Set(req.api_key), // TODO: Encrypt before storing
         api_secret_encrypted: Set(req.api_secret), // TODO: Encrypt before storing
         passphrase_encrypted: Set(req.passphrase), // TODO: Encrypt before storing

@@ -13,6 +13,7 @@ mod m20240101_000010_create_assets_table;
 mod m20240101_000011_create_asset_contracts_table;
 mod m20240101_000012_create_asset_prices_table;
 mod m20240101_000013_create_asset_rankings_table;
+mod m20240101_000014_add_enabled_chains_to_accounts;
 
 pub struct Migrator;
 
@@ -33,6 +34,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240101_000011_create_asset_contracts_table::Migration),
             Box::new(m20240101_000012_create_asset_prices_table::Migration),
             Box::new(m20240101_000013_create_asset_rankings_table::Migration),
+            Box::new(m20240101_000014_add_enabled_chains_to_accounts::Migration),
         ]
     }
 }

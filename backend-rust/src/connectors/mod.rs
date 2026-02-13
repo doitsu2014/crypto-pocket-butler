@@ -9,6 +9,10 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 
 /// Balance information for a single asset
+/// 
+/// NOTE: This struct contains NO price or valuation fields by design.
+/// Holdings store only quantities. Price/valuation is calculated separately
+/// during portfolio construction using reference price data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Balance {
     pub asset: String,

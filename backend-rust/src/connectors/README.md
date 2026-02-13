@@ -13,6 +13,7 @@ A read-only connector for OKX exchange to fetch spot account balances.
 - **Read-Only Access**: Uses OKX API keys with read-only permissions
 - **HMAC-SHA256 Signature**: Implements OKX API authentication with proper signature generation
 - **Spot Balance Fetching**: Retrieves all spot balances from OKX trading account
+- **Quantity-Only Storage**: Fetches only balance quantities, NO valuation or price data
 - **Error Handling**: Comprehensive error handling for API calls and network issues
 - **Async/Await**: Non-blocking I/O using Tokio runtime
 
@@ -94,6 +95,8 @@ pub struct Balance {
     pub frozen: String,      // Frozen balance
 }
 ```
+
+**Important Design Note**: The `Balance` struct intentionally contains NO price or valuation fields. Account holdings store only quantities. Price and valuation are calculated separately during portfolio construction using reference price data from the price collection job. This separation ensures data integrity and allows for historical price analysis.
 
 ## Error Handling
 

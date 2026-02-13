@@ -22,6 +22,10 @@ struct OkxResponse<T> {
 }
 
 /// OKX balance data structure
+/// 
+/// NOTE: This struct intentionally omits valuation fields (eq, totalEq, upl) from the OKX API response.
+/// Account holdings store ONLY quantities, not valuations. Price/valuation is calculated separately
+/// during portfolio construction using reference price data.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OkxBalanceData {

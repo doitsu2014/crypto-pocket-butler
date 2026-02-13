@@ -117,6 +117,20 @@ export interface SnapshotsQueryParams {
   limit?: number;
 }
 
+export interface CreateSnapshotInput {
+  snapshot_type?: string;
+  snapshot_date?: string;
+}
+
+export interface SnapshotResult {
+  portfolio_id: string;
+  snapshot_id?: string;
+  success: boolean;
+  error?: string;
+  holdings_count: number;
+  total_value_usd: string;
+}
+
 // ============================================================================
 // Recommendation Types
 // ============================================================================

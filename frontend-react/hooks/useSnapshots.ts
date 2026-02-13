@@ -2,9 +2,14 @@
  * TanStack Query hooks for portfolio snapshot data fetching
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
-import type { ListSnapshotsResponse, SnapshotsQueryParams } from "@/types/api";
+import type { 
+  ListSnapshotsResponse, 
+  SnapshotsQueryParams,
+  CreateSnapshotInput,
+  SnapshotResult 
+} from "@/types/api";
 
 // ============================================================================
 // Query Keys
@@ -52,5 +57,34 @@ export function useSnapshots(portfolioId: string, params?: SnapshotsQueryParams)
     // Snapshots are historical data, they don't change frequently
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
+  });
+}
+
+// ============================================================================
+// Mutation Hooks
+// ============================================================================
+
+/**
+ * Create a new snapshot for a portfolio
+ */
+export function useCreateSnapshot(portfolioId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: CreateSnapshotInput = {}) => {
+      return apiClient<SnapshotResult>(`/v1/portfolios/${portfolioId}/snapshots`, {
+        method: "POST",
+        body: JSON.stringify({
+          snapshot_type: input.snapshot_type || "manual",
+          snapshot_date: input.snapshot_date,
+        }),
+      });
+    },
+    onSuccess: () => {
+      // Invalidate all snapshot queries for this portfolio
+      queryClient.invalidateQueries({
+        queryKey: snapshotKeys.list(portfolioId),
+      });
+    },
   });
 }

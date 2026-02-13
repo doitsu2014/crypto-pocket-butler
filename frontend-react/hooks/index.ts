@@ -27,6 +27,7 @@ export {
 // Snapshot hooks
 export {
   useSnapshots,
+  useCreateSnapshot,
   snapshotKeys,
 } from "./useSnapshots";
 

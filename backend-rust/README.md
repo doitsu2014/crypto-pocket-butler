@@ -574,3 +574,97 @@ The job stores data in two tables:
 - **UX Selection**: Powers asset selection dropdowns and autocomplete
 - **Price Discovery**: Stores current prices for portfolio valuation
 - **Trend Analysis**: Historical ranking data for market insights
+
+## Contract Addresses Collection Job
+
+The backend includes an automated job system for collecting and maintaining contract addresses for supported blockchain networks.
+
+### Features
+
+- **Automated Collection**: Scheduled job that fetches contract addresses from CoinGecko API
+- **Multi-Chain Support**: Supports Ethereum, BSC, Polygon, Arbitrum, Optimism, Avalanche, Base, Solana, and more
+- **Address Mapping**: Maps wallet token balances to canonical assets using contract addresses
+- **Smart Deduplication**: Prevents duplicate contract addresses with unique constraints
+- **Configurable Schedule**: Fully configurable via environment variables
+- **Manual Trigger**: REST API endpoint for on-demand collection
+- **Rate Limiting**: Respects CoinGecko API rate limits (40 calls/minute)
+
+### Configuration
+
+Configure the job via environment variables (see `.env.example`):
+
+```bash
+# Enable/disable the job (default: true)
+CONTRACT_ADDRESSES_COLLECTION_ENABLED=true
+
+# Cron schedule (default: daily at 1:00 AM UTC)
+# Format: "sec min hour day_of_month month day_of_week year"
+CONTRACT_ADDRESSES_COLLECTION_SCHEDULE=0 0 1 * * *
+
+# Optional limit on number of assets to process per run
+# (omit or set to 0 for no limit)
+# CONTRACT_ADDRESSES_COLLECTION_LIMIT=100
+```
+
+### How It Works
+
+1. **Fetch Assets**: Retrieves all active assets that have a `coingecko_id`
+2. **Get Details**: For each asset, fetches detailed coin information from CoinGecko's `/coins/{id}` endpoint
+3. **Extract Addresses**: Parses the `platforms` field to extract contract addresses for each blockchain
+4. **Normalize**: Converts CoinGecko platform names to standard chain identifiers (e.g., `binance-smart-chain` → `bsc`)
+5. **Store**: Upserts contract addresses into the `asset_contracts` table with metadata (token standard, decimals, verification status)
+
+### Chain Mappings
+
+CoinGecko platform names are normalized to standard identifiers:
+
+- `ethereum` → `ethereum`
+- `binance-smart-chain` → `bsc`
+- `polygon-pos` → `polygon`
+- `arbitrum-one` → `arbitrum`
+- `optimistic-ethereum` → `optimism`
+- `avalanche` → `avalanche`
+- `base` → `base`
+- `solana` → `solana`
+
+### API Endpoint
+
+Manually trigger the collection job:
+
+**POST /api/v1/jobs/collect-contract-addresses**
+
+Request body:
+```json
+{
+  "limit": 100  // Optional: limit number of assets to process
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "assets_processed": 95,
+  "contracts_created": 450,
+  "contracts_updated": 23,
+  "assets_skipped": 5
+}
+```
+
+### Data Storage
+
+The job stores contract addresses in the `asset_contracts` table:
+
+- `asset_id`: Foreign key to the assets table
+- `chain`: Blockchain network identifier (e.g., "ethereum", "bsc")
+- `contract_address`: Token contract address on the chain
+- `token_standard`: Token standard (e.g., "ERC20", "BEP20", "SPL")
+- `decimals`: Token decimals (can override asset default)
+- `is_verified`: Whether the contract is verified (always `true` for CoinGecko data)
+
+### Use Cases
+
+- **Wallet Integration**: Enables mapping of on-chain token balances to known assets
+- **Multi-Chain Support**: Tracks the same asset across different blockchains
+- **Portfolio Sync**: Powers wallet balance synchronization for EVM and other chains
+- **Asset Discovery**: Identifies tokens by their contract addresses

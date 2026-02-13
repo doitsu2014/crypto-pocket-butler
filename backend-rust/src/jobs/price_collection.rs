@@ -3,7 +3,8 @@ use crate::entities::{asset_prices, assets, accounts};
 use chrono::{Timelike, Utc};
 use rust_decimal::Decimal;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, 
+    QueryOrder, QuerySelect,
 };
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -115,6 +116,7 @@ async fn get_tracked_assets(
     let top_assets = assets::Entity::find()
         .filter(assets::Column::IsActive.eq(true))
         .filter(assets::Column::CoingeckoId.is_not_null())
+        .order_by_asc(assets::Column::Symbol) // Order by symbol for consistent results
         .limit(top_n_limit as u64)
         .all(db)
         .await?;
@@ -258,11 +260,20 @@ async fn store_prices(
     for data in price_data {
         // Check if price already exists for this asset/timestamp/source combination
         // Round timestamp to the nearest minute to avoid duplicates from multiple runs
-        let rounded_timestamp = timestamp
+        let rounded_timestamp = match timestamp
             .date_naive()
             .and_hms_opt(timestamp.hour(), timestamp.minute(), 0)
-            .unwrap()
-            .and_utc();
+        {
+            Some(dt) => dt.and_utc(),
+            None => {
+                tracing::error!(
+                    "Failed to create rounded timestamp from {} for asset {}",
+                    timestamp,
+                    data.asset_id
+                );
+                continue;
+            }
+        };
 
         let existing = asset_prices::Entity::find()
             .filter(asset_prices::Column::AssetId.eq(data.asset_id))
@@ -281,14 +292,48 @@ async fn store_prices(
         }
 
         // Create new price entry
-        let price_usd = Decimal::from_str(&data.price_usd.to_string())
-            .unwrap_or_else(|_| Decimal::ZERO);
+        let price_usd = match Decimal::from_str(&data.price_usd.to_string()) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to convert price {} to Decimal for asset {}: {}. Skipping.",
+                    data.price_usd,
+                    data.asset_id,
+                    e
+                );
+                continue;
+            }
+        };
+        
         let volume_24h_usd = data.volume_24h_usd
-            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+            .and_then(|v| {
+                Decimal::from_str(&v.to_string())
+                    .map_err(|e| {
+                        tracing::warn!("Failed to convert volume {} to Decimal: {}", v, e);
+                        e
+                    })
+                    .ok()
+            });
+        
         let market_cap_usd = data.market_cap_usd
-            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+            .and_then(|v| {
+                Decimal::from_str(&v.to_string())
+                    .map_err(|e| {
+                        tracing::warn!("Failed to convert market cap {} to Decimal: {}", v, e);
+                        e
+                    })
+                    .ok()
+            });
+        
         let change_percent_24h = data.change_percent_24h
-            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+            .and_then(|v| {
+                Decimal::from_str(&v.to_string())
+                    .map_err(|e| {
+                        tracing::warn!("Failed to convert change percent {} to Decimal: {}", v, e);
+                        e
+                    })
+                    .ok()
+            });
 
         let new_price = asset_prices::ActiveModel {
             id: ActiveValue::Set(Uuid::new_v4()),

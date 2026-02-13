@@ -18,6 +18,7 @@ mod m20240101_000015_create_portfolio_allocations_table;
 mod m20240101_000016_add_last_constructed_at_to_portfolios;
 mod m20240101_000017_add_unique_portfolio_id_to_allocations;
 mod m20240101_000018_add_allocation_id_to_snapshots;
+mod m20240101_000019_add_snapshots_latest_index;
 
 pub struct Migrator;
 
@@ -43,6 +44,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240101_000016_add_last_constructed_at_to_portfolios::Migration),
             Box::new(m20240101_000017_add_unique_portfolio_id_to_allocations::Migration),
             Box::new(m20240101_000018_add_allocation_id_to_snapshots::Migration),
+            Box::new(m20240101_000019_add_snapshots_latest_index::Migration),
         ]
     }
 }

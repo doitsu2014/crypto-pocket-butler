@@ -1,7 +1,7 @@
 use crate::entities::{portfolio_allocations, portfolios, snapshots};
 use chrono::{Utc, NaiveDate};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
 use serde_json::json;
 use std::error::Error;
@@ -62,8 +62,11 @@ pub async fn create_portfolio_snapshot(
     );
 
     // Fetch the latest persisted allocation for this portfolio
+    // Note: There's a unique constraint on portfolio_id in portfolio_allocations,
+    // so only one allocation per portfolio exists, but we order by as_of for safety
     let allocation = portfolio_allocations::Entity::find()
         .filter(portfolio_allocations::Column::PortfolioId.eq(portfolio_id))
+        .order_by_desc(portfolio_allocations::Column::AsOf)
         .one(db)
         .await?
         .ok_or_else(|| {

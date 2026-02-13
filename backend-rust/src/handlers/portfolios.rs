@@ -7,6 +7,7 @@ use axum::{
 };
 use axum_keycloak_auth::decode::KeycloakToken;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, ModelTrait,
     QueryFilter, TransactionTrait,
@@ -1222,9 +1223,9 @@ pub async fn get_portfolio_allocation(
     let holdings: Vec<AllocationHolding> = serde_json::from_value(allocation.holdings.clone())
         .map_err(|e| ApiError::BadRequest(format!("Failed to deserialize allocation: {}", e)))?;
 
-    let total_value_f64 = allocation.total_value_usd.to_string()
-        .parse::<f64>()
-        .map_err(|e| ApiError::BadRequest(format!("Failed to parse total value: {}", e)))?;
+    let total_value_f64 = allocation.total_value_usd
+        .to_f64()
+        .ok_or_else(|| ApiError::BadRequest("Failed to convert total value to f64".to_string()))?;
 
     Ok(Json(ConstructAllocationResponse {
         portfolio_id: id,

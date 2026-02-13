@@ -57,11 +57,13 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
   const pathname = usePathname();
 
   const isActive = (item: typeof navigation[0]) => {
+    if (!pathname) return false;
+    
     if (item.matchExact) {
       return pathname === item.href;
     }
     // For non-exact matches, check if pathname is exact or starts with href/
-    return pathname === item.href || pathname?.startsWith(`${item.href}/`);
+    return pathname === item.href || pathname.startsWith(`${item.href}/`);
   };
 
   return (
@@ -74,7 +76,7 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
       <div className="absolute bottom-0 left-0 w-[450px] h-[450px] bg-cyan-500/15 rounded-full blur-[110px]"></div>
       
       {/* Top navbar */}
-      <nav className="relative bg-slate-950/80 backdrop-blur-xl border-b-2 border-fuchsia-500/30 shadow-[0_0_20px_rgba(217,70,239,0.25)]" aria-label="Site header">
+      <nav className="relative bg-slate-950/80 backdrop-blur-xl border-b-2 border-fuchsia-500/30 shadow-[0_0_20px_rgba(217,70,239,0.25)]" aria-label="User and branding">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">

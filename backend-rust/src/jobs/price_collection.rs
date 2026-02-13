@@ -111,8 +111,10 @@ async fn get_tracked_assets(
 ) -> Result<Vec<assets::Model>, Box<dyn Error + Send + Sync>> {
     let mut tracked_asset_ids: HashSet<Uuid> = HashSet::new();
 
-    // Get top N assets by market cap rank
-    // We'll get assets that have rankings (which means they're in the top coins)
+    // Get up to N active assets with CoinGecko IDs from database
+    // Note: The actual "top N by market cap" is determined by CoinGecko API in fetch_prices_for_assets().
+    // This query just ensures we have asset records in our DB to match against.
+    // The limit here helps reduce unnecessary lookups when we have many assets in the DB.
     let top_assets = assets::Entity::find()
         .filter(assets::Column::IsActive.eq(true))
         .filter(assets::Column::CoingeckoId.is_not_null())
@@ -125,7 +127,7 @@ async fn get_tracked_assets(
         tracked_asset_ids.insert(asset.id);
     }
 
-    tracing::debug!("Found {} top assets by market cap", tracked_asset_ids.len());
+    tracing::debug!("Found {} assets from database", tracked_asset_ids.len());
 
     // Get assets from portfolio holdings
     let accounts_with_holdings = accounts::Entity::find()
@@ -171,13 +173,18 @@ async fn get_tracked_assets(
     Ok(tracked_assets)
 }
 
-/// Fetch prices from CoinGecko for given assets
+/// Fetch prices from CoinGecko for tracked assets
+/// 
+/// This function ensures we get prices for:
+/// 1. Top N coins by market cap (from CoinGecko's markets API, sorted by market cap)
+/// 2. All portfolio assets (even if not in top N)
 async fn fetch_prices_for_assets(
     connector: &CoinGeckoConnector,
     tracked_assets: &[assets::Model],
     top_n_limit: usize,
 ) -> Result<Vec<PriceData>, Box<dyn Error + Send + Sync>> {
-    // First, fetch top N coins by market cap
+    // Fetch top N coins by market cap from CoinGecko
+    // CoinGecko returns these pre-sorted by market cap rank, so this IS the true top N
     let mut all_coins = connector.fetch_top_coins(top_n_limit).await?;
     
     // Build a set of coingecko_ids we already have

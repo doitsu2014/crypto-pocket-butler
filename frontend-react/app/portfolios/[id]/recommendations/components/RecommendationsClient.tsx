@@ -1,14 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import { ApiError } from "@/lib/api-client";
-import { useToast } from "@/contexts/ToastContext";
 import Link from "next/link";
 import { LoadingSkeleton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
 import { useRecommendations, useGenerateRecommendations } from "@/hooks";
-import type { Recommendation } from "@/types/api";
 
 const MAX_ORDERS_PREVIEW = 4; // Maximum number of orders to show in list view
 
@@ -63,13 +60,10 @@ function getTypeColor(type: string): string {
 }
 
 export default function RecommendationsClient({ portfolioId }: { portfolioId: string }) {
-  const toast = useToast();
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-
   // Use TanStack Query hooks
   const { data: response, isLoading: loading, error: queryError, refetch } = useRecommendations(
     portfolioId,
-    statusFilter !== "all" ? { status: statusFilter } : undefined
+    undefined
   );
   const generateRecommendations = useGenerateRecommendations();
 
@@ -82,10 +76,9 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
   const generateMockRecommendations = async () => {
     try {
       await generateRecommendations.mutateAsync(portfolioId);
-      toast.success('Recommendations generated successfully');
     } catch (err) {
-      const errorMessage = err instanceof ApiError ? err.message : 'Failed to generate recommendations';
-      toast.error(errorMessage);
+      // Error is handled by TanStack Query's onError
+      console.error('Failed to generate recommendations:', err);
     }
   };
 

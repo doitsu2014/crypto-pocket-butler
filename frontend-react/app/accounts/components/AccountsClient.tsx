@@ -7,14 +7,7 @@ import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
 import { useAccounts, useCreateAccount, useSyncAccount, useDeleteAccount } from "@/hooks";
-import type { Account, CreateAccountInput } from "@/types/api";
-
-interface SyncResult {
-  account_id: string;
-  success: boolean;
-  error?: string;
-  holdings_count: number;
-}
+import type { CreateAccountInput } from "@/types/api";
 
 type AccountFormType = "wallet" | "exchange" | null;
 
@@ -34,7 +27,6 @@ function formatDate(dateString: string | undefined): string {
 export default function AccountsClient() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formType, setFormType] = useState<AccountFormType>(null);
-  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [deletingAccount, setDeletingAccount] = useState<string | null>(null);
   const [walletFormData, setWalletFormData] = useState({
     name: "",
@@ -162,13 +154,11 @@ export default function AccountsClient() {
   function openCreateForm(type: AccountFormType) {
     setFormType(type);
     setShowCreateForm(true);
-    setEditingAccount(null);
   }
 
   function closeForm() {
     setShowCreateForm(false);
     setFormType(null);
-    setEditingAccount(null);
   }
 
   return (

@@ -2,8 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { ApiError } from "@/lib/api-client";
-import { useToast } from "@/contexts/ToastContext";
-import Link from "next/link";
 import { LoadingSpinner } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
@@ -59,7 +57,6 @@ export default function SnapshotsClient({
 }: {
   portfolioId: string;
 }) {
-  const toast = useToast();
   const [dateRange, setDateRange] = useState<"7" | "30" | "90" | "all">("30");
   const [selectedType, setSelectedType] = useState<string>("all");
 
@@ -85,7 +82,7 @@ export default function SnapshotsClient({
   // Use TanStack Query hook
   const { data: response, isLoading: loading, error: queryError, refetch } = useSnapshots(portfolioId, queryParams);
 
-  const snapshots = response?.snapshots || [];
+  const snapshots = useMemo(() => response?.snapshots || [], [response]);
   
   // Convert query error to string for display
   const error = queryError instanceof ApiError ? queryError.message : 
@@ -93,7 +90,7 @@ export default function SnapshotsClient({
 
   // Prepare chart data
   const chartData: ChartDataPoint[] = useMemo(() => snapshots
-    .map((snapshot) => ({
+    .map((snapshot: Snapshot) => ({
       date: snapshot.snapshot_date,
       value: parseFloat(snapshot.total_value_usd),
       formattedValue: formatCurrency(parseFloat(snapshot.total_value_usd)),

@@ -8,7 +8,6 @@ import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
 import Link from "next/link";
 import { usePortfolios, useCreatePortfolio } from "@/hooks";
-import type { Portfolio } from "@/types/api";
 
 function formatDate(dateString: string): string {
   try {

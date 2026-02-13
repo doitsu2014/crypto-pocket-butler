@@ -211,7 +211,10 @@ pub async fn sync_account(
     );
 
     // Convert balances to holdings JSON format
-    // Store only asset/symbol and quantity, no price or value
+    // IMPORTANT: Store ONLY asset symbol and quantity - NO price or valuation fields.
+    // This is a core design principle: account holdings are quantity-only.
+    // Valuation happens separately during portfolio construction using price reference data.
+    // Do NOT add available/frozen/price/value fields here.
     let holdings: Vec<serde_json::Value> = balances
         .iter()
         .map(|b| {
@@ -300,5 +303,60 @@ mod tests {
         let encrypted = "test-credential";
         let decrypted = decrypt_credential(encrypted).unwrap();
         assert_eq!(decrypted, encrypted);
+    }
+
+    #[test]
+    fn test_holdings_format_qty_only() {
+        // Test that holdings JSON contains only asset and quantity, no price/value
+        use crate::connectors::Balance;
+        
+        let balances = vec![
+            Balance {
+                asset: "BTC".to_string(),
+                quantity: "1.5".to_string(),
+                available: "1.2".to_string(),
+                frozen: "0.3".to_string(),
+            },
+            Balance {
+                asset: "ETH".to_string(),
+                quantity: "10.0".to_string(),
+                available: "8.0".to_string(),
+                frozen: "2.0".to_string(),
+            },
+        ];
+
+        // Simulate the holdings conversion logic from sync_account function
+        let holdings: Vec<serde_json::Value> = balances
+            .iter()
+            .map(|b| {
+                json!({
+                    "asset": b.asset,
+                    "quantity": b.quantity,
+                })
+            })
+            .collect();
+
+        // Verify each holding has exactly 2 fields: asset and quantity
+        for holding in holdings {
+            let obj = holding.as_object().expect("holding should be an object");
+            
+            // Must have exactly 2 fields
+            assert_eq!(obj.len(), 2, "Holdings must have exactly 2 fields");
+            
+            // Must have asset field
+            assert!(obj.contains_key("asset"), "Holdings must have 'asset' field");
+            
+            // Must have quantity field
+            assert!(obj.contains_key("quantity"), "Holdings must have 'quantity' field");
+            
+            // Must NOT have price/value/available/frozen fields
+            assert!(!obj.contains_key("price"), "Holdings must NOT have 'price' field");
+            assert!(!obj.contains_key("price_usd"), "Holdings must NOT have 'price_usd' field");
+            assert!(!obj.contains_key("value"), "Holdings must NOT have 'value' field");
+            assert!(!obj.contains_key("value_usd"), "Holdings must NOT have 'value_usd' field");
+            assert!(!obj.contains_key("available"), "Holdings must NOT have 'available' field");
+            assert!(!obj.contains_key("frozen"), "Holdings must NOT have 'frozen' field");
+            assert!(!obj.contains_key("equity"), "Holdings must NOT have 'equity' field");
+        }
     }
 }

@@ -3,9 +3,10 @@ use axum_keycloak_auth::{
     decode::KeycloakToken, instance::KeycloakAuthInstance, instance::KeycloakConfig,
     layer::KeycloakAuthLayer, PassthroughMode,
 };
-use crypto_pocket_butler_backend::{db::DbConfig, handlers};
+use crypto_pocket_butler_backend::{db::DbConfig, handlers, jobs};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
+use tokio_cron_scheduler::{JobScheduler, Job};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
@@ -235,6 +236,71 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
     tracing::info!("Database connection pool established");
+
+    // Initialize job scheduler
+    tracing::info!("Initializing job scheduler...");
+    let scheduler = JobScheduler::new().await.expect("Failed to create job scheduler");
+    
+    // Configure top coins collection job
+    let top_coins_enabled = std::env::var("TOP_COINS_COLLECTION_ENABLED")
+        .unwrap_or_else(|_| "true".to_string())
+        .parse::<bool>()
+        .unwrap_or(true);
+    
+    if top_coins_enabled {
+        let top_coins_schedule = std::env::var("TOP_COINS_COLLECTION_SCHEDULE")
+            .unwrap_or_else(|_| "0 0 0 * * *".to_string()); // Default: daily at midnight UTC
+        let top_coins_limit = std::env::var("TOP_COINS_COLLECTION_LIMIT")
+            .unwrap_or_else(|_| "100".to_string())
+            .parse::<usize>()
+            .unwrap_or(100);
+        
+        tracing::info!(
+            "Scheduling top coins collection job: schedule='{}', limit={}",
+            top_coins_schedule,
+            top_coins_limit
+        );
+
+        let db_clone = db.clone();
+        let job = Job::new_async(top_coins_schedule.as_str(), move |_uuid, _l| {
+            let db = db_clone.clone();
+            let limit = top_coins_limit;
+            Box::pin(async move {
+                tracing::info!("Running scheduled top coins collection job");
+                match jobs::top_coins_collection::collect_top_coins(&db, limit).await {
+                    Ok(result) => {
+                        if result.success {
+                            tracing::info!(
+                                "Top coins collection job completed successfully: {} coins collected, {} assets created, {} updated, {} rankings created",
+                                result.coins_collected,
+                                result.assets_created,
+                                result.assets_updated,
+                                result.rankings_created
+                            );
+                        } else {
+                            tracing::error!(
+                                "Top coins collection job failed: {}",
+                                result.error.unwrap_or_else(|| "Unknown error".to_string())
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Top coins collection job failed with error: {}", e);
+                    }
+                }
+            })
+        })
+        .expect("Failed to create top coins collection job");
+
+        scheduler.add(job).await.expect("Failed to add top coins collection job to scheduler");
+        tracing::info!("Top coins collection job scheduled successfully");
+    } else {
+        tracing::info!("Top coins collection job is disabled");
+    }
+
+    // Start the scheduler
+    scheduler.start().await.expect("Failed to start job scheduler");
+    tracing::info!("Job scheduler started");
 
     // Keycloak configuration from environment variables
     let server_url = std::env::var("KEYCLOAK_SERVER")

@@ -56,6 +56,11 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
     if (href === "/dashboard") {
       return pathname === href;
     }
+    if (href === "/settings") {
+      return pathname === href;
+    }
+    // For other paths, check if pathname starts with href
+    // But not if it's a portfolio settings page when checking /settings
     return pathname?.startsWith(href);
   };
 
@@ -98,7 +103,7 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
 
       <div className="flex">
         {/* Sidebar */}
-        <aside className="relative w-64 min-h-[calc(100vh-4rem)] bg-slate-950/60 backdrop-blur-sm border-r-2 border-fuchsia-500/20">
+        <aside className="relative w-64 min-h-[calc(100vh-4rem)] bg-slate-950/60 backdrop-blur-sm border-r-2 border-fuchsia-500/20" role="navigation" aria-label="Main navigation">
           <nav className="p-4 space-y-2">
             {navigation.map((item) => {
               const active = isActive(item.href);

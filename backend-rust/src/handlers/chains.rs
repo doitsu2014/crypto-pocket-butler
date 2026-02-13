@@ -71,3 +71,34 @@ where
 {
     Router::new().route("/v1/chains", get(list_supported_chains))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_list_supported_chains() {
+        let response = list_supported_chains().await;
+        let chains_response = response.0;
+        
+        // Should return 5 chains
+        assert_eq!(chains_response.chains.len(), 5);
+        
+        // Verify all expected chains are present
+        let chain_ids: Vec<String> = chains_response.chains.iter().map(|c| c.id.clone()).collect();
+        assert!(chain_ids.contains(&"ethereum".to_string()));
+        assert!(chain_ids.contains(&"arbitrum".to_string()));
+        assert!(chain_ids.contains(&"optimism".to_string()));
+        assert!(chain_ids.contains(&"base".to_string()));
+        assert!(chain_ids.contains(&"bsc".to_string()));
+        
+        // Verify specific chain details
+        let ethereum = chains_response.chains.iter().find(|c| c.id == "ethereum").unwrap();
+        assert_eq!(ethereum.name, "Ethereum");
+        assert_eq!(ethereum.native_symbol, "ETH");
+        
+        let bsc = chains_response.chains.iter().find(|c| c.id == "bsc").unwrap();
+        assert_eq!(bsc.name, "BNB Smart Chain");
+        assert_eq!(bsc.native_symbol, "BNB");
+    }
+}

@@ -126,7 +126,7 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
         setConstructedAllocation(allocationData);
       } catch (err) {
         // Only suppress 404 (allocation doesn't exist yet), log other errors
-        if (err instanceof ApiError && err.message.includes('404')) {
+        if (err instanceof ApiError && err.statusCode === 404) {
           setConstructedAllocation(null);
         } else {
           console.error("Failed to load allocation:", err);

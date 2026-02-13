@@ -19,7 +19,7 @@ export async function POST(
     let data;
     try {
       data = await response.json();
-    } catch (e) {
+    } catch (e: unknown) {
       console.error('Failed to parse backend response as JSON:', e);
       return NextResponse.json(
         { error: 'Invalid response from backend' },

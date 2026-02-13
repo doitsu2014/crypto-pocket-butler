@@ -208,3 +208,28 @@ fn infer_token_standard(chain: &str) -> Option<String> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_platform_name() {
+        assert_eq!(normalize_platform_name("ethereum"), "ethereum");
+        assert_eq!(normalize_platform_name("binance-smart-chain"), "bsc");
+        assert_eq!(normalize_platform_name("polygon-pos"), "polygon");
+        assert_eq!(normalize_platform_name("arbitrum-one"), "arbitrum");
+        assert_eq!(normalize_platform_name("optimistic-ethereum"), "optimism");
+        assert_eq!(normalize_platform_name("unknown-chain"), "unknown-chain");
+    }
+
+    #[test]
+    fn test_infer_token_standard() {
+        assert_eq!(infer_token_standard("ethereum"), Some("ERC20".to_string()));
+        assert_eq!(infer_token_standard("bsc"), Some("BEP20".to_string()));
+        assert_eq!(infer_token_standard("polygon"), Some("ERC20".to_string()));
+        assert_eq!(infer_token_standard("arbitrum"), Some("ERC20".to_string()));
+        assert_eq!(infer_token_standard("solana"), Some("SPL".to_string()));
+        assert_eq!(infer_token_standard("unknown-chain"), None);
+    }
+}

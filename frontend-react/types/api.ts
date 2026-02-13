@@ -117,6 +117,22 @@ export interface SnapshotsQueryParams {
   limit?: number;
 }
 
+export interface CreateSnapshotInput {
+  /** Snapshot type (e.g., 'manual', 'eod', 'hourly'). Defaults to 'manual' if not specified. */
+  snapshot_type?: string;
+  /** Snapshot date in ISO 8601 format (YYYY-MM-DD). Defaults to current date if not specified. */
+  snapshot_date?: string;
+}
+
+export interface SnapshotResult {
+  portfolio_id: string;
+  snapshot_id?: string;
+  success: boolean;
+  error?: string;
+  holdings_count: number;
+  total_value_usd: string; // String for precise decimal handling (matches backend BigDecimal serialization)
+}
+
 // ============================================================================
 // Recommendation Types
 // ============================================================================

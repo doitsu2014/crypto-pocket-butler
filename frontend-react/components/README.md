@@ -268,3 +268,19 @@ frontend-react/
 ```
 
 The toast system is provided at the root level, making it available to all components without prop drilling.
+
+---
+
+## Interactive Demo
+
+Visit `/demo/ui-components` in your development environment to see an interactive showcase of all UI components with live examples and code snippets.
+
+---
+
+## Additional Resources
+
+- **Next.js Documentation**: [https://nextjs.org/docs](https://nextjs.org/docs)
+- **Tailwind CSS**: [https://tailwindcss.com/docs](https://tailwindcss.com/docs)
+- **React Context API**: [https://react.dev/reference/react/createContext](https://react.dev/reference/react/createContext)
+
+For questions or contributions, please refer to the main project README.

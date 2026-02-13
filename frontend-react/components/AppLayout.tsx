@@ -111,6 +111,7 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
                 <Link
                   key={item.name}
                   href={item.href}
+                  aria-current={active ? "page" : undefined}
                   className={`
                     flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200
                     ${

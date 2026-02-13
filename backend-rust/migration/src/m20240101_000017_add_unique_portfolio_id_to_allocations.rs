@@ -11,6 +11,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         
         // Delete older duplicates, keeping only the latest one per portfolio_id
+        // Note: This SQL uses DISTINCT ON which is PostgreSQL-specific syntax
         let delete_sql = r#"
             DELETE FROM portfolio_allocations
             WHERE id NOT IN (

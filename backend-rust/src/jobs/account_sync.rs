@@ -214,7 +214,10 @@ pub async fn sync_account(
     // IMPORTANT: Store ONLY asset symbol and quantity - NO price or valuation fields.
     // This is a core design principle: account holdings are quantity-only.
     // Valuation happens separately during portfolio construction using price reference data.
-    // Do NOT add available/frozen/price/value fields here.
+    // 
+    // Note: The Balance struct may contain available/frozen fields (for internal use),
+    // but these are intentionally excluded from persisted holdings JSON.
+    // Do NOT add available/frozen/price/value/equity fields to the holdings JSON.
     let holdings: Vec<serde_json::Value> = balances
         .iter()
         .map(|b| {

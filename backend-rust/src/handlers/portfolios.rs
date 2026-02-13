@@ -9,7 +9,7 @@ use axum_keycloak_auth::decode::KeycloakToken;
 use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, ModelTrait,
-    QueryFilter,
+    QueryFilter, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -1113,10 +1113,13 @@ pub async fn construct_portfolio_allocation(
     let allocation_json = serde_json::to_value(&allocation_holdings)
         .map_err(|e| ApiError::BadRequest(format!("Failed to serialize allocation: {}", e)))?;
 
-    // Check if allocation exists for this portfolio
+    // Use a transaction to ensure atomic UPSERT
+    let txn = db.begin().await?;
+    
+    // Try to find existing allocation
     let existing_allocation = portfolio_allocations::Entity::find()
         .filter(portfolio_allocations::Column::PortfolioId.eq(id))
-        .one(&db)
+        .one(&txn)
         .await?;
 
     if let Some(existing) = existing_allocation {
@@ -1125,7 +1128,7 @@ pub async fn construct_portfolio_allocation(
         allocation_active.as_of = Set(as_of);
         allocation_active.total_value_usd = Set(total_value);
         allocation_active.holdings = Set(allocation_json);
-        allocation_active.update(&db).await?;
+        allocation_active.update(&txn).await?;
     } else {
         // Insert new allocation
         let new_allocation = portfolio_allocations::ActiveModel {
@@ -1136,13 +1139,16 @@ pub async fn construct_portfolio_allocation(
             holdings: Set(allocation_json),
             created_at: ActiveValue::NotSet,
         };
-        new_allocation.insert(&db).await?;
+        new_allocation.insert(&txn).await?;
     }
 
     // Update portfolio's last_constructed_at
     let mut portfolio_active: portfolios::ActiveModel = portfolio.into();
     portfolio_active.last_constructed_at = Set(Some(as_of));
-    portfolio_active.update(&db).await?;
+    portfolio_active.update(&txn).await?;
+    
+    // Commit transaction
+    txn.commit().await?;
 
     Ok(Json(ConstructAllocationResponse {
         portfolio_id: id,
@@ -1189,7 +1195,9 @@ pub async fn get_portfolio_allocation(
     let holdings: Vec<AllocationHolding> = serde_json::from_value(allocation.holdings.clone())
         .map_err(|e| ApiError::BadRequest(format!("Failed to deserialize allocation: {}", e)))?;
 
-    let total_value_f64 = allocation.total_value_usd.to_string().parse::<f64>().unwrap_or(0.0);
+    let total_value_f64 = allocation.total_value_usd.to_string()
+        .parse::<f64>()
+        .map_err(|e| ApiError::BadRequest(format!("Failed to parse total value: {}", e)))?;
 
     Ok(Json(ConstructAllocationResponse {
         portfolio_id: id,

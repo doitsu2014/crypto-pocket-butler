@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::error::Error;
 use tracing;
 
@@ -23,6 +24,17 @@ pub struct CoinMarketData {
     pub price_change_percentage_24h: Option<f64>,
     // Note: CoinGecko doesn't provide market dominance in the markets endpoint
     // Market dominance would need to be calculated separately using total market cap
+}
+
+/// Detailed coin data from CoinGecko /coins/{id} API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoinDetailData {
+    pub id: String,
+    pub symbol: String,
+    pub name: String,
+    /// Map of blockchain platforms to contract addresses
+    /// e.g., {"ethereum": "0x...", "polygon-pos": "0x...", "binance-smart-chain": "0x..."}
+    pub platforms: HashMap<String, String>,
 }
 
 impl CoinGeckoConnector {
@@ -128,6 +140,47 @@ impl CoinGeckoConnector {
         
         Ok(coins)
     }
+
+    /// Fetch detailed coin information including contract addresses
+    /// 
+    /// # Arguments
+    /// * `coin_id` - CoinGecko coin ID (e.g., "bitcoin", "ethereum")
+    /// 
+    /// # Returns
+    /// Detailed coin data including platforms/contract addresses
+    pub async fn fetch_coin_detail(&self, coin_id: &str) -> Result<CoinDetailData, Box<dyn Error + Send + Sync>> {
+        tracing::debug!("Fetching coin detail for {} from CoinGecko", coin_id);
+
+        let url = format!(
+            "{}/coins/{}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false",
+            self.base_url,
+            coin_id
+        );
+
+        let response = self.client
+            .get(&url)
+            .header("accept", "application/json")
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            tracing::warn!("CoinGecko API error for {}: {} - {}", coin_id, status, error_text);
+            return Err(format!("CoinGecko API error: {} - {}", status, error_text).into());
+        }
+
+        let coin_detail: CoinDetailData = response.json().await?;
+        
+        tracing::debug!(
+            "Successfully fetched coin detail for {}: {} platforms",
+            coin_id,
+            coin_detail.platforms.len()
+        );
+        
+        Ok(coin_detail)
+    }
+
 }
 
 impl Default for CoinGeckoConnector {

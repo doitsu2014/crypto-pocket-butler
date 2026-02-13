@@ -84,6 +84,8 @@ pub struct PortfolioResponse {
     pub target_allocation: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub guardrails: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_constructed_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -98,6 +100,7 @@ impl From<portfolios::Model> for PortfolioResponse {
             is_default: model.is_default,
             target_allocation: model.target_allocation,
             guardrails: model.guardrails,
+            last_constructed_at: model.last_constructed_at.map(|dt| dt.to_string()),
             created_at: model.created_at.to_string(),
             updated_at: model.updated_at.to_string(),
         }
@@ -436,6 +439,7 @@ pub async fn create_portfolio(
         is_default: ActiveValue::Set(req.is_default),
         target_allocation: ActiveValue::Set(req.target_allocation),
         guardrails: ActiveValue::Set(req.guardrails),
+        last_constructed_at: ActiveValue::NotSet,
         created_at: ActiveValue::NotSet,
         updated_at: ActiveValue::NotSet,
     };
@@ -900,6 +904,239 @@ pub async fn get_portfolio_holdings(
     }))
 }
 
+// === Construct allocation DTOs ===
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct AllocationHolding {
+    /// Asset symbol
+    pub asset: String,
+    /// Total quantity across all accounts
+    pub quantity: String,
+    /// Value in USD
+    pub value_usd: f64,
+    /// Percentage of total portfolio (0-100)
+    pub weight: f64,
+    /// Price per unit in USD (None if unpriced)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price_usd: Option<f64>,
+    /// Whether the asset is unpriced
+    pub unpriced: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ConstructAllocationResponse {
+    /// Portfolio ID
+    pub portfolio_id: Uuid,
+    /// Total portfolio value in USD (excludes unpriced assets)
+    pub total_value_usd: f64,
+    /// Per-asset breakdown with values and weights
+    pub holdings: Vec<AllocationHolding>,
+    /// Timestamp when allocation was computed
+    pub as_of: String,
+}
+
+/// Construct portfolio allocation
+#[utoipa::path(
+    post,
+    path = "/api/v1/portfolios/{id}/construct",
+    params(
+        ("id" = Uuid, Path, description = "Portfolio ID")
+    ),
+    responses(
+        (status = 200, description = "Portfolio allocation constructed and persisted", body = ConstructAllocationResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Portfolio not found")
+    ),
+    tag = "portfolios"
+)]
+pub async fn construct_portfolio_allocation(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ConstructAllocationResponse>, ApiError> {
+    use crate::entities::{asset_contracts, asset_prices, assets, portfolio_allocations};
+    use sea_orm::{QueryOrder, Set};
+
+    let user = get_or_create_user(&db, &token).await?;
+    let portfolio = check_portfolio_ownership(&db, id, user.id).await?;
+
+    // Step 1: Get all accounts linked to this portfolio
+    let portfolio_accounts = portfolio_accounts::Entity::find()
+        .filter(portfolio_accounts::Column::PortfolioId.eq(id))
+        .all(&db)
+        .await?;
+
+    let account_ids: Vec<Uuid> = portfolio_accounts
+        .iter()
+        .map(|pa| pa.account_id)
+        .collect();
+
+    let accounts_list = accounts::Entity::find()
+        .filter(accounts::Column::Id.is_in(account_ids))
+        .all(&db)
+        .await?;
+
+    // Step 2: Aggregate holdings by asset across all accounts
+    let mut holdings_map: HashMap<String, Decimal> = HashMap::new();
+
+    for account in &accounts_list {
+        if let Some(holdings_json) = &account.holdings {
+            let holdings: Vec<HoldingData> = match serde_json::from_value(serde_json::Value::from(holdings_json.clone())) {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to deserialize holdings for account {}: {}",
+                        account.id, e
+                    );
+                    continue;
+                }
+            };
+            
+            for holding in holdings {
+                if holding.asset.is_empty() {
+                    continue;
+                }
+
+                let qty = parse_decimal_or_zero(&holding.quantity);
+                let curr_qty = holdings_map.get(&holding.asset).copied().unwrap_or(Decimal::ZERO);
+                holdings_map.insert(holding.asset.clone(), curr_qty + qty);
+            }
+        }
+    }
+
+    // Step 3: Normalize assets - get asset IDs from symbols
+    // Step 4: Join latest prices from asset_prices
+    let mut allocation_holdings: Vec<AllocationHolding> = Vec::new();
+    let mut total_value = Decimal::ZERO;
+
+    for (symbol, quantity) in holdings_map.iter() {
+        // Find asset by symbol (case-insensitive)
+        let asset = assets::Entity::find()
+            .filter(assets::Column::Symbol.eq(symbol.to_uppercase()))
+            .one(&db)
+            .await?;
+
+        let (price_opt, unpriced) = if let Some(asset) = asset {
+            // Get latest price for this asset
+            let latest_price = asset_prices::Entity::find()
+                .filter(asset_prices::Column::AssetId.eq(asset.id))
+                .order_by_desc(asset_prices::Column::Timestamp)
+                .one(&db)
+                .await?;
+
+            if let Some(price) = latest_price {
+                (Some(price.price_usd), false)
+            } else {
+                // No price found - mark as unpriced
+                (None, true)
+            }
+        } else {
+            // Asset not found in database - try to match via contract addresses
+            // This handles tokens that might be referenced by contract address
+            let contract = asset_contracts::Entity::find()
+                .filter(asset_contracts::Column::ContractAddress.eq(symbol.to_lowercase()))
+                .one(&db)
+                .await?;
+
+            if let Some(contract) = contract {
+                // Found by contract address, get the asset
+                let asset = assets::Entity::find_by_id(contract.asset_id)
+                    .one(&db)
+                    .await?;
+
+                if let Some(asset) = asset {
+                    let latest_price = asset_prices::Entity::find()
+                        .filter(asset_prices::Column::AssetId.eq(asset.id))
+                        .order_by_desc(asset_prices::Column::Timestamp)
+                        .one(&db)
+                        .await?;
+
+                    if let Some(price) = latest_price {
+                        (Some(price.price_usd), false)
+                    } else {
+                        (None, true)
+                    }
+                } else {
+                    (None, true)
+                }
+            } else {
+                // No asset or contract found - mark as unpriced
+                (None, true)
+            }
+        };
+
+        // Step 5: Compute value
+        let value_usd = if let Some(price) = price_opt {
+            let price_f64 = price.to_string().parse::<f64>().unwrap_or(0.0);
+            let qty_f64 = quantity.to_string().parse::<f64>().unwrap_or(0.0);
+            let value = price_f64 * qty_f64;
+            
+            // Only add to total value if priced
+            if !unpriced {
+                total_value += Decimal::from_str(&value.to_string()).unwrap_or(Decimal::ZERO);
+            }
+            
+            value
+        } else {
+            0.0
+        };
+
+        allocation_holdings.push(AllocationHolding {
+            asset: symbol.clone(),
+            quantity: quantity.to_string(),
+            value_usd,
+            weight: 0.0, // Will be computed after we know total
+            price_usd: price_opt.map(|p| p.to_string().parse::<f64>().unwrap_or(0.0)),
+            unpriced,
+        });
+    }
+
+    // Compute weights for priced assets only
+    let total_value_f64 = total_value.to_string().parse::<f64>().unwrap_or(0.0);
+    for holding in &mut allocation_holdings {
+        if !holding.unpriced && total_value_f64 > 0.0 {
+            holding.weight = (holding.value_usd / total_value_f64) * 100.0;
+        }
+    }
+
+    // Sort by value descending
+    allocation_holdings.sort_by(|a, b| {
+        b.value_usd
+            .partial_cmp(&a.value_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let as_of = chrono::Utc::now().fixed_offset();
+
+    // Step 6: Persist the allocation
+    let allocation_json = serde_json::to_value(&allocation_holdings)
+        .map_err(|e| ApiError::BadRequest(format!("Failed to serialize allocation: {}", e)))?;
+
+    let new_allocation = portfolio_allocations::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        portfolio_id: Set(id),
+        as_of: Set(as_of),
+        total_value_usd: Set(total_value),
+        holdings: Set(allocation_json),
+        created_at: ActiveValue::NotSet,
+    };
+
+    new_allocation.insert(&db).await?;
+
+    // Update portfolio's last_constructed_at
+    let mut portfolio_active: portfolios::ActiveModel = portfolio.into();
+    portfolio_active.last_constructed_at = Set(Some(as_of));
+    portfolio_active.update(&db).await?;
+
+    Ok(Json(ConstructAllocationResponse {
+        portfolio_id: id,
+        total_value_usd: total_value_f64,
+        holdings: allocation_holdings,
+        as_of: as_of.to_rfc3339(),
+    }))
+}
+
 // === Router setup ===
 
 pub fn create_router() -> Router<DatabaseConnection> {
@@ -924,5 +1161,9 @@ pub fn create_router() -> Router<DatabaseConnection> {
         .route(
             "/api/v1/portfolios/{id}/holdings",
             get(get_portfolio_holdings),
+        )
+        .route(
+            "/api/v1/portfolios/{id}/construct",
+            axum::routing::post(construct_portfolio_allocation),
         )
 }

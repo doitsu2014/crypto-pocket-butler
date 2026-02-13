@@ -12,6 +12,7 @@ pub struct Model {
     pub is_default: bool,
     pub target_allocation: Option<serde_json::Value>,
     pub guardrails: Option<serde_json::Value>,
+    pub last_constructed_at: Option<DateTimeWithTimeZone>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }
@@ -30,6 +31,8 @@ pub enum Relation {
     PortfolioAccounts,
     #[sea_orm(has_many = "super::snapshots::Entity")]
     Snapshots,
+    #[sea_orm(has_many = "super::portfolio_allocations::Entity")]
+    PortfolioAllocations,
 }
 
 impl Related<super::users::Entity> for Entity {
@@ -47,6 +50,12 @@ impl Related<super::portfolio_accounts::Entity> for Entity {
 impl Related<super::snapshots::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Snapshots.def()
+    }
+}
+
+impl Related<super::portfolio_allocations::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PortfolioAllocations.def()
     }
 }
 

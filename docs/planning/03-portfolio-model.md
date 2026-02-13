@@ -70,3 +70,11 @@
 - Allocation tables: by asset / by account / by tag.
 - Risk metrics: concentration, stablecoin %, drawdown proxy.
 - Snapshot series: portfolio value over time.
+
+## Portfolio Allocation (latest-only)
+
+- **PortfolioAllocation**
+  - `portfolio_id` (unique)
+  - `as_of` (timestamp)
+  - `total_value_usd`
+  - `allocation` (JSON: assets with qty, price, value, weight)

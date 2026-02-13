@@ -44,7 +44,7 @@ Purpose: portfolios are a computed view based on selected accounts.
   - portfolio allocation (weights)
   - valuation using price reference dataset
 
-- **Persist** the result as a stored Portfolio Allocation record (so UI can show last constructed at and snapshots can reference it).
+- **Persist the result as a stored Portfolio Allocation record (latest-only: one row per portfolio) (so UI can show last constructed at and snapshots can reference it).
 
 ### B2) Snapshots
 

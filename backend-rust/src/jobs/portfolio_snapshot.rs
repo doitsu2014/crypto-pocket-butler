@@ -1,13 +1,10 @@
-use crate::entities::{accounts, portfolio_accounts, portfolios, snapshots};
+use crate::entities::{portfolio_allocations, portfolios, snapshots};
 use chrono::{Utc, NaiveDate};
-use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use serde_json::json;
-use std::collections::HashMap;
 use std::error::Error;
-use std::str::FromStr;
 use tracing;
 use uuid::Uuid;
 
@@ -22,37 +19,18 @@ pub struct SnapshotResult {
     pub total_value_usd: String,
 }
 
-/// Holding data structure for deserialization
-#[derive(Debug, serde::Deserialize)]
-struct HoldingData {
-    asset: String,
-    quantity: String,
-    available: String,
-    frozen: String,
-    #[serde(default)]
-    price_usd: f64,
-    #[serde(default)]
-    value_usd: f64,
-}
-
-/// Parse a decimal string, returning 0 if parsing fails
-fn parse_decimal_or_zero(s: &str) -> Decimal {
-    Decimal::from_str(s).unwrap_or_else(|_| Decimal::ZERO)
-}
-
-/// Create an EOD snapshot for a single portfolio
+/// Create a snapshot from a portfolio's persisted allocation
 ///
 /// This function:
-/// 1. Fetches all accounts linked to the portfolio
-/// 2. Aggregates holdings from all accounts
-/// 3. Calculates total portfolio value
-/// 4. Persists the snapshot to the database
+/// 1. Fetches the latest portfolio allocation
+/// 2. Creates a snapshot from the allocation data
+/// 3. Persists the snapshot to the database
 ///
 /// # Arguments
 /// * `db` - Database connection
 /// * `portfolio_id` - UUID of the portfolio to snapshot
 /// * `snapshot_date` - Date for the snapshot (defaults to today if None)
-/// * `snapshot_type` - Type of snapshot ("eod", "manual", "hourly")
+/// * `snapshot_type` - Type of snapshot ("eod", "manual")
 ///
 /// # Returns
 /// Result containing SnapshotResult with success status and details
@@ -83,149 +61,60 @@ pub async fn create_portfolio_snapshot(
         portfolio_id
     );
 
-    // Get all accounts linked to this portfolio
-    let portfolio_accounts_list = portfolio_accounts::Entity::find()
-        .filter(portfolio_accounts::Column::PortfolioId.eq(portfolio_id))
-        .all(db)
-        .await?;
-
-    let account_ids: Vec<Uuid> = portfolio_accounts_list
-        .iter()
-        .map(|pa| pa.account_id)
-        .collect();
+    // Fetch the latest persisted allocation for this portfolio
+    let allocation = portfolio_allocations::Entity::find()
+        .filter(portfolio_allocations::Column::PortfolioId.eq(portfolio_id))
+        .one(db)
+        .await?
+        .ok_or_else(|| {
+            format!(
+                "No allocation found for portfolio {}. Please run construct first.",
+                portfolio_id
+            )
+        })?;
 
     tracing::info!(
-        "Found {} accounts linked to portfolio {}",
-        account_ids.len(),
-        portfolio_id
+        "Found allocation {} for portfolio {} with total value: {}",
+        allocation.id,
+        portfolio_id,
+        allocation.total_value_usd
     );
 
-    // Fetch all accounts
-    let accounts_list = accounts::Entity::find()
-        .filter(accounts::Column::Id.is_in(account_ids.clone()))
-        .all(db)
-        .await?;
+    // Deserialize holdings from allocation
+    let holdings: Vec<serde_json::Value> =
+        serde_json::from_value(serde_json::Value::from(allocation.holdings.clone()))
+            .map_err(|e| format!("Failed to deserialize allocation holdings: {}", e))?;
 
-    // Aggregate holdings by asset
-    let mut holdings_map: HashMap<String, serde_json::Value> = HashMap::new();
-    let mut individual_holdings_count = 0;
-
-    for account in accounts_list {
-        if let Some(holdings_json) = account.holdings {
-            // Deserialize holdings
-            let holdings: Vec<HoldingData> =
-                match serde_json::from_value(serde_json::Value::from(holdings_json)) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to deserialize holdings for account {}: {}",
-                            account.id,
-                            e
-                        );
-                        continue;
-                    }
-                };
-
-            for holding in holdings {
-                // Skip holdings with empty asset names
-                if holding.asset.is_empty() {
-                    continue;
-                }
-
-                individual_holdings_count += 1;
-
-                let entry = holdings_map
-                    .entry(holding.asset.clone())
-                    .or_insert_with(|| {
-                        json!({
-                            "asset": holding.asset.clone(),
-                            "total_quantity": "0",
-                            "total_available": "0",
-                            "total_frozen": "0",
-                            "price_usd": holding.price_usd,
-                            "value_usd": 0.0,
-                        })
-                    });
-
-                // Add to totals using Decimal for precision
-                let qty = parse_decimal_or_zero(&holding.quantity);
-                let avail = parse_decimal_or_zero(&holding.available);
-                let frz = parse_decimal_or_zero(&holding.frozen);
-
-                if let Some(obj) = entry.as_object_mut() {
-                    let curr_qty = parse_decimal_or_zero(
-                        obj.get("total_quantity")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("0"),
-                    );
-                    let curr_avail = parse_decimal_or_zero(
-                        obj.get("total_available")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("0"),
-                    );
-                    let curr_frz = parse_decimal_or_zero(
-                        obj.get("total_frozen")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("0"),
-                    );
-                    let curr_value = obj
-                        .get("value_usd")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
-
-                    obj.insert("total_quantity".to_string(), json!((curr_qty + qty).to_string()));
-                    obj.insert(
-                        "total_available".to_string(),
-                        json!((curr_avail + avail).to_string()),
-                    );
-                    obj.insert(
-                        "total_frozen".to_string(),
-                        json!((curr_frz + frz).to_string()),
-                    );
-                    obj.insert("value_usd".to_string(), json!(curr_value + holding.value_usd));
-                }
-            }
-        }
-    }
-
-    // Convert holdings map to array
-    let holdings_array: Vec<serde_json::Value> = holdings_map.into_values().collect();
-
-    // Calculate total portfolio value
-    let total_value_usd: f64 = holdings_array
-        .iter()
-        .filter_map(|h| h.get("value_usd").and_then(|v| v.as_f64()))
-        .sum();
-
-    let total_value_decimal = Decimal::from_str(&total_value_usd.to_string())
-        .unwrap_or_else(|_| Decimal::ZERO);
+    let holdings_count = holdings.len();
+    let total_value_usd = allocation.total_value_usd;
 
     tracing::info!(
-        "Portfolio {} snapshot: {} unique assets, total value: ${:.2}",
+        "Portfolio {} snapshot: {} assets, total value: ${}",
         portfolio_id,
-        holdings_array.len(),
+        holdings_count,
         total_value_usd
     );
 
     // Create snapshot record
+    let now = Utc::now();
     let snapshot = snapshots::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         portfolio_id: ActiveValue::Set(portfolio_id),
         snapshot_date: ActiveValue::Set(snapshot_date),
         snapshot_type: ActiveValue::Set(snapshot_type.to_string()),
-        total_value_usd: ActiveValue::Set(total_value_decimal),
-        holdings: ActiveValue::Set(json!(holdings_array).into()),
+        total_value_usd: ActiveValue::Set(total_value_usd),
+        holdings: ActiveValue::Set(json!(holdings).into()),
+        allocation_id: ActiveValue::Set(Some(allocation.id)),
         metadata: ActiveValue::Set(Some(
             json!({
                 "portfolio_name": portfolio.name,
-                "account_count": account_ids.len(),
-                "holdings_count": individual_holdings_count,
-                "unique_assets": holdings_array.len(),
-                "created_at": Utc::now().to_rfc3339(),
+                "allocation_as_of": allocation.as_of.to_rfc3339(),
+                "snapshot_time": now.to_rfc3339(),
+                "created_at": now.to_rfc3339(),
             })
             .into(),
         )),
-        created_at: ActiveValue::Set(Utc::now().into()),
+        created_at: ActiveValue::Set(now.into()),
     };
 
     // Insert snapshot into database
@@ -243,7 +132,7 @@ pub async fn create_portfolio_snapshot(
         snapshot_id: Some(inserted.id),
         success: true,
         error: None,
-        holdings_count: holdings_array.len(),
+        holdings_count,
         total_value_usd: total_value_usd.to_string(),
     })
 }
@@ -319,17 +208,4 @@ pub async fn create_all_portfolio_snapshots(
     );
 
     Ok(results)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_decimal_or_zero() {
-        assert_eq!(parse_decimal_or_zero("123.45"), Decimal::from_str("123.45").unwrap());
-        assert_eq!(parse_decimal_or_zero("0"), Decimal::ZERO);
-        assert_eq!(parse_decimal_or_zero("invalid"), Decimal::ZERO);
-        assert_eq!(parse_decimal_or_zero(""), Decimal::ZERO);
-    }
 }

@@ -73,6 +73,7 @@ struct HealthResponse {
         handlers::snapshots::create_portfolio_snapshot_handler,
         handlers::snapshots::create_all_user_snapshots_handler,
         handlers::snapshots::list_portfolio_snapshots_handler,
+        handlers::snapshots::get_latest_portfolio_snapshot_handler,
         handlers::recommendations::list_portfolio_recommendations,
         handlers::recommendations::get_recommendation,
         handlers::recommendations::create_recommendation,
@@ -423,6 +424,63 @@ async fn main() {
         tracing::info!("Contract addresses collection job scheduled successfully");
     } else {
         tracing::info!("Contract addresses collection job is disabled");
+    }
+
+    // Configure EOD snapshot job
+    let eod_snapshot_enabled = std::env::var("EOD_SNAPSHOT_ENABLED")
+        .unwrap_or_else(|_| "true".to_string())
+        .parse::<bool>()
+        .unwrap_or(true);
+    
+    if eod_snapshot_enabled {
+        let eod_snapshot_schedule = std::env::var("EOD_SNAPSHOT_SCHEDULE")
+            .unwrap_or_else(|_| "0 0 23 * * *".to_string()); // Default: daily at 23:00 UTC
+        
+        tracing::info!(
+            "Scheduling EOD snapshot job: schedule='{}'",
+            eod_snapshot_schedule
+        );
+
+        let db_clone = db.clone();
+        let job = Job::new_async(eod_snapshot_schedule.as_str(), move |_job_id, _scheduler| {
+            let db = db_clone.clone();
+            Box::pin(async move {
+                tracing::info!("Running scheduled EOD snapshot job");
+                match jobs::portfolio_snapshot::create_all_portfolio_snapshots(&db, None).await {
+                    Ok(results) => {
+                        let successful = results.iter().filter(|r| r.success).count();
+                        let failed = results.iter().filter(|r| !r.success).count();
+                        
+                        tracing::info!(
+                            "EOD snapshot job completed: {} portfolios processed, {} successful, {} failed",
+                            results.len(),
+                            successful,
+                            failed
+                        );
+                        
+                        // Log failures
+                        for result in results.iter().filter(|r| !r.success) {
+                            if let Some(error) = &result.error {
+                                tracing::error!(
+                                    "Failed to create EOD snapshot for portfolio {}: {}",
+                                    result.portfolio_id,
+                                    error
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("EOD snapshot job failed with error: {}", e);
+                    }
+                }
+            })
+        })
+        .expect("Failed to create EOD snapshot job");
+
+        scheduler.add(job).await.expect("Failed to add EOD snapshot job to scheduler");
+        tracing::info!("EOD snapshot job scheduled successfully");
+    } else {
+        tracing::info!("EOD snapshot job is disabled");
     }
 
     // Start the scheduler

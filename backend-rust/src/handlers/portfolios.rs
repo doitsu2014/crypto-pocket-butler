@@ -1132,13 +1132,13 @@ pub async fn construct_portfolio_allocation(
     } else {
         // Insert new allocation - if unique constraint violation occurs,
         // it means another concurrent request inserted first. In that case,
-        // we'll retry the operation by rolling back and starting over.
+        // we'll fetch and update the existing row.
         let new_allocation = portfolio_allocations::ActiveModel {
             id: Set(Uuid::new_v4()),
             portfolio_id: Set(id),
             as_of: Set(as_of),
             total_value_usd: Set(total_value),
-            holdings: Set(allocation_json.clone()),
+            holdings: Set(allocation_json),
             created_at: ActiveValue::NotSet,
         };
         
@@ -1153,6 +1153,9 @@ pub async fn construct_portfolio_allocation(
                     .one(&txn)
                     .await?
                     .ok_or_else(|| ApiError::DatabaseError(sea_orm::DbErr::Custom("Allocation disappeared after conflict".to_string())))?;
+                
+                let allocation_json = serde_json::to_value(&allocation_holdings)
+                    .map_err(|e| ApiError::BadRequest(format!("Failed to serialize allocation: {}", e)))?;
                 
                 let mut allocation_active: portfolio_allocations::ActiveModel = existing.into();
                 allocation_active.as_of = Set(as_of);

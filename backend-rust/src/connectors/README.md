@@ -8,7 +8,7 @@ This module implements connectors for fetching balances from various exchanges a
 
 A read-only connector for OKX exchange to fetch spot account balances.
 
-### Features
+## Features
 
 - **Read-Only Access**: Uses OKX API keys with read-only permissions
 - **HMAC-SHA256 Signature**: Implements OKX API authentication with proper signature generation

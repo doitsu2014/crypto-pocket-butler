@@ -40,3 +40,9 @@ export {
   useExecuteRecommendation,
   recommendationKeys,
 } from "./useRecommendations";
+
+// Chain hooks
+export {
+  useChains,
+  chainKeys,
+} from "./useChains";

@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod jobs;
 pub mod migrations;
 pub mod portfolios;
 pub mod recommendations;

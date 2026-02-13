@@ -3,7 +3,7 @@ use axum_keycloak_auth::decode::KeycloakToken;
 use axum::Extension;
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
-use crate::jobs::top_coins_collection;
+use crate::jobs::{top_coins_collection, contract_addresses_collection};
 use utoipa::ToSchema;
 
 /// Request to trigger top coins collection
@@ -105,8 +105,97 @@ async fn collect_top_coins_handler(
     }
 }
 
+/// Request to trigger contract addresses collection
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CollectContractAddressesRequest {
+    /// Optional limit on number of assets to process (for testing/rate limiting)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+/// Response from contract addresses collection
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CollectContractAddressesResponse {
+    /// Whether the collection was successful
+    pub success: bool,
+    /// Number of assets processed
+    pub assets_processed: usize,
+    /// Number of new contracts created
+    pub contracts_created: usize,
+    /// Number of existing contracts updated
+    pub contracts_updated: usize,
+    /// Number of assets skipped
+    pub assets_skipped: usize,
+    /// Error message if failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Manually trigger contract addresses collection
+///
+/// Fetches contract addresses for assets from CoinGecko and stores them in the database.
+/// This endpoint allows manual triggering of the scheduled job.
+#[utoipa::path(
+    post,
+    path = "/api/v1/jobs/collect-contract-addresses",
+    request_body = CollectContractAddressesRequest,
+    responses(
+        (status = 200, description = "Collection completed", body = CollectContractAddressesResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("bearer_auth" = []),
+        ("oauth2_client_credentials" = []),
+        ("oauth2_authorization_code" = [])
+    ),
+    tag = "jobs"
+)]
+async fn collect_contract_addresses_handler(
+    State(db): State<DatabaseConnection>,
+    Extension(_token): Extension<KeycloakToken<String>>,
+    Json(request): Json<CollectContractAddressesRequest>,
+) -> Json<CollectContractAddressesResponse> {
+    tracing::info!("Manual contract addresses collection triggered with limit={:?}", request.limit);
+
+    match contract_addresses_collection::collect_contract_addresses(&db, request.limit).await {
+        Ok(result) => {
+            tracing::info!(
+                "Contract addresses collection completed: success={}, assets_processed={}, contracts_created={}, contracts_updated={}, assets_skipped={}",
+                result.success,
+                result.assets_processed,
+                result.contracts_created,
+                result.contracts_updated,
+                result.assets_skipped
+            );
+
+            Json(CollectContractAddressesResponse {
+                success: result.success,
+                assets_processed: result.assets_processed,
+                contracts_created: result.contracts_created,
+                contracts_updated: result.contracts_updated,
+                assets_skipped: result.assets_skipped,
+                error: result.error,
+            })
+        }
+        Err(e) => {
+            tracing::error!("Contract addresses collection failed: {}", e);
+            Json(CollectContractAddressesResponse {
+                success: false,
+                assets_processed: 0,
+                contracts_created: 0,
+                contracts_updated: 0,
+                assets_skipped: 0,
+                error: Some(format!("Collection failed: {}", e)),
+            })
+        }
+    }
+}
+
 /// Create router for job endpoints
 pub fn create_router() -> Router<DatabaseConnection> {
     Router::new()
         .route("/api/v1/jobs/collect-top-coins", post(collect_top_coins_handler))
+        .route("/api/v1/jobs/collect-contract-addresses", post(collect_contract_addresses_handler))
 }

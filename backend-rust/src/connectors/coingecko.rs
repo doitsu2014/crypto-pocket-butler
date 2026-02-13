@@ -85,6 +85,49 @@ impl CoinGeckoConnector {
 
         Ok(response.status().is_success())
     }
+
+    /// Fetch prices for specific coins by their CoinGecko IDs
+    /// 
+    /// # Arguments
+    /// * `coin_ids` - Vector of CoinGecko coin IDs (e.g., ["bitcoin", "ethereum"])
+    /// 
+    /// # Returns
+    /// Vector of coin market data for the requested coins
+    pub async fn fetch_coins_by_ids(&self, coin_ids: &[String]) -> Result<Vec<CoinMarketData>, Box<dyn Error + Send + Sync>> {
+        if coin_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // CoinGecko API accepts comma-separated list of IDs
+        let ids_param = coin_ids.join(",");
+        
+        tracing::info!("Fetching {} coins by ID from CoinGecko", coin_ids.len());
+
+        let url = format!(
+            "{}/coins/markets?vs_currency=usd&ids={}&sparkline=false&price_change_percentage=24h",
+            self.base_url,
+            ids_param
+        );
+
+        let response = self.client
+            .get(&url)
+            .header("accept", "application/json")
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            tracing::error!("CoinGecko API error: {} - {}", status, error_text);
+            return Err(format!("CoinGecko API error: {} - {}", status, error_text).into());
+        }
+
+        let coins: Vec<CoinMarketData> = response.json().await?;
+        
+        tracing::info!("Successfully fetched {} coins by ID from CoinGecko", coins.len());
+        
+        Ok(coins)
+    }
 }
 
 impl Default for CoinGeckoConnector {

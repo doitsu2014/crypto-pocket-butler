@@ -6,7 +6,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
 };
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::str::FromStr;
 use tracing;
@@ -175,17 +175,47 @@ async fn fetch_prices_for_assets(
     tracked_assets: &[assets::Model],
     top_n_limit: usize,
 ) -> Result<Vec<PriceData>, Box<dyn Error + Send + Sync>> {
-    // Use the fetch_top_coins method which gives us prices for top coins
-    // This is efficient as it gives us up to 250 coins in a single API call
-    let coins = connector.fetch_top_coins(top_n_limit).await?;
-
+    // First, fetch top N coins by market cap
+    let mut all_coins = connector.fetch_top_coins(top_n_limit).await?;
+    
+    // Build a set of coingecko_ids we already have
+    let fetched_ids: HashSet<String> = all_coins.iter().map(|c| c.id.clone()).collect();
+    
+    // Identify assets not in the top N that we still need prices for
+    let mut missing_coin_ids: Vec<String> = Vec::new();
+    for asset in tracked_assets {
+        if let Some(coingecko_id) = &asset.coingecko_id {
+            if !fetched_ids.contains(coingecko_id) {
+                missing_coin_ids.push(coingecko_id.clone());
+            }
+        }
+    }
+    
+    // Fetch prices for missing coins (portfolio assets not in top N)
+    if !missing_coin_ids.is_empty() {
+        tracing::info!(
+            "Fetching prices for {} additional portfolio assets not in top {}",
+            missing_coin_ids.len(),
+            top_n_limit
+        );
+        
+        let mut additional_coins = connector.fetch_coins_by_ids(&missing_coin_ids).await?;
+        
+        // Add them to our all_coins vec
+        all_coins.append(&mut additional_coins);
+    }
+    
+    // Build a map of coingecko_id to coin data for quick lookup
+    let coins_map: HashMap<String, &crate::connectors::coingecko::CoinMarketData> = 
+        all_coins.iter().map(|c| (c.id.clone(), c)).collect();
+    
     // Map CoinGecko coin data to our tracked assets
     let mut price_data = Vec::new();
     
     for asset in tracked_assets {
         if let Some(coingecko_id) = &asset.coingecko_id {
             // Find matching coin data
-            if let Some(coin) = coins.iter().find(|c| &c.id == coingecko_id) {
+            if let Some(coin) = coins_map.get(coingecko_id) {
                 price_data.push(PriceData {
                     asset_id: asset.id,
                     price_usd: coin.current_price,
@@ -193,6 +223,12 @@ async fn fetch_prices_for_assets(
                     market_cap_usd: Some(coin.market_cap),
                     change_percent_24h: coin.price_change_percentage_24h,
                 });
+            } else {
+                tracing::warn!(
+                    "No price data found for asset {} ({})",
+                    asset.symbol,
+                    coingecko_id
+                );
             }
         }
     }

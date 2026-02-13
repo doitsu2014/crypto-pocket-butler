@@ -19,7 +19,7 @@ export async function GET(
     try {
       data = await response.json();
     } catch (e: unknown) {
-      console.error('Failed to parse backend response as JSON:', e);
+      console.error('Failed to parse portfolio allocation response as JSON:', e);
       return NextResponse.json(
         { error: 'Invalid response from backend' },
         { status: 502 }

@@ -266,7 +266,7 @@ async fn main() {
         );
 
         let db_clone = db.clone();
-        let job = Job::new_async(top_coins_schedule.as_str(), move |_uuid, _l| {
+        let job = Job::new_async(top_coins_schedule.as_str(), move |_job_id, _scheduler| {
             let db = db_clone.clone();
             let limit = top_coins_limit;
             Box::pin(async move {

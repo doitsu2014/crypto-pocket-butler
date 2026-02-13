@@ -152,8 +152,9 @@ pub async fn collect_top_coins(
             .and_then(|v| Decimal::from_str(&v.to_string()).ok());
         let change_percent_24h = coin.price_change_percentage_24h
             .and_then(|v| Decimal::from_str(&v.to_string()).ok());
-        let dominance = coin.market_cap_change_percentage_24h
-            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        // Note: CoinGecko API doesn't directly provide market dominance
+        // It would need to be calculated from total market cap
+        let dominance = None;
 
         let new_ranking = asset_rankings::ActiveModel {
             id: ActiveValue::Set(Uuid::new_v4()),

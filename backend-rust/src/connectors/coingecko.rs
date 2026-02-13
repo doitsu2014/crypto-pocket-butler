@@ -21,7 +21,8 @@ pub struct CoinMarketData {
     pub market_cap_rank: Option<u32>,
     pub total_volume: Option<f64>,
     pub price_change_percentage_24h: Option<f64>,
-    pub market_cap_change_percentage_24h: Option<f64>,
+    // Note: CoinGecko doesn't provide market dominance in the markets endpoint
+    // Market dominance would need to be calculated separately using total market cap
 }
 
 impl CoinGeckoConnector {
@@ -42,7 +43,7 @@ impl CoinGeckoConnector {
     /// Vector of coin market data sorted by market cap rank
     pub async fn fetch_top_coins(&self, limit: usize) -> Result<Vec<CoinMarketData>, Box<dyn Error + Send + Sync>> {
         if limit == 0 || limit > 250 {
-            return Err("Limit must be between 1 and 250".into());
+            return Err(format!("Invalid limit: {}. Limit must be between 1 and 250", limit).into());
         }
 
         tracing::info!("Fetching top {} coins from CoinGecko", limit);

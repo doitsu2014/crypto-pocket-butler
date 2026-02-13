@@ -5,11 +5,19 @@ This document describes the PostgreSQL database schema for the Crypto Pocket But
 ## Overview
 
 The database uses a normalized schema with the following main entities:
+
+**User Portfolio Management:**
 - **Users**: Keycloak-authenticated users
 - **Accounts**: Exchange accounts, wallets, or DeFi protocols
 - **Portfolios**: User-defined groupings of accounts
 - **Portfolio_Accounts**: Many-to-many join table
 - **Snapshots**: Point-in-time portfolio snapshots (EOD, manual, etc.)
+
+**Market Reference Data:**
+- **Assets**: Crypto asset metadata (symbols, names, types)
+- **Asset_Contracts**: Chain-specific contract addresses
+- **Asset_Prices**: Time-series price data for valuation
+- **Asset_Rankings**: Top-100 market cap ranking snapshots
 
 ## Entity Relationship Diagram
 
@@ -55,6 +63,31 @@ The database uses a normalized schema with the following main entities:
                         │ total_value   │
                         │ holdings(JSON)│
                         └───────────────┘
+
+┌──────────────────┐
+│   Assets         │     Market Reference Data
+│──────────────────│     (Powers valuation & allocation)
+│ id (PK)          │
+│ symbol (UNIQUE)  │
+│ name             │
+│ asset_type       │
+│ coingecko_id     │
+└────────┬─────────┘
+         │
+         ├──────────────┐──────────────┐
+         │              │              │
+         ▼              ▼              ▼
+┌────────┴────────┐ ┌──┴───────────┐ ┌┴──────────────┐
+│AssetContracts   │ │AssetPrices   │ │AssetRankings  │
+│─────────────────│ │──────────────│ │───────────────│
+│ id (PK)         │ │ id (PK)      │ │ id (PK)       │
+│ asset_id (FK)   │ │ asset_id(FK) │ │ asset_id (FK) │
+│ chain           │ │ timestamp    │ │ snapshot_date │
+│ contract_addr   │ │ price_usd    │ │ rank          │
+│ token_standard  │ │ volume_24h   │ │ market_cap    │
+└─────────────────┘ │ market_cap   │ │ price_usd     │
+                    │ source       │ │ dominance     │
+                    └──────────────┘ └───────────────┘
 ```
 
 ## Tables
@@ -349,8 +382,179 @@ snapshot.insert(&db).await?;
 
 ## Future Enhancements
 
-- Add asset holdings table (normalized)
 - Add transaction history table
 - Add audit log table
 - Implement soft deletes with deleted_at columns
 - Add full-text search on account/portfolio names
+
+## Market Reference Data Tables
+
+The following tables provide reference data for crypto assets, contracts, prices, and market rankings. These tables power valuation calculations and allocation construction.
+
+### assets
+
+Metadata for crypto assets (coins, tokens, stablecoins).
+
+| Column              | Type        | Constraints           | Description                            |
+|---------------------|-------------|-----------------------|----------------------------------------|
+| id                  | UUID        | PRIMARY KEY           | Auto-generated UUID                    |
+| symbol              | VARCHAR     | UNIQUE, NOT NULL      | Asset symbol (e.g., "BTC", "ETH")      |
+| name                | VARCHAR     | NOT NULL              | Full asset name (e.g., "Bitcoin")      |
+| asset_type          | VARCHAR     | NOT NULL              | "cryptocurrency", "token", "stablecoin"|
+| coingecko_id        | VARCHAR     | NULL                  | CoinGecko API identifier               |
+| coinmarketcap_id    | VARCHAR     | NULL                  | CoinMarketCap identifier               |
+| logo_url            | VARCHAR     | NULL                  | URL to asset logo/icon                 |
+| description         | TEXT        | NULL                  | Asset description                      |
+| decimals            | INTEGER     | NULL                  | Token decimals (e.g., 18 for ERC20)    |
+| is_active           | BOOLEAN     | NOT NULL, DEFAULT true| Whether asset is actively tracked      |
+| created_at          | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp              |
+| updated_at          | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Last update timestamp                  |
+
+**Indexes:**
+- `idx_assets_symbol` on `symbol` (UNIQUE) - Fast lookups and prevent duplicates
+- `idx_assets_asset_type` on `asset_type` - Filter by asset type
+- `idx_assets_coingecko_id` on `coingecko_id` - API integrations
+
+### asset_contracts
+
+Chain-specific contract addresses for assets.
+
+| Column           | Type        | Constraints           | Description                            |
+|------------------|-------------|-----------------------|----------------------------------------|
+| id               | UUID        | PRIMARY KEY           | Auto-generated UUID                    |
+| asset_id         | UUID        | NOT NULL, FK          | References assets.id                   |
+| chain            | VARCHAR     | NOT NULL              | Blockchain name (e.g., "ethereum")     |
+| contract_address | VARCHAR     | NOT NULL              | Contract address on the chain          |
+| token_standard   | VARCHAR     | NULL                  | e.g., "ERC20", "BEP20", "ERC721"       |
+| decimals         | INTEGER     | NULL                  | Token decimals (overrides asset)       |
+| is_verified      | BOOLEAN     | NOT NULL, DEFAULT false| Whether contract is verified          |
+| created_at       | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp              |
+| updated_at       | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Last update timestamp                  |
+
+**Foreign Keys:**
+- `fk_asset_contracts_asset_id`: `asset_id` → `assets.id` (CASCADE on DELETE/UPDATE)
+
+**Indexes:**
+- `idx_asset_contracts_asset_id` on `asset_id` - Find contracts by asset
+- `idx_asset_contracts_chain` on `chain` - Filter by blockchain
+- `idx_asset_contracts_unique` on `(chain, contract_address)` (UNIQUE) - Prevent duplicates
+
+### asset_prices
+
+Time-series price data for assets.
+
+| Column            | Type        | Constraints           | Description                            |
+|-------------------|-------------|-----------------------|----------------------------------------|
+| id                | UUID        | PRIMARY KEY           | Auto-generated UUID                    |
+| asset_id          | UUID        | NOT NULL, FK          | References assets.id                   |
+| timestamp         | TIMESTAMPTZ | NOT NULL              | Time of price snapshot                 |
+| price_usd         | DECIMAL     | NOT NULL              | Spot price in USD                      |
+| volume_24h_usd    | DECIMAL     | NULL                  | 24-hour trading volume in USD          |
+| market_cap_usd    | DECIMAL     | NULL                  | Market capitalization in USD           |
+| change_percent_24h| DECIMAL     | NULL                  | 24-hour price change percentage        |
+| source            | VARCHAR     | NOT NULL              | Data source (e.g., "coingecko")        |
+| created_at        | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp              |
+
+**Foreign Keys:**
+- `fk_asset_prices_asset_id`: `asset_id` → `assets.id` (CASCADE on DELETE/UPDATE)
+
+**Indexes:**
+- `idx_asset_prices_asset_id` on `asset_id` - Find prices by asset
+- `idx_asset_prices_timestamp` on `timestamp` - Time-series queries
+- `idx_asset_prices_asset_timestamp` on `(asset_id, timestamp)` - Efficient per-asset queries
+- `idx_asset_prices_unique` on `(asset_id, timestamp, source)` (UNIQUE) - Prevent duplicates
+
+### asset_rankings
+
+Historical top-100 ranking snapshots.
+
+| Column            | Type        | Constraints           | Description                            |
+|-------------------|-------------|-----------------------|----------------------------------------|
+| id                | UUID        | PRIMARY KEY           | Auto-generated UUID                    |
+| asset_id          | UUID        | NOT NULL, FK          | References assets.id                   |
+| snapshot_date     | DATE        | NOT NULL              | Date of ranking snapshot               |
+| rank              | INTEGER     | NOT NULL              | Market cap rank (1-100+)               |
+| market_cap_usd    | DECIMAL     | NOT NULL              | Market cap at snapshot time            |
+| price_usd         | DECIMAL     | NOT NULL              | Price at snapshot time                 |
+| volume_24h_usd    | DECIMAL     | NULL                  | 24-hour volume at snapshot time        |
+| change_percent_24h| DECIMAL     | NULL                  | 24-hour change at snapshot time        |
+| dominance         | DECIMAL     | NULL                  | Market dominance percentage            |
+| source            | VARCHAR     | NOT NULL              | Data source (e.g., "coingecko")        |
+| created_at        | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp              |
+
+**Foreign Keys:**
+- `fk_asset_rankings_asset_id`: `asset_id` → `assets.id` (CASCADE on DELETE/UPDATE)
+
+**Indexes:**
+- `idx_asset_rankings_asset_id` on `asset_id` - Find rankings by asset
+- `idx_asset_rankings_snapshot_date` on `snapshot_date` - Time-series queries
+- `idx_asset_rankings_rank` on `rank` - Top-N queries
+- `idx_asset_rankings_date_rank` on `(snapshot_date, rank)` - Top assets on specific dates
+- `idx_asset_rankings_unique` on `(asset_id, snapshot_date, source)` (UNIQUE) - Prevent duplicates
+
+## Usage Examples - Market Reference Data
+
+### Query Current Asset Price
+
+```rust
+use crypto_pocket_butler_backend::entities::*;
+use sea_orm::*;
+
+// Get latest price for an asset
+let btc_asset = assets::Entity::find()
+    .filter(assets::Column::Symbol.eq("BTC"))
+    .one(&db)
+    .await?;
+
+if let Some(asset) = btc_asset {
+    let latest_price = asset_prices::Entity::find()
+        .filter(asset_prices::Column::AssetId.eq(asset.id))
+        .order_by_desc(asset_prices::Column::Timestamp)
+        .one(&db)
+        .await?;
+}
+```
+
+### Query Top-100 Assets by Market Cap
+
+```rust
+// Get top 100 assets for a specific date
+let top_100 = asset_rankings::Entity::find()
+    .filter(asset_rankings::Column::SnapshotDate.eq(date))
+    .filter(asset_rankings::Column::Rank.lte(100))
+    .order_by_asc(asset_rankings::Column::Rank)
+    .find_also_related(assets::Entity)
+    .all(&db)
+    .await?;
+```
+
+### Query Asset Contract Addresses
+
+```rust
+// Get all contract addresses for an asset
+let asset = assets::Entity::find()
+    .filter(assets::Column::Symbol.eq("USDT"))
+    .find_with_related(asset_contracts::Entity)
+    .all(&db)
+    .await?;
+
+// Get specific contract on Ethereum
+let eth_contract = asset_contracts::Entity::find()
+    .filter(asset_contracts::Column::AssetId.eq(asset_id))
+    .filter(asset_contracts::Column::Chain.eq("ethereum"))
+    .one(&db)
+    .await?;
+```
+
+### Query Price History
+
+```rust
+// Get price history for last 30 days
+let thirty_days_ago = chrono::Utc::now() - chrono::Duration::days(30);
+let price_history = asset_prices::Entity::find()
+    .filter(asset_prices::Column::AssetId.eq(asset_id))
+    .filter(asset_prices::Column::Timestamp.gte(thirty_days_ago))
+    .order_by_asc(asset_prices::Column::Timestamp)
+    .all(&db)
+    .await?;
+```

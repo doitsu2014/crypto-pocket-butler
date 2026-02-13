@@ -1,27 +1,52 @@
 # 08 — Roadmap
 
-## Phase 0 — Foundations
+This roadmap is now organized around the **core split**:
 
-- [ ] Decide target allocations + guardrails numbers (drift band, stablecoin min, futures cap, max alt cap)
-- [ ] Define EOD snapshot cutover rule (UTC vs local time)
+- **A) Infrastructure Data**: cron-collected market reference + user account holdings (qty only)
+- **B) Portfolios**: construct allocation on demand + snapshots (EOD or manual)
 
-## Phase 1 — MVP (Keycloak + portfolios + snapshots)
+See also: `docs/planning/10-core-split-infra-vs-portfolios.md`.
 
-- [ ] Keycloak integration (frontend PKCE + backend JWT validation)
-- [ ] Data model + Postgres schema (users/accounts/portfolios/snapshots)
-- [ ] Accounts management (wallets + OKX connector read-only)
-- [ ] Portfolio composition (choose which accounts feed which portfolio)
-- [ ] Latest holdings + allocation
-- [ ] EOD snapshots (daily)
-- [ ] Agent reporting to Notion/Telegram (suggest-only)
+## Phase A — Infrastructure Data
 
-## Phase 2 — Suggestions (smarter but still safe)
+### A1) Market Reference Data (cron)
 
-- [ ] Fixed-target rebalancing suggestions + drift bands
-- [ ] Risk alerts (concentration/drawdown) + stablecoin buffer checks
-- [ ] Snapshot-based performance metrics (basic)
+- [ ] Price collector job (store price snapshots per asset)
+- [ ] Top-100 coins collector job (rank + metadata)
+- [ ] Contracts/address registry per chain (for top assets)
+- [ ] Symbol normalization mapping (BTC vs XBT, USDT variants, etc.)
 
-## Phase 3 — Execution (optional)
+### A2) User Accounts (holdings qty only)
+
+- [ ] Account model supports detailed config
+  - EVM: address + enabled chains (from supported list)
+  - OKX: read-only credentials profile
+- [ ] Account ingestion stores holdings **without pricing**
+- [ ] Support list of chains exposed via API (frontend can render)
+
+## Phase B — Portfolios
+
+### B1) Construct allocation (manual)
+
+- [ ] Portfolio composition: select which accounts belong to portfolio
+- [ ] "Construct portfolio" endpoint/action
+  - aggregates account holdings
+  - values using market reference prices
+  - stores/returns Portfolio Allocation
+
+### B2) Snapshots
+
+- [ ] EOD snapshot job per portfolio (automatic)
+- [ ] Manual snapshot trigger (button: "Construct snapshot")
+- [ ] Snapshot list + latest snapshot endpoints
+
+## Phase C — Agent & Insights (optional but valuable)
+
+- [ ] OpenClaw agent reads snapshots + allocations
+- [ ] Daily brief + rebalancing suggestions (suggest-only)
+- [ ] Alerts on concentration/drawdown
+
+## Phase D — Execution (optional)
 
 - [ ] One-click approval workflow
 - [ ] Optional auto-trade with strict guardrails + full audit log

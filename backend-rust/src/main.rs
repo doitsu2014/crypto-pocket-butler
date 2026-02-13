@@ -68,6 +68,7 @@ struct HealthResponse {
         handlers::accounts::delete_account_handler,
         handlers::accounts::sync_account_handler,
         handlers::accounts::sync_all_accounts_handler,
+        handlers::chains::list_supported_chains,
         handlers::snapshots::create_portfolio_snapshot_handler,
         handlers::snapshots::create_all_user_snapshots_handler,
         handlers::snapshots::list_portfolio_snapshots_handler,
@@ -96,6 +97,8 @@ struct HealthResponse {
             handlers::accounts::SyncAccountRequest,
             handlers::accounts::SyncResultResponse,
             handlers::accounts::SyncAllAccountsResponse,
+            handlers::chains::ChainInfo,
+            handlers::chains::ListChainsResponse,
             handlers::snapshots::CreateSnapshotRequest,
             handlers::snapshots::SnapshotResultResponse,
             handlers::snapshots::CreateAllSnapshotsResponse,
@@ -118,6 +121,7 @@ struct HealthResponse {
         (name = "crypto-pocket-butler", description = "Crypto Pocket Butler API endpoints"),
         (name = "portfolios", description = "Portfolio management endpoints"),
         (name = "accounts", description = "Account management and sync endpoints"),
+        (name = "chains", description = "Supported blockchain chains endpoints"),
         (name = "snapshots", description = "Portfolio snapshot endpoints"),
         (name = "recommendations", description = "Portfolio recommendation endpoints"),
         (name = "migrations", description = "Database migration endpoints"),
@@ -481,6 +485,8 @@ async fn main() {
         // Public routes (no auth required)
         .route("/", get(root))
         .route("/health", get(health))
+        // Chains API routes (public)
+        .merge(handlers::chains::create_router())
         // Merge protected routes
         .merge(protected_routes)
         // Apply database state to all routes

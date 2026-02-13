@@ -157,3 +157,13 @@ export interface RecommendationDetailResponse {
   recommendation: Recommendation;
   portfolio: Portfolio;
 }
+
+// ============================================================================
+// Chain Types
+// ============================================================================
+
+export interface Chain {
+  id: string;
+  name: string;
+  native_symbol: string;
+}

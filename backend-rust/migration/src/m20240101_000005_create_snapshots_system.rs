@@ -19,7 +19,7 @@ impl MigrationTrait for Migration {
                     .col(decimal(Snapshots::TotalValueUsd).not_null()) // DECIMAL for precision
                     .col(json(Snapshots::Holdings)) // JSON array of asset holdings
                     .col(json_null(Snapshots::Metadata)) // Optional metadata (exchange rates, etc.)
-                    .col(uuid_null(Snapshots::AllocationId)) // Reference to portfolio_allocations (from m000018)
+                    .col(uuid_null(Snapshots::AllocationId)) // Reference to portfolio_allocations (from m20240101_000018)
                     .col(timestamp_with_time_zone(Snapshots::CreatedAt).default(Expr::current_timestamp()).not_null())
                     .foreign_key(
                         ForeignKey::create()
@@ -33,7 +33,7 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Add foreign key to portfolio_allocations (from m000018)
+        // Add foreign key to portfolio_allocations (from m20240101_000018)
         manager
             .alter_table(
                 Table::alter()
@@ -88,7 +88,7 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Add index on allocation_id for faster lookups (from m000018)
+        // Add index on allocation_id for faster lookups (from m20240101_000018)
         manager
             .create_index(
                 Index::create()
@@ -99,7 +99,7 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Add composite index for optimizing latest snapshot queries (from m000019)
+        // Add composite index for optimizing latest snapshot queries (from m20240101_000019)
         // This index supports the query pattern: WHERE portfolio_id = ? ORDER BY snapshot_date DESC, created_at DESC
         manager
             .create_index(

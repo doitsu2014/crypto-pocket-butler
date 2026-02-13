@@ -53,7 +53,7 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // Create unique constraint on portfolio_id to ensure only one allocation per portfolio (from m000017)
+        // Create unique constraint on portfolio_id to ensure only one allocation per portfolio (from m20240101_000017)
         manager
             .create_index(
                 Index::create()

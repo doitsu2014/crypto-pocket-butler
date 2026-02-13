@@ -17,9 +17,9 @@ impl MigrationTrait for Migration {
                     .col(string(Portfolios::Name).not_null())
                     .col(text_null(Portfolios::Description))
                     .col(boolean(Portfolios::IsDefault).default(false).not_null())
-                    .col(json_null(Portfolios::TargetAllocation)) // Added from m000008
-                    .col(json_null(Portfolios::Guardrails)) // Added from m000008
-                    .col(timestamp_with_time_zone_null(Portfolios::LastConstructedAt)) // Added from m000016
+                    .col(json_null(Portfolios::TargetAllocation)) // Consolidated from m20240101_000008
+                    .col(json_null(Portfolios::Guardrails)) // Consolidated from m20240101_000008
+                    .col(timestamp_with_time_zone_null(Portfolios::LastConstructedAt)) // Consolidated from m20240101_000016
                     .col(timestamp_with_time_zone(Portfolios::CreatedAt).default(Expr::current_timestamp()).not_null())
                     .col(timestamp_with_time_zone(Portfolios::UpdatedAt).default(Expr::current_timestamp()).not_null())
                     .foreign_key(

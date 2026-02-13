@@ -50,8 +50,8 @@ impl MigrationTrait for Migration {
                     .col(string_null(Accounts::WalletAddress))
                     .col(boolean(Accounts::IsActive).default(true).not_null())
                     .col(timestamp_with_time_zone_null(Accounts::LastSyncedAt)) // Nullable from the start
-                    .col(json_null(Accounts::Holdings)) // Added from m000006
-                    .col(json_null(Accounts::EnabledChains)) // Added from m000014
+                    .col(json_null(Accounts::Holdings)) // Consolidated from m20240101_000006
+                    .col(json_null(Accounts::EnabledChains)) // Consolidated from m20240101_000014
                     .col(timestamp_with_time_zone(Accounts::CreatedAt).default(Expr::current_timestamp()).not_null())
                     .col(timestamp_with_time_zone(Accounts::UpdatedAt).default(Expr::current_timestamp()).not_null())
                     .foreign_key(

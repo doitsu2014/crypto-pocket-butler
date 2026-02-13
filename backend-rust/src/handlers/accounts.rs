@@ -2,7 +2,7 @@ use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::{delete, get, post, put},
+    routing::{get, post},
     Router,
 };
 use axum_keycloak_auth::decode::KeycloakToken;
@@ -28,6 +28,9 @@ pub struct CreateAccountRequest {
     /// Wallet address (required if account_type is "wallet")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wallet_address: Option<String>,
+    /// Enabled EVM chains for wallet accounts (e.g., ["ethereum", "arbitrum", "bsc"])
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled_chains: Option<Vec<String>>,
     /// API key (for exchange accounts)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
@@ -68,6 +71,8 @@ pub struct AccountResponse {
     pub exchange_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wallet_address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled_chains: Option<Vec<String>>,
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_synced_at: Option<String>,
@@ -77,6 +82,11 @@ pub struct AccountResponse {
 
 impl From<accounts::Model> for AccountResponse {
     fn from(account: accounts::Model) -> Self {
+        // Parse enabled_chains from JSON if present
+        let enabled_chains = account.enabled_chains.as_ref().and_then(|json| {
+            serde_json::from_value::<Vec<String>>(json.clone()).ok()
+        });
+        
         Self {
             id: account.id,
             user_id: account.user_id,
@@ -84,6 +94,7 @@ impl From<accounts::Model> for AccountResponse {
             account_type: account.account_type,
             exchange_name: account.exchange_name,
             wallet_address: account.wallet_address,
+            enabled_chains,
             is_active: account.is_active,
             last_synced_at: account.last_synced_at.map(|dt| dt.to_rfc3339()),
             created_at: account.created_at.to_rfc3339(),
@@ -297,6 +308,19 @@ async fn create_account_handler(
             .into_response());
     }
 
+    // Serialize enabled_chains if provided
+    let enabled_chains_json = if let Some(chains) = req.enabled_chains {
+        Some(serde_json::to_value(&chains).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to serialize enabled_chains: {}", e),
+            )
+                .into_response()
+        })?)
+    } else {
+        None
+    };
+
     // Create account
     // SECURITY NOTE: API credentials should be encrypted before storage
     // Current implementation stores credentials in plaintext with _encrypted suffix as placeholder
@@ -308,6 +332,7 @@ async fn create_account_handler(
         account_type: Set(req.account_type),
         exchange_name: Set(req.exchange_name),
         wallet_address: Set(req.wallet_address),
+        enabled_chains: Set(enabled_chains_json.map(|v| v.into())),
         api_key_encrypted: Set(req.api_key), // TODO: Encrypt before storing
         api_secret_encrypted: Set(req.api_secret), // TODO: Encrypt before storing
         passphrase_encrypted: Set(req.passphrase), // TODO: Encrypt before storing

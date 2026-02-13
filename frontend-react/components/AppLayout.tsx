@@ -53,15 +53,15 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
   const pathname = usePathname();
 
   const isActive = (href: string) => {
-    if (href === "/dashboard") {
+    // Exact match for top-level routes
+    if (href === "/dashboard" || href === "/settings" || href === "/accounts") {
       return pathname === href;
     }
-    if (href === "/settings") {
-      return pathname === href;
+    // For /portfolios, match exact path or any subpath
+    if (href === "/portfolios") {
+      return pathname === href || pathname?.startsWith("/portfolios/");
     }
-    // For other paths, check if pathname starts with href
-    // But not if it's a portfolio settings page when checking /settings
-    return pathname?.startsWith(href);
+    return false;
   };
 
   return (
@@ -131,7 +131,7 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
         </aside>
 
         {/* Main content */}
-        <main className="relative flex-1 px-4 sm:px-6 lg:px-8 py-6">
+        <main className="relative flex-1 px-4 sm:px-6 lg:px-8 py-6" role="main" aria-label="Main content">
           {children}
         </main>
       </div>

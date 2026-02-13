@@ -62,8 +62,8 @@ pub async fn create_portfolio_snapshot(
     );
 
     // Fetch the latest persisted allocation for this portfolio
-    // Note: There's a unique constraint on portfolio_id in portfolio_allocations,
-    // so only one allocation per portfolio exists, but we order by as_of for safety
+    // A unique constraint on portfolio_id ensures only one allocation per portfolio exists,
+    // but we still order by as_of descending as a defensive practice for data integrity
     let allocation = portfolio_allocations::Entity::find()
         .filter(portfolio_allocations::Column::PortfolioId.eq(portfolio_id))
         .order_by_desc(portfolio_allocations::Column::AsOf)

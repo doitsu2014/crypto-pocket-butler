@@ -1,46 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { useState } from "react";
+import { ApiError } from "@/lib/api-client";
 import { useToast } from "@/contexts/ToastContext";
 import Link from "next/link";
-import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
+import { LoadingSkeleton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
+import { useRecommendations, useGenerateRecommendations } from "@/hooks";
+import type { Recommendation } from "@/types/api";
 
 const MAX_ORDERS_PREVIEW = 4; // Maximum number of orders to show in list view
-
-interface ProposedOrder {
-  action: string;
-  asset: string;
-  quantity: string;
-  estimated_price: string;
-  estimated_value_usd: string;
-}
-
-interface Recommendation {
-  id: string;
-  portfolio_id: string;
-  status: string;
-  recommendation_type: string;
-  rationale: string;
-  proposed_orders: ProposedOrder[];
-  expected_impact?: string;
-  metadata?: {
-    risk_score?: number;
-    confidence?: number;
-    [key: string]: any;
-  };
-  created_at: string;
-  updated_at: string;
-  executed_at?: string;
-}
-
-interface RecommendationsListResponse {
-  portfolio_id: string;
-  recommendations: Recommendation[];
-  total_count: number;
-}
 
 function formatCurrency(value: string | number): string {
   const numValue = typeof value === 'string' ? parseFloat(value) : value;
@@ -94,53 +64,30 @@ function getTypeColor(type: string): string {
 
 export default function RecommendationsClient({ portfolioId }: { portfolioId: string }) {
   const toast = useToast();
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const fetchRecommendations = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const data = await apiClient<RecommendationsListResponse>(
-        `/v1/portfolios/${portfolioId}/recommendations`
-      );
-      
-      setRecommendations(data.recommendations || []);
-    } catch (err) {
-      const errorMessage = err instanceof ApiError ? err.message : 'Failed to load recommendations';
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [portfolioId]);
+  // Use TanStack Query hooks
+  const { data: response, isLoading: loading, error: queryError, refetch } = useRecommendations(
+    portfolioId,
+    statusFilter !== "all" ? { status: statusFilter } : undefined
+  );
+  const generateRecommendations = useGenerateRecommendations();
+
+  const recommendations = response?.recommendations || [];
+  
+  // Convert query error to string for display
+  const error = queryError instanceof ApiError ? queryError.message : 
+                queryError ? "Failed to load recommendations" : null;
 
   const generateMockRecommendations = async () => {
     try {
-      setGenerating(true);
-      setError(null);
-      
-      await apiClient<RecommendationsListResponse>(
-        `/v1/portfolios/${portfolioId}/recommendations/generate`,
-        { method: 'POST' }
-      );
-      
+      await generateRecommendations.mutateAsync(portfolioId);
       toast.success('Recommendations generated successfully');
-      // Refetch after generation
-      await fetchRecommendations();
     } catch (err) {
       const errorMessage = err instanceof ApiError ? err.message : 'Failed to generate recommendations';
       toast.error(errorMessage);
-    } finally {
-      setGenerating(false);
     }
   };
-
-  useEffect(() => {
-    fetchRecommendations();
-  }, [fetchRecommendations]);
 
   if (loading) {
     return <LoadingSkeleton type="list" count={3} />;
@@ -150,8 +97,7 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
     return (
       <ErrorAlert 
         message={error}
-        onRetry={fetchRecommendations}
-        onDismiss={() => setError(null)}
+        onRetry={() => refetch()}
       />
     );
   }
@@ -166,13 +112,13 @@ export default function RecommendationsClient({ portfolioId }: { portfolioId: st
           </h2>
           <p className="mt-2 text-slate-400">AI-powered rebalancing suggestions (suggest-only, no execution)</p>
         </div>
-        <LoadingButton
-          loading={generating}
+        <button
+          disabled={generateRecommendations.isPending}
           onClick={generateMockRecommendations}
           className="px-6 py-3 bg-gradient-to-r from-fuchsia-600 to-violet-600 hover:from-fuchsia-500 hover:to-violet-500 text-white font-medium rounded-lg border-2 border-fuchsia-500/50 shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {generating ? 'Generating...' : 'Generate Mock Recommendations'}
-        </LoadingButton>
+          {generateRecommendations.isPending ? 'Generating...' : 'Generate Mock Recommendations'}
+        </button>
       </div>
 
       {recommendations.length === 0 ? (

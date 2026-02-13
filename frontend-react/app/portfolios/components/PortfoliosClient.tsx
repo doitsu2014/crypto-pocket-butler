@@ -1,22 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { useState } from "react";
+import { ApiError } from "@/lib/api-client";
 import { useToast } from "@/contexts/ToastContext";
 import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
 import Link from "next/link";
-
-interface Portfolio {
-  id: string;
-  user_id: string;
-  name: string;
-  description?: string;
-  is_default: boolean;
-  created_at: string;
-  updated_at: string;
-}
+import { usePortfolios, useCreatePortfolio } from "@/hooks";
+import type { Portfolio } from "@/types/api";
 
 function formatDate(dateString: string): string {
   try {
@@ -31,11 +23,7 @@ function formatDate(dateString: string): string {
 }
 
 export default function PortfoliosClient() {
-  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -43,23 +31,13 @@ export default function PortfoliosClient() {
   });
   const toast = useToast();
 
-  useEffect(() => {
-    loadPortfolios();
-  }, []);
+  // Use TanStack Query hooks
+  const { data: portfolios = [], isLoading: loading, error: queryError, refetch } = usePortfolios();
+  const createPortfolio = useCreatePortfolio();
 
-  async function loadPortfolios() {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await apiClient<Portfolio[]>("/v1/portfolios");
-      setPortfolios(data);
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to load portfolios";
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Convert query error to string for display
+  const error = queryError instanceof ApiError ? queryError.message : 
+                queryError ? "Failed to load portfolios" : null;
 
   async function handleCreatePortfolio(e: React.FormEvent) {
     e.preventDefault();
@@ -69,28 +47,20 @@ export default function PortfoliosClient() {
     }
 
     try {
-      setCreating(true);
-      setError(null);
-      await apiClient<Portfolio>("/v1/portfolios", {
-        method: "POST",
-        body: {
-          name: formData.name.trim(),
-          description: formData.description.trim() || undefined,
-          is_default: formData.is_default,
-        },
+      await createPortfolio.mutateAsync({
+        name: formData.name.trim(),
+        description: formData.description.trim() || undefined,
+        is_default: formData.is_default,
       });
       
       toast.success("Portfolio created successfully!");
       
-      // Reset form and reload portfolios
+      // Reset form
       setFormData({ name: "", description: "", is_default: false });
       setShowCreateForm(false);
-      await loadPortfolios();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to create portfolio";
       toast.error(message);
-    } finally {
-      setCreating(false);
     }
   }
 
@@ -124,8 +94,7 @@ export default function PortfoliosClient() {
         <div className="mb-6">
           <ErrorAlert 
             message={error} 
-            onRetry={loadPortfolios}
-            onDismiss={() => setError(null)}
+            onRetry={() => refetch()}
             type="banner"
           />
         </div>
@@ -179,16 +148,15 @@ export default function PortfoliosClient() {
             <div className="flex gap-3">
               <LoadingButton
                 type="submit"
-                loading={creating}
-                disabled={creating}
+                loading={createPortfolio.isPending}
+                disabled={createPortfolio.isPending}
                 className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
               >
-                {creating ? "Creating..." : "Create Portfolio"}
+                {createPortfolio.isPending ? "Creating..." : "Create Portfolio"}
               </LoadingButton>
               <button
                 type="button"
                 onClick={() => {
-                  setError(null);
                   setShowCreateForm(false);
                   setFormData({ name: "", description: "", is_default: false });
                 }}

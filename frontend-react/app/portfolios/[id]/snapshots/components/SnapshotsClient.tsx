@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { useState, useMemo } from "react";
+import { ApiError } from "@/lib/api-client";
 import { useToast } from "@/contexts/ToastContext";
 import Link from "next/link";
-import { LoadingSpinner, LoadingButton } from "@/components/Loading";
+import { LoadingSpinner } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
 import {
@@ -16,23 +16,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-
-interface Snapshot {
-  id: string;
-  portfolio_id: string;
-  snapshot_date: string;
-  snapshot_type: string;
-  total_value_usd: string;
-  holdings: any;
-  metadata?: any;
-  created_at: string;
-}
-
-interface ListSnapshotsResponse {
-  portfolio_id: string;
-  snapshots: Snapshot[];
-  total_count: number;
-}
+import { useSnapshots } from "@/hooks";
+import type { Snapshot } from "@/types/api";
 
 interface ChartDataPoint {
   date: string;
@@ -75,54 +60,45 @@ export default function SnapshotsClient({
   portfolioId: string;
 }) {
   const toast = useToast();
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<"7" | "30" | "90" | "all">("30");
   const [selectedType, setSelectedType] = useState<string>("all");
 
-  const fetchSnapshots = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Calculate date range
-      const params = new URLSearchParams();
-      if (dateRange !== "all") {
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - parseInt(dateRange));
-        params.append("start_date", startDate.toISOString().split("T")[0]);
-        params.append("end_date", endDate.toISOString().split("T")[0]);
-      }
-      if (selectedType !== "all") {
-        params.append("snapshot_type", selectedType);
-      }
-
-      const url = `/v1/portfolios/${portfolioId}/snapshots?${params.toString()}`;
-      const response = await apiClient<ListSnapshotsResponse>(url);
-
-      setSnapshots(response.snapshots);
-    } catch (err) {
-      const errorMessage = err instanceof ApiError ? err.message : "Failed to fetch snapshots";
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
+  // Calculate query params
+  const queryParams = useMemo(() => {
+    const params: { snapshot_type?: string; start_date?: string; end_date?: string } = {};
+    
+    if (dateRange !== "all") {
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(endDate.getDate() - parseInt(dateRange));
+      params.start_date = startDate.toISOString().split("T")[0];
+      params.end_date = endDate.toISOString().split("T")[0];
     }
-  }, [portfolioId, dateRange, selectedType]);
+    
+    if (selectedType !== "all") {
+      params.snapshot_type = selectedType;
+    }
+    
+    return params;
+  }, [dateRange, selectedType]);
 
-  useEffect(() => {
-    fetchSnapshots();
-  }, [fetchSnapshots]);
+  // Use TanStack Query hook
+  const { data: response, isLoading: loading, error: queryError, refetch } = useSnapshots(portfolioId, queryParams);
+
+  const snapshots = response?.snapshots || [];
+  
+  // Convert query error to string for display
+  const error = queryError instanceof ApiError ? queryError.message : 
+                queryError ? "Failed to fetch snapshots" : null;
 
   // Prepare chart data
-  const chartData: ChartDataPoint[] = snapshots
+  const chartData: ChartDataPoint[] = useMemo(() => snapshots
     .map((snapshot) => ({
       date: snapshot.snapshot_date,
       value: parseFloat(snapshot.total_value_usd),
       formattedValue: formatCurrency(parseFloat(snapshot.total_value_usd)),
     }))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [snapshots]);
 
   return (
     <div className="space-y-8">
@@ -165,13 +141,13 @@ export default function SnapshotsClient({
           </select>
 
           {/* Refresh Button */}
-          <LoadingButton
-            loading={loading}
-            onClick={fetchSnapshots}
+          <button
+            disabled={loading}
+            onClick={() => refetch()}
             className="px-4 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-semibold rounded-lg border-2 border-fuchsia-500 shadow-[0_0_20px_rgba(217,70,239,0.5)] hover:shadow-[0_0_25px_rgba(217,70,239,0.7)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Refresh
-          </LoadingButton>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
         </div>
       </div>
 
@@ -179,8 +155,7 @@ export default function SnapshotsClient({
       {error && (
         <ErrorAlert 
           message={error}
-          onRetry={fetchSnapshots}
-          onDismiss={() => setError(null)}
+          onRetry={() => refetch()}
         />
       )}
 

@@ -1,24 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { apiClient, ApiError } from "@/lib/api-client";
+import { useState } from "react";
+import { ApiError } from "@/lib/api-client";
 import { useToast } from "@/contexts/ToastContext";
 import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
-
-interface Account {
-  id: string;
-  user_id: string;
-  name: string;
-  account_type: string;
-  exchange_name?: string;
-  wallet_address?: string;
-  is_active: boolean;
-  last_synced_at?: string;
-  created_at: string;
-  updated_at: string;
-}
+import { useAccounts, useCreateAccount, useSyncAccount, useDeleteAccount } from "@/hooks";
+import type { Account, CreateAccountInput } from "@/types/api";
 
 interface SyncResult {
   account_id: string;
@@ -43,13 +32,8 @@ function formatDate(dateString: string | undefined): string {
 }
 
 export default function AccountsClient() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formType, setFormType] = useState<AccountFormType>(null);
-  const [creating, setCreating] = useState(false);
-  const [syncing, setSyncing] = useState<string | null>(null);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [deletingAccount, setDeletingAccount] = useState<string | null>(null);
   const [walletFormData, setWalletFormData] = useState({
@@ -65,23 +49,15 @@ export default function AccountsClient() {
   });
   const toast = useToast();
 
-  useEffect(() => {
-    loadAccounts();
-  }, []);
+  // Use TanStack Query hooks
+  const { data: accounts = [], isLoading: loading, error: queryError, refetch } = useAccounts();
+  const createAccount = useCreateAccount();
+  const syncAccount = useSyncAccount();
+  const deleteAccount = useDeleteAccount();
 
-  async function loadAccounts() {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await apiClient<Account[]>("/v1/accounts");
-      setAccounts(data);
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to load accounts";
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Convert query error to string for display
+  const error = queryError instanceof ApiError ? queryError.message : 
+                queryError ? "Failed to load accounts" : null;
 
   async function handleCreateWallet(e: React.FormEvent) {
     e.preventDefault();
@@ -91,15 +67,10 @@ export default function AccountsClient() {
     }
 
     try {
-      setCreating(true);
-      setError(null);
-      await apiClient<Account>("/v1/accounts", {
-        method: "POST",
-        body: {
-          name: walletFormData.name.trim(),
-          account_type: "wallet",
-          wallet_address: walletFormData.wallet_address.trim(),
-        },
+      await createAccount.mutateAsync({
+        name: walletFormData.name.trim(),
+        account_type: "wallet",
+        wallet_address: walletFormData.wallet_address.trim(),
       });
       
       toast.success("Wallet created successfully!");
@@ -107,12 +78,9 @@ export default function AccountsClient() {
       setWalletFormData({ name: "", wallet_address: "" });
       setShowCreateForm(false);
       setFormType(null);
-      await loadAccounts();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to create wallet";
       toast.error(message);
-    } finally {
-      setCreating(false);
     }
   }
 
@@ -124,81 +92,58 @@ export default function AccountsClient() {
     }
 
     try {
-      setCreating(true);
-      setError(null);
-      await apiClient<Account>("/v1/accounts", {
-        method: "POST",
-        body: {
-          name: exchangeFormData.name.trim(),
-          account_type: "exchange",
-          exchange_name: exchangeFormData.exchange_name,
-          api_key: exchangeFormData.api_key.trim(),
-          api_secret: exchangeFormData.api_secret.trim(),
-          passphrase: exchangeFormData.passphrase.trim() || undefined,
-        },
-      });
+      await createAccount.mutateAsync({
+        name: exchangeFormData.name.trim(),
+        account_type: "exchange",
+        exchange_name: exchangeFormData.exchange_name,
+        api_key: exchangeFormData.api_key.trim(),
+        api_secret: exchangeFormData.api_secret.trim(),
+        passphrase: exchangeFormData.passphrase.trim() || undefined,
+      } as CreateAccountInput);
       
       toast.success("Exchange account created successfully!");
       
       setExchangeFormData({ name: "", exchange_name: "okx", api_key: "", api_secret: "", passphrase: "" });
       setShowCreateForm(false);
       setFormType(null);
-      await loadAccounts();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to create exchange account";
       toast.error(message);
-    } finally {
-      setCreating(false);
     }
   }
 
   async function handleSyncAccount(accountId: string) {
     try {
-      setSyncing(accountId);
-      setError(null);
-      const result = await apiClient<SyncResult>(`/v1/accounts/${accountId}/sync`, {
-        method: "POST",
-      });
+      const result = await syncAccount.mutateAsync(accountId);
       if (result.success) {
         toast.success(`Account synced successfully! ${result.holdings_count} holdings updated.`);
-        await loadAccounts();
       } else {
         toast.error(result.error || "Sync failed");
       }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to sync account";
       toast.error(message);
-    } finally {
-      setSyncing(null);
     }
   }
 
   async function handleSyncAll() {
+    // Sync all accounts sequentially
     try {
-      setSyncing("all");
-      setError(null);
-      await apiClient("/v1/accounts/sync-all", {
-        method: "POST",
-      });
+      for (const account of accounts) {
+        await handleSyncAccount(account.id);
+      }
       toast.success("All accounts synced successfully!");
-      await loadAccounts();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to sync accounts";
       toast.error(message);
-    } finally {
-      setSyncing(null);
     }
   }
 
   async function handleDeleteAccount(accountId: string) {
     try {
-      setError(null);
-      await apiClient(`/v1/accounts/${accountId}`, {
-        method: "DELETE",
-      });
+      await deleteAccount.mutateAsync(accountId);
       toast.success("Account deleted successfully!");
       setDeletingAccount(null);
-      await loadAccounts();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to delete account";
       toast.error(message);
@@ -224,7 +169,6 @@ export default function AccountsClient() {
     setShowCreateForm(false);
     setFormType(null);
     setEditingAccount(null);
-    setError(null);
   }
 
   return (
@@ -244,14 +188,14 @@ export default function AccountsClient() {
         <div className="flex gap-3">
           <LoadingButton
             onClick={handleSyncAll}
-            loading={syncing === "all"}
-            disabled={syncing === "all" || accounts.length === 0}
+            loading={syncAccount.isPending}
+            disabled={syncAccount.isPending || accounts.length === 0}
             className="inline-flex items-center px-4 py-2 border-2 border-cyan-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transition-all duration-300 transform hover:scale-105"
           >
             <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {syncing === "all" ? "Syncing..." : "Sync All"}
+            {syncAccount.isPending ? "Syncing..." : "Sync All"}
           </LoadingButton>
           <button
             onClick={() => openCreateForm(null)}
@@ -270,8 +214,7 @@ export default function AccountsClient() {
         <div className="mb-6">
           <ErrorAlert 
             message={error} 
-            onRetry={loadAccounts}
-            onDismiss={() => setError(null)}
+            onRetry={() => refetch()}
             type="banner"
           />
         </div>
@@ -353,11 +296,11 @@ export default function AccountsClient() {
                 <div className="flex gap-3">
                   <LoadingButton
                     type="submit"
-                    loading={creating}
-                    disabled={creating}
+                    loading={createAccount.isPending}
+                    disabled={createAccount.isPending}
                     className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
                   >
-                    {creating ? "Creating..." : "Create Wallet"}
+                    {createAccount.isPending ? "Creating..." : "Create Wallet"}
                   </LoadingButton>
                   <button
                     type="button"
@@ -446,11 +389,11 @@ export default function AccountsClient() {
                 <div className="flex gap-3">
                   <LoadingButton
                     type="submit"
-                    loading={creating}
-                    disabled={creating}
+                    loading={createAccount.isPending}
+                    disabled={createAccount.isPending}
                     className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
                   >
-                    {creating ? "Creating..." : "Create Exchange Account"}
+                    {createAccount.isPending ? "Creating..." : "Create Exchange Account"}
                   </LoadingButton>
                   <button
                     type="button"
@@ -547,14 +490,14 @@ export default function AccountsClient() {
               <div className="flex gap-2">
                 <LoadingButton
                   onClick={() => handleSyncAccount(account.id)}
-                  loading={syncing === account.id}
-                  disabled={syncing === account.id}
+                  loading={syncAccount.isPending}
+                  disabled={syncAccount.isPending}
                   className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-cyan-500/50 text-xs font-medium rounded-lg text-cyan-300 bg-cyan-950/30 hover:bg-cyan-900/50 hover:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  {syncing === account.id ? "Syncing..." : "Sync"}
+                  {syncAccount.isPending ? "Syncing..." : "Sync"}
                 </LoadingButton>
                 {deletingAccount === account.id ? (
                   <>

@@ -128,7 +128,7 @@ export interface SnapshotResult {
   success: boolean;
   error?: string;
   holdings_count: number;
-  total_value_usd: string;
+  total_value_usd: string; // String for precise decimal handling (matches backend BigDecimal serialization)
 }
 
 // ============================================================================

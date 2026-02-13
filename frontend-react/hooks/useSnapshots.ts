@@ -12,6 +12,12 @@ import type {
 } from "@/types/api";
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+export const DEFAULT_SNAPSHOT_TYPE = "manual";
+
+// ============================================================================
 // Query Keys
 // ============================================================================
 
@@ -75,7 +81,7 @@ export function useCreateSnapshot(portfolioId: string) {
       return apiClient<SnapshotResult>(`/v1/portfolios/${portfolioId}/snapshots`, {
         method: "POST",
         body: JSON.stringify({
-          snapshot_type: input.snapshot_type || "manual",
+          snapshot_type: input.snapshot_type || DEFAULT_SNAPSHOT_TYPE,
           snapshot_date: input.snapshot_date,
         }),
       });

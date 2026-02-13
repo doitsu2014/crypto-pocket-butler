@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { useToast } from "@/contexts/ToastContext";
-import { useCreateSnapshot } from "@/hooks/useSnapshots";
+import { useCreateSnapshot, DEFAULT_SNAPSHOT_TYPE } from "@/hooks/useSnapshots";
 import Link from "next/link";
 import PortfolioCompositionEditor from "./PortfolioCompositionEditor";
 import { LoadingSkeleton } from "@/components/Loading";
@@ -165,7 +165,7 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
   const createSnapshot = async () => {
     try {
       const result = await createSnapshotMutation.mutateAsync({
-        snapshot_type: "manual",
+        snapshot_type: DEFAULT_SNAPSHOT_TYPE,
       });
       
       if (result.success) {

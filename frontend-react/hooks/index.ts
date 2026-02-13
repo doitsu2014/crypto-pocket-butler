@@ -28,6 +28,7 @@ export {
 export {
   useSnapshots,
   useCreateSnapshot,
+  DEFAULT_SNAPSHOT_TYPE,
   snapshotKeys,
 } from "./useSnapshots";
 

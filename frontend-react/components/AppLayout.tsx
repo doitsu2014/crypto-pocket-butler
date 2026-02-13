@@ -62,7 +62,9 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
     if (item.matchExact) {
       return pathname === item.href;
     }
-    // For non-exact matches, check if pathname is exact or starts with href/
+    // For non-exact matches (like /portfolios), we want to highlight when:
+    // 1. User is exactly on the route (/portfolios), OR
+    // 2. User is on any subpage (/portfolios/123, /portfolios/123/settings, etc.)
     return pathname === item.href || pathname.startsWith(`${item.href}/`);
   };
 
@@ -105,7 +107,7 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
 
       <div className="flex">
         {/* Sidebar */}
-        <aside className="relative w-64 min-h-[calc(100vh-4rem)] bg-slate-950/60 backdrop-blur-sm border-r-2 border-fuchsia-500/20">
+        <aside className="relative w-64 min-h-[calc(100vh-4rem)] bg-slate-950/60 backdrop-blur-sm border-r-2 border-fuchsia-500/20" aria-label="Main navigation sidebar">
           <nav className="p-4 space-y-2" aria-label="Main navigation">
             {navigation.map((item) => {
               const active = isActive(item);

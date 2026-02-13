@@ -159,7 +159,7 @@ pub async fn collect_contract_addresses(
         assets_processed += 1;
 
         // Add a small delay to respect rate limits (CoinGecko free tier has rate limits)
-        // Sleep for 1.5 seconds to stay under 50 calls/minute
+        // Sleep for 1.5 seconds to stay under 40 calls/minute (60,000ms / 1,500ms = 40)
         tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
     }
 
@@ -203,7 +203,7 @@ fn infer_token_standard(chain: &str) -> Option<String> {
     match chain {
         "ethereum" | "arbitrum" | "optimism" | "base" => Some("ERC20".to_string()),
         "bsc" => Some("BEP20".to_string()),
-        "polygon" => Some("ERC20".to_string()), // Polygon uses ERC20 standard
+        "polygon" => Some("ERC20".to_string()), // Polygon is ERC20-compatible
         "solana" => Some("SPL".to_string()),
         _ => None,
     }

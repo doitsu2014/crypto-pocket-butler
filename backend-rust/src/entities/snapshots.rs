@@ -12,6 +12,7 @@ pub struct Model {
     pub total_value_usd: Decimal,
     pub holdings: Json, // JSON array of asset holdings
     pub metadata: Option<Json>, // Optional metadata
+    pub allocation_id: Option<Uuid>, // Reference to portfolio_allocations
     pub created_at: DateTimeWithTimeZone,
 }
 

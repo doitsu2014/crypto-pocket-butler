@@ -73,6 +73,8 @@ pub struct SnapshotResponse {
     pub total_value_usd: String,
     pub holdings: serde_json::Value, // JSON holdings data
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allocation_id: Option<Uuid>, // Reference to portfolio_allocations
     pub created_at: String, // ISO 8601 datetime
 }
 
@@ -86,6 +88,7 @@ impl From<snapshots::Model> for SnapshotResponse {
             total_value_usd: model.total_value_usd.to_string(),
             holdings: model.holdings,
             metadata: model.metadata,
+            allocation_id: model.allocation_id,
             created_at: model.created_at.to_rfc3339(),
         }
     }
@@ -430,12 +433,70 @@ async fn create_all_user_snapshots_handler(
     }))
 }
 
+/// Get the latest snapshot for a specific portfolio
+///
+/// Retrieves the most recent snapshot for the specified portfolio based on snapshot_date and created_at.
+#[utoipa::path(
+    get,
+    path = "/api/v1/portfolios/{portfolio_id}/snapshots/latest",
+    params(
+        ("portfolio_id" = Uuid, Path, description = "Portfolio ID")
+    ),
+    responses(
+        (status = 200, description = "Latest snapshot retrieved successfully", body = SnapshotResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - portfolio does not belong to user"),
+        (status = 404, description = "Portfolio or snapshot not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "snapshots"
+)]
+async fn get_latest_portfolio_snapshot_handler(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path(portfolio_id): Path<Uuid>,
+) -> Result<Json<SnapshotResponse>, Response> {
+    // Get or create user
+    let user = get_or_create_user(&db, &token).await?;
+
+    // Verify portfolio belongs to user
+    check_portfolio_ownership(&db, portfolio_id, user.id).await?;
+
+    // Get the latest snapshot for this portfolio
+    let latest_snapshot = snapshots::Entity::find()
+        .filter(snapshots::Column::PortfolioId.eq(portfolio_id))
+        .order_by_desc(snapshots::Column::SnapshotDate)
+        .order_by_desc(snapshots::Column::CreatedAt)
+        .one(&db)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {}", e),
+            )
+                .into_response()
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "No snapshots found for this portfolio",
+            )
+                .into_response()
+        })?;
+
+    Ok(Json(latest_snapshot.into()))
+}
+
 /// Create router for snapshot endpoints
 pub fn create_router() -> Router<DatabaseConnection> {
     Router::new()
         .route(
             "/api/v1/portfolios/{portfolio_id}/snapshots",
             get(list_portfolio_snapshots_handler).post(create_portfolio_snapshot_handler),
+        )
+        .route(
+            "/api/v1/portfolios/{portfolio_id}/snapshots/latest",
+            get(get_latest_portfolio_snapshot_handler),
         )
         .route(
             "/api/v1/snapshots/create-all",

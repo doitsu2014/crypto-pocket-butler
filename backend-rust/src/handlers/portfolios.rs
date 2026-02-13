@@ -1138,7 +1138,7 @@ pub async fn construct_portfolio_allocation(
             portfolio_id: Set(id),
             as_of: Set(as_of),
             total_value_usd: Set(total_value),
-            holdings: Set(allocation_json),
+            holdings: Set(allocation_json.clone()),
             created_at: ActiveValue::NotSet,
         };
         
@@ -1154,9 +1154,7 @@ pub async fn construct_portfolio_allocation(
                     .await?
                     .ok_or_else(|| ApiError::DatabaseError(sea_orm::DbErr::Custom("Allocation disappeared after conflict".to_string())))?;
                 
-                let allocation_json = serde_json::to_value(&allocation_holdings)
-                    .map_err(|e| ApiError::BadRequest(format!("Failed to serialize allocation: {}", e)))?;
-                
+                // Reuse the allocation_json from outer scope
                 let mut allocation_active: portfolio_allocations::ActiveModel = existing.into();
                 allocation_active.as_of = Set(as_of);
                 allocation_active.total_value_usd = Set(total_value);

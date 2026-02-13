@@ -125,8 +125,13 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
         const allocationData = await apiClient<ConstructedAllocationResponse>(`/v1/portfolios/${portfolioId}/allocation`);
         setConstructedAllocation(allocationData);
       } catch (err) {
-        // Allocation doesn't exist yet, that's OK
-        setConstructedAllocation(null);
+        // Only suppress 404 (allocation doesn't exist yet), log other errors
+        if (err instanceof ApiError && err.message.includes('404')) {
+          setConstructedAllocation(null);
+        } else {
+          console.error("Failed to load allocation:", err);
+          setConstructedAllocation(null);
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof ApiError ? err.message : "Failed to load portfolio data";

@@ -16,7 +16,15 @@ export async function POST(
       },
     });
 
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      return NextResponse.json(
+        { error: 'Invalid response from backend' },
+        { status: 502 }
+      );
+    }
 
     if (!response.ok) {
       return NextResponse.json(data, { status: response.status });

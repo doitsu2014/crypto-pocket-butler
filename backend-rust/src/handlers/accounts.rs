@@ -61,6 +61,12 @@ pub struct UpdateAccountRequest {
     pub passphrase: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
+pub struct AccountHolding {
+    pub asset: String,
+    pub quantity: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AccountResponse {
     pub id: Uuid,
@@ -76,6 +82,8 @@ pub struct AccountResponse {
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_synced_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub holdings: Option<Vec<AccountHolding>>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -85,6 +93,11 @@ impl From<accounts::Model> for AccountResponse {
         // Parse enabled_chains from JSON if present
         let enabled_chains = account.enabled_chains.as_ref().and_then(|json| {
             serde_json::from_value::<Vec<String>>(json.clone()).ok()
+        });
+        
+        // Parse holdings from JSON if present
+        let holdings = account.holdings.as_ref().and_then(|json| {
+            serde_json::from_value::<Vec<AccountHolding>>(json.clone()).ok()
         });
         
         Self {
@@ -97,6 +110,7 @@ impl From<accounts::Model> for AccountResponse {
             enabled_chains,
             is_active: account.is_active,
             last_synced_at: account.last_synced_at.map(|dt| dt.to_rfc3339()),
+            holdings,
             created_at: account.created_at.to_rfc3339(),
             updated_at: account.updated_at.to_rfc3339(),
         }

@@ -44,6 +44,11 @@ export interface CreatePortfolioInput {
 // Account Types
 // ============================================================================
 
+export interface AccountHolding {
+  asset: string;
+  quantity: string;
+}
+
 export interface Account {
   id: string;
   user_id: string;
@@ -54,6 +59,7 @@ export interface Account {
   enabled_chains?: string[];
   is_active: boolean;
   last_synced_at?: string;
+  holdings?: AccountHolding[];
   created_at: string;
   updated_at: string;
 }

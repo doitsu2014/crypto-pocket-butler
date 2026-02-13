@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api-client";
 import { useToast } from "@/contexts/ToastContext";
 import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
@@ -37,6 +38,7 @@ function formatDate(dateString: string | undefined): string {
 }
 
 export default function AccountsClient() {
+  const router = useRouter();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formType, setFormType] = useState<AccountFormType>(null);
   const [deletingAccount, setDeletingAccount] = useState<string | null>(null);
@@ -509,7 +511,10 @@ export default function AccountsClient() {
               className="group bg-slate-900/60 backdrop-blur-sm rounded-xl border-2 border-fuchsia-500/50 hover:border-fuchsia-400 p-6 transition-all duration-300 shadow-[0_0_20px_rgba(217,70,239,0.25)] hover:shadow-[0_0_35px_rgba(217,70,239,0.45)] hover:transform hover:scale-[1.03]"
             >
               <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
+                <div 
+                  className="flex-1 cursor-pointer"
+                  onClick={() => router.push(`/accounts/${account.id}`)}
+                >
                   <h3 className="text-lg font-bold text-fuchsia-300 group-hover:text-fuchsia-200 transition-colors drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
                     {account.name}
                   </h3>
@@ -576,6 +581,17 @@ export default function AccountsClient() {
                   </span>
                 </p>
               </div>
+
+              <button
+                onClick={() => router.push(`/accounts/${account.id}`)}
+                className="w-full mb-2 inline-flex items-center justify-center px-3 py-2 border border-violet-500/50 text-xs font-medium rounded-lg text-violet-300 bg-violet-950/30 hover:bg-violet-900/50 hover:border-violet-400 transition-all"
+              >
+                <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                View Details
+              </button>
 
               <div className="flex gap-2">
                 <LoadingButton

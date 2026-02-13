@@ -44,42 +44,46 @@ function formatPercentage(value: number): string {
   }).format(value / 100);
 }
 
+// Custom tooltip component defined outside render
+function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string; value: number; valueUsd: number } }> }) {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-slate-900/95 backdrop-blur-sm border-2 border-fuchsia-500/50 rounded-lg p-3 shadow-[0_0_20px_rgba(217,70,239,0.5)]">
+        <p className="text-fuchsia-300 font-bold mb-1">{data.name}</p>
+        <p className="text-cyan-300 text-sm">{formatCurrency(data.valueUsd)}</p>
+        <p className="text-violet-300 text-sm font-bold">{formatPercentage(data.value)}</p>
+      </div>
+    );
+  }
+  return null;
+}
+
+// Custom legend component defined outside render
+function CustomLegend({ payload }: { payload?: Array<{ value: string; color: string }> }) {
+  if (!payload) return null;
+  
+  return (
+    <div className="flex flex-wrap gap-3 justify-center mt-4">
+      {payload.map((entry, index) => (
+        <div key={`legend-${index}`} className="flex items-center gap-2">
+          <div
+            className="w-3 h-3 rounded-full shadow-[0_0_8px_rgba(232,121,249,0.5)]"
+            style={{ backgroundColor: entry.color }}
+          />
+          <span className="text-xs text-slate-300 font-medium">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AllocationPie({ allocation, maxItems = 10 }: AllocationPieProps) {
   const displayData = allocation.slice(0, maxItems).map((item) => ({
     name: item.asset,
     value: item.percentage,
     valueUsd: item.value_usd,
   }));
-
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-slate-900/95 backdrop-blur-sm border-2 border-fuchsia-500/50 rounded-lg p-3 shadow-[0_0_20px_rgba(217,70,239,0.5)]">
-          <p className="text-fuchsia-300 font-bold mb-1">{data.name}</p>
-          <p className="text-cyan-300 text-sm">{formatCurrency(data.valueUsd)}</p>
-          <p className="text-violet-300 text-sm font-bold">{formatPercentage(data.value)}</p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const CustomLegend = ({ payload }: any) => {
-    return (
-      <div className="flex flex-wrap gap-3 justify-center mt-4">
-        {payload.map((entry: any, index: number) => (
-          <div key={`legend-${index}`} className="flex items-center gap-2">
-            <div
-              className="w-3 h-3 rounded-full shadow-[0_0_8px_rgba(232,121,249,0.5)]"
-              style={{ backgroundColor: entry.color }}
-            />
-            <span className="text-xs text-slate-300 font-medium">{entry.value}</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
 
   return (
     <div className="bg-slate-950/70 backdrop-blur-sm border-2 border-violet-500/40 shadow-[0_0_25px_rgba(139,92,246,0.3)] rounded-2xl p-6">

@@ -64,6 +64,22 @@ interface PortfolioHoldingsResponse {
   as_of: string;
 }
 
+interface AllocationHolding {
+  asset: string;
+  quantity: string;
+  value_usd: number;
+  weight: number;
+  price_usd?: number;
+  unpriced: boolean;
+}
+
+interface ConstructedAllocationResponse {
+  portfolio_id: string;
+  total_value_usd: number;
+  holdings: AllocationHolding[];
+  as_of: string;
+}
+
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -85,8 +101,10 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
   const toast = useToast();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [holdings, setHoldings] = useState<PortfolioHoldingsResponse | null>(null);
+  const [constructedAllocation, setConstructedAllocation] = useState<ConstructedAllocationResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [constructing, setConstructing] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -101,6 +119,15 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
       
       setPortfolio(portfolioData);
       setHoldings(holdingsData);
+
+      // Try to load existing allocation if available
+      try {
+        const allocationData = await apiClient<ConstructedAllocationResponse>(`/v1/portfolios/${portfolioId}/allocation`);
+        setConstructedAllocation(allocationData);
+      } catch (err) {
+        // Allocation doesn't exist yet, that's OK
+        setConstructedAllocation(null);
+      }
     } catch (err) {
       const errorMessage = err instanceof ApiError ? err.message : "Failed to load portfolio data";
       setError(errorMessage);
@@ -108,6 +135,23 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
       setLoading(false);
     }
   }, [portfolioId]);
+
+  const constructAllocation = async () => {
+    try {
+      setConstructing(true);
+      const allocationData = await apiClient<ConstructedAllocationResponse>(
+        `/v1/portfolios/${portfolioId}/construct`,
+        { method: 'POST' }
+      );
+      setConstructedAllocation(allocationData);
+      toast.success("Portfolio allocation constructed successfully!");
+    } catch (err) {
+      const errorMessage = err instanceof ApiError ? err.message : "Failed to construct portfolio allocation";
+      toast.error(errorMessage);
+    } finally {
+      setConstructing(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -224,6 +268,118 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
             </svg>
           </div>
         </div>
+      </div>
+
+      {/* Portfolio Construction Section */}
+      <div className="mb-8 bg-gradient-to-br from-slate-900/80 via-slate-900/70 to-slate-950/80 backdrop-blur-sm border-2 border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.3)] rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+              <svg className="w-5 h-5 text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.5)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-emerald-300 drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]">
+              Portfolio Allocation
+            </h3>
+          </div>
+          <button
+            onClick={constructAllocation}
+            disabled={constructing}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-lg border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)] hover:shadow-[0_0_25px_rgba(16,185,129,0.7)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+          >
+            {constructing ? (
+              <>
+                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Constructing...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Construct Portfolio
+              </>
+            )}
+          </button>
+        </div>
+
+        {constructedAllocation ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-700/50 pb-3">
+              <div>
+                <p className="text-slate-400 text-sm">Total Value (USD)</p>
+                <p className="text-2xl font-bold text-emerald-300">
+                  {formatCurrency(constructedAllocation.total_value_usd)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-slate-400 text-sm">Constructed At</p>
+                <p className="text-sm text-cyan-300">
+                  {new Date(constructedAllocation.as_of).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Asset Breakdown</h4>
+              <div className="grid grid-cols-1 gap-2">
+                {constructedAllocation.holdings.map((holding) => (
+                  <div 
+                    key={holding.asset}
+                    className="flex items-center justify-between bg-slate-900/50 rounded-lg p-3 border border-slate-700/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-fuchsia-300 drop-shadow-[0_0_6px_rgba(232,121,249,0.4)]">
+                        {holding.asset}
+                      </span>
+                      {holding.unpriced && (
+                        <span className="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded border border-yellow-500/50">
+                          Unpriced
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400">Quantity</p>
+                        <p className="text-sm font-semibold text-slate-200">{holding.quantity}</p>
+                      </div>
+                      {holding.price_usd && (
+                        <div className="text-right">
+                          <p className="text-xs text-slate-400">Price</p>
+                          <p className="text-sm font-semibold text-slate-200">{formatCurrency(holding.price_usd)}</p>
+                        </div>
+                      )}
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400">Value</p>
+                        <p className="text-sm font-semibold text-emerald-300">{formatCurrency(holding.value_usd)}</p>
+                      </div>
+                      <div className="text-right min-w-[60px]">
+                        <p className="text-xs text-slate-400">Weight</p>
+                        <p className="text-sm font-bold text-cyan-300">{formatPercentage(holding.weight)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-slate-400 text-sm mb-4">
+              No allocation has been constructed yet. Click the button above to construct the portfolio allocation.
+            </p>
+            <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              This will aggregate holdings from all linked accounts and compute current allocation
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Allocation Breakdown - Bar Chart */}

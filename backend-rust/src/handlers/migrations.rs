@@ -1,7 +1,6 @@
 use axum::{
     extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Json, Response},
+    response::Json,
     routing::post,
     Router,
 };
@@ -9,6 +8,8 @@ use sea_orm::DatabaseConnection;
 use sea_orm_migration::MigratorTrait;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use super::error::ApiError;
 
 /// Migration response
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -40,7 +41,7 @@ pub struct MigrationResponse {
 )]
 pub async fn migrate_handler(
     State(db): State<DatabaseConnection>,
-) -> Result<Json<MigrationResponse>, Response> {
+) -> Result<Json<MigrationResponse>, ApiError> {
     tracing::info!("Running database migrations");
     
     match migration::Migrator::up(&db, None).await {
@@ -53,13 +54,7 @@ pub async fn migrate_handler(
         }
         Err(e) => {
             tracing::error!("Migration failed: {:?}", e);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(MigrationResponse {
-                    status: "error".to_string(),
-                    message: format!("Migration failed: {}", e),
-                }),
-            ).into_response())
+            Err(ApiError::InternalServerError(format!("Migration failed: {}", e)))
         }
     }
 }

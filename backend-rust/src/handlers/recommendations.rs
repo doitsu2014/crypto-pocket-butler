@@ -1,7 +1,7 @@
 use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Json, Response},
+    response::Json,
     routing::{get, post},
     Router,
 };
@@ -17,6 +17,7 @@ use serde_json::json;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use super::error::ApiError;
 use crate::entities::{portfolios, recommendations};
 use crate::helpers::auth::get_or_create_user;
 
@@ -105,13 +106,9 @@ pub async fn list_portfolio_recommendations(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(portfolio_id): Path<Uuid>,
     Query(query): Query<ListRecommendationsQuery>,
-) -> Result<Json<ListRecommendationsResponse>, Response> {
+) -> Result<Json<ListRecommendationsResponse>, ApiError> {
     let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
+        ApiError::InternalServerError(format!("Database error: {}", e))
     })?;
 
     // Verify portfolio ownership
@@ -120,19 +117,9 @@ pub async fn list_portfolio_recommendations(
         .one(&db)
         .await
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
+            ApiError::InternalServerError(format!("Database error: {}", e))
         })?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "Portfolio not found or access denied",
-            )
-                .into_response()
-        })?;
+        .ok_or(ApiError::NotFound)?;
 
     // Build query with optional status filter
     let mut query_builder = recommendations::Entity::find()
@@ -147,11 +134,7 @@ pub async fn list_portfolio_recommendations(
         .all(&db)
         .await
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
+            ApiError::InternalServerError(format!("Database error: {}", e))
         })?;
 
     let total_count = recommendations_list.len();
@@ -185,13 +168,9 @@ pub async fn get_recommendation(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Path((portfolio_id, recommendation_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<RecommendationResponse>, Response> {
+) -> Result<Json<RecommendationResponse>, ApiError> {
     let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
+        ApiError::InternalServerError(format!("Database error: {}", e))
     })?;
 
     // Verify portfolio ownership
@@ -200,19 +179,9 @@ pub async fn get_recommendation(
         .one(&db)
         .await
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
+            ApiError::InternalServerError(format!("Database error: {}", e))
         })?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "Portfolio not found or access denied",
-            )
-                .into_response()
-        })?;
+        .ok_or(ApiError::NotFound)?;
 
     // Get recommendation
     let recommendation = recommendations::Entity::find_by_id(recommendation_id)
@@ -220,15 +189,9 @@ pub async fn get_recommendation(
         .one(&db)
         .await
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
+            ApiError::InternalServerError(format!("Database error: {}", e))
         })?
-        .ok_or_else(|| {
-            (StatusCode::NOT_FOUND, "Recommendation not found").into_response()
-        })?;
+        .ok_or(ApiError::NotFound)?;
 
     Ok(Json(RecommendationResponse::from(recommendation)))
 }
@@ -252,13 +215,9 @@ pub async fn create_recommendation(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(portfolio_id): Path<Uuid>,
     Json(payload): Json<CreateRecommendationRequest>,
-) -> Result<Response, Response> {
+) -> Result<(StatusCode, Json<RecommendationResponse>), ApiError> {
     let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
+        ApiError::InternalServerError(format!("Database error: {}", e))
     })?;
 
     // Verify portfolio ownership
@@ -267,19 +226,9 @@ pub async fn create_recommendation(
         .one(&db)
         .await
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
+            ApiError::InternalServerError(format!("Database error: {}", e))
         })?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "Portfolio not found or access denied",
-            )
-                .into_response()
-        })?;
+        .ok_or(ApiError::NotFound)?;
 
     // Parse expected_impact if provided
     let expected_impact = if let Some(impact_str) = payload.expected_impact {
@@ -287,11 +236,7 @@ pub async fn create_recommendation(
             impact_str
                 .parse::<Decimal>()
                 .map_err(|e| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        format!("Invalid expected_impact value: {}", e),
-                    )
-                        .into_response()
+                    ApiError::BadRequest(format!("Invalid expected_impact value: {}", e))
                 })?,
         )
     } else {
@@ -316,15 +261,11 @@ pub async fn create_recommendation(
         .insert(&db)
         .await
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create recommendation: {}", e),
-            )
-                .into_response()
+            ApiError::InternalServerError(format!("Failed to create recommendation: {}", e))
         })?;
 
     let response = RecommendationResponse::from(recommendation);
-    Ok((StatusCode::CREATED, Json(response)).into_response())
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 /// Generate mock recommendations for a portfolio (demo feature)
@@ -344,13 +285,9 @@ pub async fn generate_mock_recommendations(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Path(portfolio_id): Path<Uuid>,
-) -> Result<Json<ListRecommendationsResponse>, Response> {
+) -> Result<Json<ListRecommendationsResponse>, ApiError> {
     let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
+        ApiError::InternalServerError(format!("Database error: {}", e))
     })?;
 
     // Verify portfolio ownership
@@ -359,19 +296,9 @@ pub async fn generate_mock_recommendations(
         .one(&db)
         .await
         .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
+            ApiError::InternalServerError(format!("Database error: {}", e))
         })?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "Portfolio not found or access denied",
-            )
-                .into_response()
-        })?;
+        .ok_or(ApiError::NotFound)?;
 
     // Generate mock recommendations
     let now = Utc::now();
@@ -441,11 +368,7 @@ pub async fn generate_mock_recommendations(
     let mut created_recommendations = Vec::new();
     for rec in mock_recommendations {
         let created = rec.insert(&db).await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create recommendation: {}", e),
-            )
-                .into_response()
+            ApiError::InternalServerError(format!("Failed to create recommendation: {}", e))
         })?;
         created_recommendations.push(RecommendationResponse::from(created));
     }

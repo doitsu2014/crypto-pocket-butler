@@ -1,7 +1,6 @@
 use axum::{
     extract::{Extension, Path, Query, State},
-    http::StatusCode,
-    response::{IntoResponse, Json, Response},
+    response::Json,
     routing::{get, post},
     Router,
 };
@@ -15,6 +14,7 @@ use uuid::Uuid;
 use crate::entities::{portfolios, snapshots};
 use crate::helpers::auth::get_or_create_user;
 use crate::jobs::portfolio_snapshot;
+use super::error::ApiError;
 
 // === Request/Response DTOs ===
 
@@ -124,23 +124,14 @@ async fn check_portfolio_ownership(
     db: &DatabaseConnection,
     portfolio_id: Uuid,
     user_id: Uuid,
-) -> Result<(), Response> {
+) -> Result<(), ApiError> {
     let portfolio = portfolios::Entity::find_by_id(portfolio_id)
         .one(db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?
-        .ok_or_else(|| {
-            (StatusCode::NOT_FOUND, "Portfolio not found").into_response()
-        })?;
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
     if portfolio.user_id != user_id {
-        return Err((StatusCode::FORBIDDEN, "Access denied").into_response());
+        return Err(ApiError::Forbidden);
     }
 
     Ok(())
@@ -174,15 +165,11 @@ async fn list_portfolio_snapshots_handler(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(portfolio_id): Path<Uuid>,
     Query(query): Query<ListSnapshotsQuery>,
-) -> Result<Json<ListSnapshotsResponse>, Response> {
+) -> Result<Json<ListSnapshotsResponse>, ApiError> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+    let user = get_or_create_user(&db, &token)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     // Verify portfolio belongs to user
     check_portfolio_ownership(&db, portfolio_id, user.id).await?;
@@ -194,22 +181,14 @@ async fn list_portfolio_snapshots_handler(
     // Apply date filters if provided
     if let Some(start_date_str) = query.start_date {
         let start_date = NaiveDate::parse_from_str(&start_date_str, "%Y-%m-%d").map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid start_date format: {}. Expected YYYY-MM-DD", e),
-            )
-                .into_response()
+            ApiError::BadRequest(format!("Invalid start_date format: {}. Expected YYYY-MM-DD", e))
         })?;
         snapshot_query = snapshot_query.filter(snapshots::Column::SnapshotDate.gte(start_date));
     }
 
     if let Some(end_date_str) = query.end_date {
         let end_date = NaiveDate::parse_from_str(&end_date_str, "%Y-%m-%d").map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid end_date format: {}. Expected YYYY-MM-DD", e),
-            )
-                .into_response()
+            ApiError::BadRequest(format!("Invalid end_date format: {}. Expected YYYY-MM-DD", e))
         })?;
         snapshot_query = snapshot_query.filter(snapshots::Column::SnapshotDate.lte(end_date));
     }
@@ -223,13 +202,7 @@ async fn list_portfolio_snapshots_handler(
     snapshot_query = snapshot_query.order_by_desc(snapshots::Column::SnapshotDate);
 
     // Execute query
-    let snapshot_models = snapshot_query.all(&db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+    let snapshot_models = snapshot_query.all(&db).await?;
 
     let total_count = snapshot_models.len();
     let snapshots: Vec<SnapshotResponse> = snapshot_models
@@ -270,15 +243,11 @@ async fn create_portfolio_snapshot_handler(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(portfolio_id): Path<Uuid>,
     Json(request): Json<CreateSnapshotRequest>,
-) -> Result<Json<SnapshotResultResponse>, Response> {
+) -> Result<Json<SnapshotResultResponse>, ApiError> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+    let user = get_or_create_user(&db, &token)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     // Verify portfolio belongs to user
     check_portfolio_ownership(&db, portfolio_id, user.id).await?;
@@ -286,11 +255,7 @@ async fn create_portfolio_snapshot_handler(
     // Parse snapshot date if provided
     let snapshot_date = if let Some(date_str) = request.snapshot_date {
         Some(NaiveDate::parse_from_str(&date_str, "%Y-%m-%d").map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid date format: {}. Expected YYYY-MM-DD", e),
-            )
-                .into_response()
+            ApiError::BadRequest(format!("Invalid date format: {}. Expected YYYY-MM-DD", e))
         })?)
     } else {
         None
@@ -304,13 +269,7 @@ async fn create_portfolio_snapshot_handler(
         &request.snapshot_type,
     )
     .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create snapshot: {}", e),
-        )
-            .into_response()
-    })?;
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to create snapshot: {}", e)))?;
 
     Ok(Json(result.into()))
 }
@@ -335,24 +294,16 @@ async fn create_all_user_snapshots_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Json(request): Json<CreateSnapshotRequest>,
-) -> Result<Json<CreateAllSnapshotsResponse>, Response> {
+) -> Result<Json<CreateAllSnapshotsResponse>, ApiError> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+    let user = get_or_create_user(&db, &token)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     // Parse snapshot date if provided
     let snapshot_date = if let Some(date_str) = request.snapshot_date {
         Some(NaiveDate::parse_from_str(&date_str, "%Y-%m-%d").map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid date format: {}. Expected YYYY-MM-DD", e),
-            )
-                .into_response()
+            ApiError::BadRequest(format!("Invalid date format: {}. Expected YYYY-MM-DD", e))
         })?)
     } else {
         None
@@ -362,14 +313,7 @@ async fn create_all_user_snapshots_handler(
     let user_portfolios = portfolios::Entity::find()
         .filter(portfolios::Column::UserId.eq(user.id))
         .all(&db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?;
+        .await?;
 
     // Create snapshots for each portfolio
     let mut results = Vec::new();
@@ -431,15 +375,11 @@ async fn get_latest_portfolio_snapshot_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Path(portfolio_id): Path<Uuid>,
-) -> Result<Json<SnapshotResponse>, Response> {
+) -> Result<Json<SnapshotResponse>, ApiError> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+    let user = get_or_create_user(&db, &token)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     // Verify portfolio belongs to user
     check_portfolio_ownership(&db, portfolio_id, user.id).await?;
@@ -450,21 +390,8 @@ async fn get_latest_portfolio_snapshot_handler(
         .order_by_desc(snapshots::Column::SnapshotDate)
         .order_by_desc(snapshots::Column::CreatedAt)
         .one(&db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "No snapshots found for this portfolio",
-            )
-                .into_response()
-        })?;
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
     Ok(Json(latest_snapshot.into()))
 }

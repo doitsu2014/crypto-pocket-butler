@@ -35,6 +35,7 @@ pub struct SnapshotHolding {
     pub price_usd: Option<f64>,
     
     /// Value in USD at snapshot time
+    /// Note: f64 is used for API compatibility and historical preservation
     pub value_usd: f64,
     
     /// Weight as percentage of portfolio (0-100)
@@ -43,6 +44,19 @@ pub struct SnapshotHolding {
     /// Whether asset was unpriced at snapshot time
     #[serde(default)]
     pub unpriced: bool,
+}
+
+impl From<crate::domain::allocation::AllocationItem> for SnapshotHolding {
+    fn from(item: crate::domain::allocation::AllocationItem) -> Self {
+        Self {
+            asset: item.asset,
+            quantity: item.quantity,
+            price_usd: item.price_usd,
+            value_usd: item.value_usd,
+            weight: item.weight,
+            unpriced: item.unpriced,
+        }
+    }
 }
 
 /// Metadata for a snapshot providing context about when and how it was created.

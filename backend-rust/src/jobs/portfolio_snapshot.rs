@@ -89,17 +89,10 @@ pub async fn create_portfolio_snapshot(
         serde_json::from_value(serde_json::Value::from(allocation.holdings.clone()))
             .map_err(|e| format!("Failed to deserialize allocation holdings: {}", e))?;
 
-    // Convert AllocationItems to SnapshotHoldings (same structure, different semantic meaning)
+    // Convert AllocationItems to SnapshotHoldings using From trait
     let holdings: Vec<SnapshotHolding> = allocation_items
         .into_iter()
-        .map(|item| SnapshotHolding {
-            asset: item.asset,
-            quantity: item.quantity,
-            price_usd: item.price_usd,
-            value_usd: item.value_usd,
-            weight: item.weight,
-            unpriced: item.unpriced,
-        })
+        .map(SnapshotHolding::from)
         .collect();
 
     let holdings_count = holdings.len();

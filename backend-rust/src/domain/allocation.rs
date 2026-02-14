@@ -38,6 +38,8 @@ pub struct AllocationItem {
     pub price_usd: Option<f64>,
     
     /// Total value in USD (quantity * price)
+    /// Note: f64 is used for API compatibility. For internal calculations,
+    /// use Decimal types. This field is computed from Decimal values.
     pub value_usd: f64,
     
     /// Percentage of total portfolio value (0-100)

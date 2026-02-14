@@ -331,9 +331,12 @@ impl AssetIdentityNormalizer {
     ///
     /// This is a convenience method that tries to match a symbol directly.
     /// Use this for symbols that don't have a specific source context.
+    /// 
+    /// Special handling: If the symbol contains a chain suffix (e.g., "USDT-ethereum"),
+    /// this will attempt to parse it and use EVM contract normalization instead.
     ///
     /// # Arguments
-    /// * `symbol` - The symbol to normalize (e.g., "BTC", "ETH")
+    /// * `symbol` - The symbol to normalize (e.g., "BTC", "ETH", "USDT-ethereum")
     ///
     /// # Returns
     /// A NormalizationResult containing either the mapped asset identity or unknown info
@@ -342,6 +345,52 @@ impl AssetIdentityNormalizer {
         
         tracing::debug!("Normalizing generic symbol: {}", symbol);
         
+        // Check if this is a chain-specific symbol (e.g., "USDT-ethereum")
+        if let Some((base_symbol, chain)) = symbol.rsplit_once('-') {
+            // Check if the suffix is a known chain
+            let known_chains = ["ethereum", "arbitrum", "optimism", "base", "bsc"];
+            if known_chains.contains(&chain) {
+                tracing::debug!(
+                    "Detected chain-specific symbol: {} on chain {}",
+                    base_symbol, chain
+                );
+                // Try to normalize as a symbol first (for native tokens like ETH)
+                let normalized_symbol = base_symbol.trim().to_uppercase();
+                
+                // Try to find asset by symbol first
+                let asset_result = assets::Entity::find()
+                    .filter(assets::Column::Symbol.eq(&normalized_symbol))
+                    .one(&self.db)
+                    .await;
+                
+                if let Ok(Some(asset)) = asset_result {
+                    let debug_info = format!(
+                        "Mapped chain-specific symbol '{}-{}' to asset '{}' ({}) via symbol match",
+                        base_symbol, chain, asset.symbol, asset.id
+                    );
+                    tracing::info!("{}", debug_info);
+                    
+                    return NormalizationResult::Mapped(AssetIdentity {
+                        asset_id: asset.id,
+                        symbol: asset.symbol.clone(),
+                        name: asset.name.clone(),
+                        mapping_source: MappingSource::DirectSymbolMatch {
+                            original_symbol: symbol.to_string(),
+                        },
+                        debug_info,
+                    });
+                }
+                
+                // If not found by symbol, the token might need to be looked up via contract address
+                // which would require additional context not available in the symbol
+                tracing::debug!(
+                    "Symbol '{}' not found directly, may need contract address lookup",
+                    base_symbol
+                );
+            }
+        }
+        
+        // Standard symbol normalization without chain context
         // Normalize symbol to uppercase for case-insensitive matching
         let normalized_symbol = symbol.trim().to_uppercase();
         

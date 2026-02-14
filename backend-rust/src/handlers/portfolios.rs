@@ -869,7 +869,7 @@ pub async fn construct_portfolio_allocation(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ConstructAllocationResponse>, ApiError> {
-    use crate::entities::{asset_contracts, asset_prices, assets, portfolio_allocations};
+    use crate::entities::{asset_prices, portfolio_allocations};
     use sea_orm::{QueryOrder, Set};
 
     let user = get_or_create_user(&db, &token).await?;
@@ -919,64 +919,47 @@ pub async fn construct_portfolio_allocation(
         }
     }
 
-    // Step 3: Normalize assets - get asset IDs from symbols
+    // Step 3: Normalize assets - get asset IDs from symbols using centralized normalization
     // Step 4: Join latest prices from asset_prices
+    use crate::helpers::asset_identity::{AssetIdentityNormalizer, NormalizationResult};
+    
+    let normalizer = AssetIdentityNormalizer::new(db.clone());
     let mut allocation_holdings: Vec<AllocationHolding> = Vec::new();
     let mut total_value = Decimal::ZERO;
 
     for (symbol, quantity) in holdings_map.iter() {
-        // Find asset by symbol (case-insensitive)
-        let asset = assets::Entity::find()
-            .filter(assets::Column::Symbol.eq(symbol.to_uppercase()))
-            .one(&db)
-            .await?;
-
-        let (price_opt, unpriced) = if let Some(asset) = asset {
-            // Get latest price for this asset
-            let latest_price = asset_prices::Entity::find()
-                .filter(asset_prices::Column::AssetId.eq(asset.id))
-                .order_by_desc(asset_prices::Column::Timestamp)
-                .one(&db)
-                .await?;
-
-            if let Some(price) = latest_price {
-                (Some(price.price_usd), false)
-            } else {
-                // No price found - mark as unpriced
-                (None, true)
-            }
-        } else {
-            // Asset not found in database - try to match via contract addresses
-            // This handles tokens that might be referenced by contract address
-            let contract = asset_contracts::Entity::find()
-                .filter(asset_contracts::Column::ContractAddress.eq(symbol.to_lowercase()))
-                .one(&db)
-                .await?;
-
-            if let Some(contract) = contract {
-                // Found by contract address, get the asset
-                let asset = assets::Entity::find_by_id(contract.asset_id)
+        // Normalize the asset symbol to get canonical asset identity
+        let normalization_result = normalizer.normalize_from_symbol(symbol).await;
+        
+        let (canonical_symbol, price_opt, unpriced) = match normalization_result {
+            NormalizationResult::Mapped(asset_identity) => {
+                // Successfully mapped - now get the latest price
+                let latest_price = asset_prices::Entity::find()
+                    .filter(asset_prices::Column::AssetId.eq(asset_identity.asset_id))
+                    .order_by_desc(asset_prices::Column::Timestamp)
                     .one(&db)
                     .await?;
 
-                if let Some(asset) = asset {
-                    let latest_price = asset_prices::Entity::find()
-                        .filter(asset_prices::Column::AssetId.eq(asset.id))
-                        .order_by_desc(asset_prices::Column::Timestamp)
-                        .one(&db)
-                        .await?;
-
-                    if let Some(price) = latest_price {
-                        (Some(price.price_usd), false)
-                    } else {
-                        (None, true)
-                    }
+                if let Some(price) = latest_price {
+                    (asset_identity.symbol, Some(price.price_usd), false)
                 } else {
-                    (None, true)
+                    // Asset found but no price available - mark as unpriced
+                    tracing::warn!(
+                        "No price found for asset '{}' ({})",
+                        asset_identity.symbol,
+                        asset_identity.asset_id
+                    );
+                    (asset_identity.symbol, None, true)
                 }
-            } else {
-                // No asset or contract found - mark as unpriced
-                (None, true)
+            }
+            NormalizationResult::Unknown { original_identifier, context, .. } => {
+                // Could not normalize the asset - mark as unpriced and use original symbol
+                tracing::warn!(
+                    "Could not normalize asset '{}': {}",
+                    original_identifier,
+                    context
+                );
+                (symbol.clone(), None, true)
             }
         };
 
@@ -997,7 +980,7 @@ pub async fn construct_portfolio_allocation(
         };
 
         allocation_holdings.push(AllocationHolding {
-            asset: symbol.clone(),
+            asset: canonical_symbol,
             quantity: quantity.to_string(),
             value_usd,
             weight: 0.0, // Will be computed after we know total

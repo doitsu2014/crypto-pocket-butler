@@ -7,12 +7,13 @@ use axum::{
 };
 use axum_keycloak_auth::decode::KeycloakToken;
 use chrono::NaiveDate;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::{portfolios, snapshots, users};
+use crate::entities::{portfolios, snapshots};
+use crate::helpers::auth::get_or_create_user;
 use crate::jobs::portfolio_snapshot;
 
 // === Request/Response DTOs ===
@@ -117,49 +118,6 @@ pub struct ListSnapshotsResponse {
 // === Helper Functions ===
 
 /// Get or create user in database from Keycloak token
-async fn get_or_create_user(
-    db: &DatabaseConnection,
-    token: &KeycloakToken<String>,
-) -> Result<users::Model, Response> {
-    let keycloak_user_id = &token.subject;
-
-    // Try to find existing user
-    if let Some(user) = users::Entity::find()
-        .filter(users::Column::KeycloakUserId.eq(keycloak_user_id))
-        .one(db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?
-    {
-        return Ok(user);
-    }
-
-    // Create new user if not found
-    let new_user = users::ActiveModel {
-        keycloak_user_id: sea_orm::ActiveValue::Set(keycloak_user_id.clone()),
-        email: sea_orm::ActiveValue::Set(Some(token.extra.email.email.clone())),
-        preferred_username: sea_orm::ActiveValue::Set(Some(
-            token.extra.profile.preferred_username.clone(),
-        )),
-        ..Default::default()
-    };
-
-    new_user
-        .insert(db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create user: {}", e),
-            )
-                .into_response()
-        })
-}
 
 /// Check if portfolio belongs to user
 async fn check_portfolio_ownership(
@@ -218,7 +176,13 @@ async fn list_portfolio_snapshots_handler(
     Query(query): Query<ListSnapshotsQuery>,
 ) -> Result<Json<ListSnapshotsResponse>, Response> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Verify portfolio belongs to user
     check_portfolio_ownership(&db, portfolio_id, user.id).await?;
@@ -308,7 +272,13 @@ async fn create_portfolio_snapshot_handler(
     Json(request): Json<CreateSnapshotRequest>,
 ) -> Result<Json<SnapshotResultResponse>, Response> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Verify portfolio belongs to user
     check_portfolio_ownership(&db, portfolio_id, user.id).await?;
@@ -367,7 +337,13 @@ async fn create_all_user_snapshots_handler(
     Json(request): Json<CreateSnapshotRequest>,
 ) -> Result<Json<CreateAllSnapshotsResponse>, Response> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Parse snapshot date if provided
     let snapshot_date = if let Some(date_str) = request.snapshot_date {
@@ -457,7 +433,13 @@ async fn get_latest_portfolio_snapshot_handler(
     Path(portfolio_id): Path<Uuid>,
 ) -> Result<Json<SnapshotResponse>, Response> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Verify portfolio belongs to user
     check_portfolio_ownership(&db, portfolio_id, user.id).await?;

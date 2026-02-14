@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::{accounts, users};
+use crate::entities::accounts;
+use crate::helpers::auth::get_or_create_user;
 use crate::jobs::account_sync;
 
 // === Request/Response DTOs ===
@@ -153,50 +154,6 @@ pub struct SyncAllAccountsResponse {
 
 // === Helper Functions ===
 
-/// Get or create user in database from Keycloak token
-async fn get_or_create_user(
-    db: &DatabaseConnection,
-    token: &KeycloakToken<String>,
-) -> Result<users::Model, Response> {
-    let keycloak_user_id = &token.subject;
-
-    // Try to find existing user
-    if let Some(user) = users::Entity::find()
-        .filter(users::Column::KeycloakUserId.eq(keycloak_user_id))
-        .one(db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?
-    {
-        return Ok(user);
-    }
-
-    // Create new user if not found
-    let new_user = users::ActiveModel {
-        keycloak_user_id: sea_orm::ActiveValue::Set(keycloak_user_id.clone()),
-        email: sea_orm::ActiveValue::Set(Some(token.extra.email.email.clone())),
-        preferred_username: sea_orm::ActiveValue::Set(Some(
-            token.extra.profile.preferred_username.clone(),
-        )),
-        ..Default::default()
-    };
-
-    new_user
-        .insert(db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create user: {}", e),
-            )
-                .into_response()
-        })
-}
 
 // === API Handlers ===
 
@@ -215,7 +172,13 @@ async fn list_accounts_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
 ) -> Result<Json<Vec<AccountResponse>>, Response> {
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     let accounts = accounts::Entity::find()
         .filter(accounts::Column::UserId.eq(user.id))
@@ -254,7 +217,13 @@ async fn get_account_handler(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(account_id): Path<Uuid>,
 ) -> Result<Json<AccountResponse>, Response> {
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     let account = accounts::Entity::find_by_id(account_id)
         .one(&db)
@@ -294,7 +263,13 @@ async fn create_account_handler(
     Extension(token): Extension<KeycloakToken<String>>,
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<Json<AccountResponse>, Response> {
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Validate account type
     if req.account_type != "exchange" && req.account_type != "wallet" {
@@ -389,7 +364,13 @@ async fn update_account_handler(
     Path(account_id): Path<Uuid>,
     Json(req): Json<UpdateAccountRequest>,
 ) -> Result<Json<AccountResponse>, Response> {
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Find and verify ownership
     let account = accounts::Entity::find_by_id(account_id)
@@ -462,7 +443,13 @@ async fn delete_account_handler(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(account_id): Path<Uuid>,
 ) -> Result<StatusCode, Response> {
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Find and verify ownership
     let account = accounts::Entity::find_by_id(account_id)
@@ -518,7 +505,13 @@ async fn sync_account_handler(
     Path(account_id): Path<Uuid>,
 ) -> Result<Json<SyncResultResponse>, Response> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Verify account belongs to user
     let account = accounts::Entity::find_by_id(account_id)
@@ -572,7 +565,13 @@ async fn sync_all_accounts_handler(
     Extension(token): Extension<KeycloakToken<String>>,
 ) -> Result<Json<SyncAllAccountsResponse>, Response> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Perform sync for all user accounts
     let results = account_sync::sync_user_accounts(&db, user.id)

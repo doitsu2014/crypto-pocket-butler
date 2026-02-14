@@ -50,9 +50,12 @@ impl IntoResponse for ApiError {
                 )
             }
             ApiError::InternalServerError(msg) => {
-                // Log the internal error
+                // Log the internal error for debugging
                 tracing::error!("Internal server error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, msg)
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             }
         };
 

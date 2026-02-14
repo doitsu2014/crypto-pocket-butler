@@ -30,6 +30,12 @@ use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Known EVM chain identifiers used for chain-specific symbol parsing
+/// 
+/// This constant is used when parsing symbols in the format "SYMBOL-CHAIN"
+/// to distinguish chain suffixes from legitimate hyphenated asset symbols.
+const KNOWN_EVM_CHAINS: &[&str] = &["ethereum", "arbitrum", "optimism", "base", "bsc"];
+
 /// Represents a canonical asset identity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetIdentity {
@@ -346,13 +352,15 @@ impl AssetIdentityNormalizer {
         tracing::debug!("Normalizing generic symbol: {}", symbol);
         
         // Check if this is a chain-specific symbol (e.g., "USDT-ethereum")
-        if let Some((base_symbol, chain)) = symbol.rsplit_once('-') {
-            // Check if the suffix is a known chain
-            let known_chains = ["ethereum", "arbitrum", "optimism", "base", "bsc"];
-            if known_chains.contains(&chain) {
+        // We only treat it as chain-specific if the suffix matches a known EVM chain
+        // This avoids false positives with legitimately hyphenated symbols
+        if let Some((base_symbol, chain_suffix)) = symbol.rsplit_once('-') {
+            // Check if the suffix is a known chain (case-insensitive)
+            let chain_lower = chain_suffix.to_lowercase();
+            if KNOWN_EVM_CHAINS.contains(&chain_lower.as_str()) {
                 tracing::debug!(
                     "Detected chain-specific symbol: {} on chain {}",
-                    base_symbol, chain
+                    base_symbol, chain_suffix
                 );
                 // Try to normalize as a symbol first (for native tokens like ETH)
                 let normalized_symbol = base_symbol.trim().to_uppercase();
@@ -366,7 +374,7 @@ impl AssetIdentityNormalizer {
                 if let Ok(Some(asset)) = asset_result {
                     let debug_info = format!(
                         "Mapped chain-specific symbol '{}-{}' to asset '{}' ({}) via symbol match",
-                        base_symbol, chain, asset.symbol, asset.id
+                        base_symbol, chain_suffix, asset.symbol, asset.id
                     );
                     tracing::info!("{}", debug_info);
                     

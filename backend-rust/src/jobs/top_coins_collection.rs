@@ -179,8 +179,8 @@ pub async fn collect_top_coins(
 
         Ok(JobMetrics {
             items_processed: coins_collected,
-            items_created: assets_created,
-            items_updated: assets_updated + rankings_created,
+            items_created: assets_created + rankings_created,
+            items_updated: assets_updated,
             items_skipped: 0,
             custom: serde_json::json!({
                 "coins_collected": coins_collected,

@@ -76,7 +76,6 @@ pub async fn collect_contract_addresses(
 
         let mut assets_processed = 0;
         let mut contracts_created = 0;
-        let contracts_updated = 0;
         let mut assets_skipped = 0;
 
         for asset in assets_list {
@@ -175,12 +174,11 @@ pub async fn collect_contract_addresses(
         Ok(JobMetrics {
             items_processed: assets_processed,
             items_created: contracts_created,
-            items_updated: contracts_updated,
+            items_updated: 0, // ON CONFLICT doesn't return affected row count
             items_skipped: assets_skipped,
             custom: serde_json::json!({
                 "assets_processed": assets_processed,
                 "contracts_created": contracts_created,
-                "contracts_updated": contracts_updated,
                 "assets_skipped": assets_skipped,
             }),
         })
@@ -191,7 +189,7 @@ pub async fn collect_contract_addresses(
         success: result.success,
         assets_processed: result.metrics.items_processed,
         contracts_created: result.metrics.items_created,
-        contracts_updated: result.metrics.items_updated,
+        contracts_updated: 0, // Not tracked with ON CONFLICT
         assets_skipped: result.metrics.items_skipped,
         error: result.error,
     })

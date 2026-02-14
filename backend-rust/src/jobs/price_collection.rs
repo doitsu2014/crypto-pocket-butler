@@ -1,10 +1,11 @@
 use crate::connectors::coingecko::CoinGeckoConnector;
 use crate::entities::{asset_prices, assets, accounts};
+use crate::jobs::runner::{JobRunner, JobMetrics};
 use chrono::{Timelike, Utc};
 use rust_decimal::Decimal;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, 
-    QueryOrder, QuerySelect,
+    ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, 
+    QueryOrder, QuerySelect, sea_query::OnConflict, Insert,
 };
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -35,7 +36,7 @@ struct Holding {
 /// This function:
 /// 1. Identifies tracked assets (Top 100 by market cap + portfolio assets)
 /// 2. Fetches current prices from CoinGecko
-/// 3. Stores prices in asset_prices table with deduplication
+/// 3. Stores prices in asset_prices table (idempotent via DB constraints)
 /// 
 /// # Arguments
 /// * `db` - Database connection
@@ -47,60 +48,63 @@ pub async fn collect_prices(
     db: &DatabaseConnection,
     top_n_limit: usize,
 ) -> Result<CollectionResult, Box<dyn Error + Send + Sync>> {
-    tracing::info!("Starting price collection job for top {} coins + portfolio assets", top_n_limit);
+    let runner = JobRunner::new(format!("price_collection(top_n={})", top_n_limit));
 
-    // Step 1: Get list of tracked assets
-    let tracked_assets = get_tracked_assets(db, top_n_limit).await?;
-    let assets_tracked = tracked_assets.len();
-    
-    if tracked_assets.is_empty() {
-        tracing::warn!("No tracked assets found to collect prices for");
-        return Ok(CollectionResult {
-            success: true,
-            assets_tracked: 0,
-            prices_collected: 0,
-            prices_stored: 0,
-            error: None,
-        });
-    }
-
-    tracing::info!("Found {} unique assets to collect prices for", assets_tracked);
-
-    // Step 2: Fetch prices from CoinGecko
-    let connector = CoinGeckoConnector::new();
-    let price_data = match fetch_prices_for_assets(&connector, &tracked_assets, top_n_limit).await {
-        Ok(data) => data,
-        Err(e) => {
-            tracing::error!("Failed to fetch prices from CoinGecko: {}", e);
-            return Ok(CollectionResult {
-                success: false,
-                assets_tracked,
-                prices_collected: 0,
-                prices_stored: 0,
-                error: Some(format!("Failed to fetch prices: {}", e)),
+    let result = runner.execute(|| async {
+        // Step 1: Get list of tracked assets
+        let tracked_assets = get_tracked_assets(db, top_n_limit).await
+            .map_err(|e| format!("Failed to get tracked assets: {}", e))?;
+        
+        let assets_tracked = tracked_assets.len();
+        
+        if tracked_assets.is_empty() {
+            return Ok(JobMetrics {
+                items_processed: 0,
+                items_created: 0,
+                items_updated: 0,
+                items_skipped: 0,
+                custom: serde_json::json!({
+                    "assets_tracked": 0,
+                    "prices_collected": 0,
+                    "prices_stored": 0,
+                }),
             });
         }
-    };
 
-    let prices_collected = price_data.len();
-    tracing::info!("Fetched {} prices from CoinGecko", prices_collected);
+        tracing::info!("Found {} unique assets to collect prices for", assets_tracked);
 
-    // Step 3: Store prices in database
-    let prices_stored = store_prices(db, &price_data).await?;
+        // Step 2: Fetch prices from CoinGecko
+        let connector = CoinGeckoConnector::new();
+        let price_data = fetch_prices_for_assets(&connector, &tracked_assets, top_n_limit).await
+            .map_err(|e| format!("Failed to fetch prices: {}", e))?;
 
-    tracing::info!(
-        "Price collection completed: {} assets tracked, {} prices collected, {} prices stored",
-        assets_tracked,
-        prices_collected,
-        prices_stored
-    );
+        let prices_collected = price_data.len();
+        tracing::info!("Fetched {} prices from CoinGecko", prices_collected);
 
+        // Step 3: Store prices in database using upserts
+        let prices_stored = store_prices(db, &price_data).await
+            .map_err(|e| format!("Failed to store prices: {}", e))?;
+
+        Ok(JobMetrics {
+            items_processed: assets_tracked,
+            items_created: prices_stored,
+            items_updated: 0,
+            items_skipped: prices_collected - prices_stored,
+            custom: serde_json::json!({
+                "assets_tracked": assets_tracked,
+                "prices_collected": prices_collected,
+                "prices_stored": prices_stored,
+            }),
+        })
+    }).await;
+
+    // Convert JobResult to CollectionResult for backwards compatibility
     Ok(CollectionResult {
-        success: true,
-        assets_tracked,
-        prices_collected,
-        prices_stored,
-        error: None,
+        success: result.success,
+        assets_tracked: result.metrics.items_processed,
+        prices_collected: result.metrics.custom["prices_collected"].as_u64().unwrap_or(0) as usize,
+        prices_stored: result.metrics.items_created,
+        error: result.error,
     })
 }
 
@@ -255,7 +259,7 @@ struct PriceData {
     change_percent_24h: Option<f64>,
 }
 
-/// Store prices in the database
+/// Store prices in the database using ON CONFLICT for idempotency
 async fn store_prices(
     db: &DatabaseConnection,
     price_data: &[PriceData],
@@ -265,8 +269,7 @@ async fn store_prices(
     let mut stored_count = 0;
 
     for data in price_data {
-        // Check if price already exists for this asset/timestamp/source combination
-        // Round timestamp to the nearest minute to avoid duplicates from multiple runs
+        // Round timestamp to the nearest minute for consistent time buckets
         let rounded_timestamp = match timestamp
             .date_naive()
             .and_hms_opt(timestamp.hour(), timestamp.minute(), 0)
@@ -282,23 +285,7 @@ async fn store_prices(
             }
         };
 
-        let existing = asset_prices::Entity::find()
-            .filter(asset_prices::Column::AssetId.eq(data.asset_id))
-            .filter(asset_prices::Column::Timestamp.eq(rounded_timestamp))
-            .filter(asset_prices::Column::Source.eq(source))
-            .one(db)
-            .await?;
-
-        if existing.is_some() {
-            tracing::debug!(
-                "Price already exists for asset {} at timestamp {}, skipping",
-                data.asset_id,
-                rounded_timestamp
-            );
-            continue;
-        }
-
-        // Create new price entry
+        // Convert price data to Decimal
         let price_usd = match Decimal::from_str(&data.price_usd.to_string()) {
             Ok(p) => p,
             Err(e) => {
@@ -354,13 +341,32 @@ async fn store_prices(
             created_at: ActiveValue::Set(timestamp.into()),
         };
 
-        match new_price.insert(db).await {
+        // Use ON CONFLICT to handle duplicates (idempotent upsert)
+        // The unique constraint on (asset_id, timestamp, source) ensures idempotency
+        match Insert::one(new_price)
+            .on_conflict(
+                OnConflict::columns([
+                    asset_prices::Column::AssetId,
+                    asset_prices::Column::Timestamp,
+                    asset_prices::Column::Source,
+                ])
+                .update_columns([
+                    asset_prices::Column::PriceUsd,
+                    asset_prices::Column::Volume24hUsd,
+                    asset_prices::Column::MarketCapUsd,
+                    asset_prices::Column::ChangePercent24h,
+                ])
+                .to_owned(),
+            )
+            .exec(db)
+            .await
+        {
             Ok(_) => {
                 stored_count += 1;
-                tracing::debug!("Stored price for asset {} at {}", data.asset_id, rounded_timestamp);
+                tracing::debug!("Upserted price for asset {} at {}", data.asset_id, rounded_timestamp);
             }
             Err(e) => {
-                tracing::warn!("Failed to store price for asset {}: {}", data.asset_id, e);
+                tracing::warn!("Failed to upsert price for asset {}: {}", data.asset_id, e);
             }
         }
     }

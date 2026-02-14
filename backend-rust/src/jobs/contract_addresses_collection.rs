@@ -1,9 +1,10 @@
 use crate::connectors::coingecko::CoinGeckoConnector;
 use crate::entities::{assets, asset_contracts};
+use crate::jobs::runner::{JobRunner, JobMetrics};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QuerySelect,
+    ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QuerySelect, sea_query::OnConflict, Insert,
 };
 use std::error::Error;
 use tracing;
@@ -26,7 +27,7 @@ pub struct CollectionResult {
 /// 1. Fetches all active assets that have a coingecko_id
 /// 2. For each asset, fetches detailed coin info from CoinGecko
 /// 3. Extracts contract addresses from platforms field
-/// 4. Upserts contract addresses into asset_contracts table
+/// 4. Upserts contract addresses into asset_contracts table (idempotent via DB constraints)
 /// 
 /// # Arguments
 /// * `db` - Database connection
@@ -38,100 +39,82 @@ pub async fn collect_contract_addresses(
     db: &DatabaseConnection,
     limit: Option<usize>,
 ) -> Result<CollectionResult, Box<dyn Error + Send + Sync>> {
-    tracing::info!("Starting contract addresses collection job");
+    let runner = JobRunner::new(format!("contract_addresses_collection(limit={:?})", limit));
 
-    // Create CoinGecko connector
-    let connector = CoinGeckoConnector::new();
+    let result = runner.execute(|| async {
+        // Create CoinGecko connector
+        let connector = CoinGeckoConnector::new();
 
-    // Fetch all active assets with coingecko_id
-    let mut query = assets::Entity::find()
-        .filter(assets::Column::IsActive.eq(true))
-        .filter(assets::Column::CoingeckoId.is_not_null());
-    
-    if let Some(limit_val) = limit {
-        query = query.limit(limit_val as u64);
-    }
-    
-    let assets_list = query.all(db).await?;
-    
-    if assets_list.is_empty() {
-        tracing::warn!("No active assets with coingecko_id found");
-        return Ok(CollectionResult {
-            success: true,
-            assets_processed: 0,
-            contracts_created: 0,
-            contracts_updated: 0,
-            assets_skipped: 0,
-            error: None,
-        });
-    }
+        // Fetch all active assets with coingecko_id
+        let mut query = assets::Entity::find()
+            .filter(assets::Column::IsActive.eq(true))
+            .filter(assets::Column::CoingeckoId.is_not_null());
+        
+        if let Some(limit_val) = limit {
+            query = query.limit(limit_val as u64);
+        }
+        
+        let assets_list = query.all(db).await
+            .map_err(|e| format!("Failed to query assets: {}", e))?;
+        
+        if assets_list.is_empty() {
+            return Ok(JobMetrics {
+                items_processed: 0,
+                items_created: 0,
+                items_updated: 0,
+                items_skipped: 0,
+                custom: serde_json::json!({
+                    "assets_processed": 0,
+                    "contracts_created": 0,
+                    "contracts_updated": 0,
+                    "assets_skipped": 0,
+                }),
+            });
+        }
 
-    tracing::info!("Found {} assets to process for contract addresses", assets_list.len());
+        tracing::info!("Found {} assets to process for contract addresses", assets_list.len());
 
-    let mut assets_processed = 0;
-    let mut contracts_created = 0;
-    let mut contracts_updated = 0;
-    let mut assets_skipped = 0;
+        let mut assets_processed = 0;
+        let mut contracts_created = 0;
+        let contracts_updated = 0;
+        let mut assets_skipped = 0;
 
-    for asset in assets_list {
-        let coingecko_id = match &asset.coingecko_id {
-            Some(id) => id,
-            None => {
-                assets_skipped += 1;
-                continue;
-            }
-        };
+        for asset in assets_list {
+            let coingecko_id = match &asset.coingecko_id {
+                Some(id) => id,
+                None => {
+                    assets_skipped += 1;
+                    continue;
+                }
+            };
 
-        // Fetch coin detail from CoinGecko
-        let coin_detail = match connector.fetch_coin_detail(coingecko_id).await {
-            Ok(detail) => detail,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to fetch coin detail for asset {} ({}): {}",
-                    asset.symbol,
-                    coingecko_id,
-                    e
-                );
-                assets_skipped += 1;
-                continue;
-            }
-        };
+            // Fetch coin detail from CoinGecko
+            let coin_detail = match connector.fetch_coin_detail(coingecko_id).await {
+                Ok(detail) => detail,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to fetch coin detail for asset {} ({}): {}",
+                        asset.symbol,
+                        coingecko_id,
+                        e
+                    );
+                    assets_skipped += 1;
+                    continue;
+                }
+            };
 
-        // Process each platform/contract address
-        for (platform, contract_address) in coin_detail.platforms {
-            // Skip empty contract addresses
-            if contract_address.is_empty() {
-                continue;
-            }
+            // Process each platform/contract address
+            for (platform, contract_address) in coin_detail.platforms {
+                // Skip empty contract addresses
+                if contract_address.is_empty() {
+                    continue;
+                }
 
-            // Normalize platform name to chain identifier
-            let chain = normalize_platform_name(&platform);
+                // Normalize platform name to chain identifier
+                let chain = normalize_platform_name(&platform);
 
-            // Check if contract already exists for this asset, chain, and address
-            let existing_contract = asset_contracts::Entity::find()
-                .filter(asset_contracts::Column::AssetId.eq(asset.id))
-                .filter(asset_contracts::Column::Chain.eq(&chain))
-                .filter(asset_contracts::Column::ContractAddress.eq(&contract_address))
-                .one(db)
-                .await?;
-
-            if let Some(existing) = existing_contract {
-                // Update existing contract
-                let mut contract_update: asset_contracts::ActiveModel = existing.into();
-                contract_update.is_verified = ActiveValue::Set(true);
-                contract_update.updated_at = ActiveValue::Set(Utc::now().into());
-                
-                contract_update.update(db).await?;
-                contracts_updated += 1;
-                
-                tracing::debug!(
-                    "Updated contract for {} on {} at {}",
-                    asset.symbol,
-                    chain,
-                    contract_address
-                );
-            } else {
-                // Create new contract
+                // Upsert contract using ON CONFLICT (idempotent)
+                // The unique constraint on (chain, contract_address) ensures idempotency
                 let new_contract = asset_contracts::ActiveModel {
                     id: ActiveValue::Set(Uuid::new_v4()),
                     asset_id: ActiveValue::Set(asset.id),
@@ -144,40 +127,73 @@ pub async fn collect_contract_addresses(
                     updated_at: ActiveValue::Set(Utc::now().into()),
                 };
 
-                new_contract.insert(db).await?;
-                contracts_created += 1;
-                
-                tracing::debug!(
-                    "Created contract for {} on {} at {}",
-                    asset.symbol,
-                    chain,
-                    contract_address
-                );
+                match Insert::one(new_contract)
+                    .on_conflict(
+                        OnConflict::columns([
+                            asset_contracts::Column::Chain,
+                            asset_contracts::Column::ContractAddress,
+                        ])
+                        .update_columns([
+                            asset_contracts::Column::AssetId,
+                            asset_contracts::Column::TokenStandard,
+                            asset_contracts::Column::Decimals,
+                            asset_contracts::Column::IsVerified,
+                            asset_contracts::Column::UpdatedAt,
+                        ])
+                        .to_owned(),
+                    )
+                    .exec(db)
+                    .await
+                {
+                    Ok(_) => {
+                        contracts_created += 1;
+                        tracing::debug!(
+                            "Upserted contract for {} on {} at {}",
+                            asset.symbol,
+                            chain,
+                            contract_address
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to upsert contract for {} on {}: {}",
+                            asset.symbol,
+                            chain,
+                            e
+                        );
+                    }
+                }
             }
+
+            assets_processed += 1;
+
+            // Add a small delay to respect rate limits (CoinGecko free tier has rate limits)
+            // Sleep for 1.5 seconds to stay under 40 calls/minute (60,000ms / 1,500ms = 40)
+            tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
         }
 
-        assets_processed += 1;
+        Ok(JobMetrics {
+            items_processed: assets_processed,
+            items_created: contracts_created,
+            items_updated: contracts_updated,
+            items_skipped: assets_skipped,
+            custom: serde_json::json!({
+                "assets_processed": assets_processed,
+                "contracts_created": contracts_created,
+                "contracts_updated": contracts_updated,
+                "assets_skipped": assets_skipped,
+            }),
+        })
+    }).await;
 
-        // Add a small delay to respect rate limits (CoinGecko free tier has rate limits)
-        // Sleep for 1.5 seconds to stay under 40 calls/minute (60,000ms / 1,500ms = 40)
-        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
-    }
-
-    tracing::info!(
-        "Contract addresses collection completed: {} assets processed, {} contracts created, {} updated, {} skipped",
-        assets_processed,
-        contracts_created,
-        contracts_updated,
-        assets_skipped
-    );
-
+    // Convert JobResult to CollectionResult for backwards compatibility
     Ok(CollectionResult {
-        success: true,
-        assets_processed,
-        contracts_created,
-        contracts_updated,
-        assets_skipped,
-        error: None,
+        success: result.success,
+        assets_processed: result.metrics.items_processed,
+        contracts_created: result.metrics.items_created,
+        contracts_updated: result.metrics.items_updated,
+        assets_skipped: result.metrics.items_skipped,
+        error: result.error,
     })
 }
 

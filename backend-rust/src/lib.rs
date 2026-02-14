@@ -6,6 +6,7 @@ pub mod connectors;
 pub mod db;
 pub mod entities;
 pub mod handlers;
+pub mod helpers;
 pub mod jobs;
 
 // Re-export migration for convenience

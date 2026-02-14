@@ -17,7 +17,8 @@ use serde_json::json;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::{portfolios, recommendations, users};
+use crate::entities::{portfolios, recommendations};
+use crate::helpers::auth::get_or_create_user;
 
 // === Request/Response DTOs ===
 
@@ -82,47 +83,6 @@ pub struct CreateRecommendationRequest {
 // === Helper Functions ===
 
 /// Get or create user in database from Keycloak token
-async fn get_or_create_user(
-    db: &DatabaseConnection,
-    token: &KeycloakToken<String>,
-) -> Result<users::Model, Response> {
-    let keycloak_user_id = &token.subject;
-
-    // Try to find existing user
-    if let Some(user) = users::Entity::find()
-        .filter(users::Column::KeycloakUserId.eq(keycloak_user_id))
-        .one(db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?
-    {
-        return Ok(user);
-    }
-
-    // Create new user if not found
-    let new_user = users::ActiveModel {
-        keycloak_user_id: Set(keycloak_user_id.clone()),
-        email: Set(Some(token.extra.email.email.clone())),
-        preferred_username: Set(Some(token.extra.profile.preferred_username.clone())),
-        ..Default::default()
-    };
-
-    new_user
-        .insert(db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create user: {}", e),
-            )
-                .into_response()
-        })
-}
 
 // === API Handlers ===
 
@@ -146,7 +106,13 @@ pub async fn list_portfolio_recommendations(
     Path(portfolio_id): Path<Uuid>,
     Query(query): Query<ListRecommendationsQuery>,
 ) -> Result<Json<ListRecommendationsResponse>, Response> {
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Verify portfolio ownership
     let _portfolio = portfolios::Entity::find_by_id(portfolio_id)
@@ -220,7 +186,13 @@ pub async fn get_recommendation(
     Extension(token): Extension<KeycloakToken<String>>,
     Path((portfolio_id, recommendation_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<RecommendationResponse>, Response> {
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Verify portfolio ownership
     let _portfolio = portfolios::Entity::find_by_id(portfolio_id)
@@ -281,7 +253,13 @@ pub async fn create_recommendation(
     Path(portfolio_id): Path<Uuid>,
     Json(payload): Json<CreateRecommendationRequest>,
 ) -> Result<Response, Response> {
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Verify portfolio ownership
     let _portfolio = portfolios::Entity::find_by_id(portfolio_id)
@@ -367,7 +345,13 @@ pub async fn generate_mock_recommendations(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(portfolio_id): Path<Uuid>,
 ) -> Result<Json<ListRecommendationsResponse>, Response> {
-    let user = get_or_create_user(&db, &token).await?;
+    let user = get_or_create_user(&db, &token).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", e),
+        )
+            .into_response()
+    })?;
 
     // Verify portfolio ownership
     let _portfolio = portfolios::Entity::find_by_id(portfolio_id)

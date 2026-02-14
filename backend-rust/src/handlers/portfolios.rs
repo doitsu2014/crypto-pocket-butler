@@ -18,7 +18,8 @@ use std::str::FromStr;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::{accounts, portfolio_accounts, portfolios, users};
+use crate::entities::{accounts, portfolio_accounts, portfolios};
+use crate::helpers::auth::get_or_create_user;
 
 // === Internal DTOs for deserialization ===
 
@@ -257,33 +258,6 @@ impl From<sea_orm::DbErr> for ApiError {
 // === Helper functions ===
 
 /// Get or create user in database based on Keycloak token
-async fn get_or_create_user(
-    db: &DatabaseConnection,
-    token: &KeycloakToken<String>,
-) -> Result<users::Model, ApiError> {
-    // Try to find existing user
-    let user = users::Entity::find()
-        .filter(users::Column::KeycloakUserId.eq(&token.subject))
-        .one(db)
-        .await?;
-
-    if let Some(user) = user {
-        return Ok(user);
-    }
-
-    // Create new user if not found
-    let new_user = users::ActiveModel {
-        id: ActiveValue::Set(Uuid::new_v4()),
-        keycloak_user_id: ActiveValue::Set(token.subject.clone()),
-        email: ActiveValue::Set(Some(token.extra.email.email.clone())),
-        preferred_username: ActiveValue::Set(Some(token.extra.profile.preferred_username.clone())),
-        created_at: ActiveValue::NotSet,
-        updated_at: ActiveValue::NotSet,
-    };
-
-    let user = new_user.insert(db).await?;
-    Ok(user)
-}
 
 /// Check if user owns a portfolio
 async fn check_portfolio_ownership(

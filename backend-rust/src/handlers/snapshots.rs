@@ -72,7 +72,11 @@ pub struct SnapshotResponse {
     pub snapshot_date: String, // ISO 8601 date
     pub snapshot_type: String,
     pub total_value_usd: String,
-    pub holdings: serde_json::Value, // JSON holdings data
+    /// Holdings data as JSON array of SnapshotHolding objects
+    /// See domain::SnapshotHolding for the structured schema
+    pub holdings: serde_json::Value,
+    /// Optional metadata as JSON object
+    /// See domain::SnapshotMetadata for the structured schema
     pub metadata: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allocation_id: Option<Uuid>, // Reference to portfolio_allocations

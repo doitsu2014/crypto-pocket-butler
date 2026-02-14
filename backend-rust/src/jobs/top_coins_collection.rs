@@ -57,6 +57,8 @@ pub async fn collect_top_coins(
 
         let snapshot_date = Utc::now().date_naive();
         let source = "coingecko";
+        
+        let mut rankings_to_insert = Vec::new();
 
         for coin in coins {
             // Skip if no market cap rank
@@ -120,8 +122,7 @@ pub async fn collect_top_coins(
                 }
             };
 
-            // Upsert ranking using ON CONFLICT (idempotent)
-            // The unique constraint on (asset_id, snapshot_date, source) ensures idempotency
+            // Prepare ranking for batch insert
             let market_cap_usd = Decimal::from_str(&coin.market_cap.to_string())
                 .unwrap_or_else(|_| Decimal::ZERO);
             let price_usd = Decimal::from_str(&coin.current_price.to_string())
@@ -146,8 +147,19 @@ pub async fn collect_top_coins(
                 created_at: ActiveValue::Set(Utc::now().into()),
             };
 
-            // Use ON CONFLICT to handle duplicates (idempotent upsert)
-            let _insert_result = Insert::one(new_ranking)
+            rankings_to_insert.push(new_ranking);
+            
+            tracing::debug!(
+                "Prepared ranking: {} (rank {}) on {}",
+                coin.symbol,
+                rank,
+                snapshot_date
+            );
+        }
+
+        // Batch insert all rankings
+        if !rankings_to_insert.is_empty() {
+            match Insert::many(rankings_to_insert.clone())
                 .on_conflict(
                     OnConflict::columns([
                         asset_rankings::Column::AssetId,
@@ -166,15 +178,15 @@ pub async fn collect_top_coins(
                 )
                 .exec(db)
                 .await
-                .map_err(|e| format!("Failed to upsert ranking: {}", e))?;
-
-            rankings_created += 1;
-            tracing::debug!(
-                "Upserted ranking: {} (rank {}) on {}",
-                coin.symbol,
-                rank,
-                snapshot_date
-            );
+            {
+                Ok(_) => {
+                    rankings_created = rankings_to_insert.len();
+                    tracing::info!("Batch upserted {} rankings", rankings_created);
+                }
+                Err(e) => {
+                    return Err(format!("Failed to batch upsert rankings: {}", e).into());
+                }
+            }
         }
 
         Ok(JobMetrics {

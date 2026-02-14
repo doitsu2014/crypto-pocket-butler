@@ -500,4 +500,105 @@ mod tests {
         assert!(display.contains("Unknown"));
         assert!(display.contains("UNKNOWN"));
     }
+    
+    #[test]
+    fn test_mapping_source_okx() {
+        let source = MappingSource::OkxSymbol {
+            original_symbol: "BTC".to_string(),
+        };
+        
+        match source {
+            MappingSource::OkxSymbol { original_symbol } => {
+                assert_eq!(original_symbol, "BTC");
+            }
+            _ => panic!("Wrong mapping source variant"),
+        }
+    }
+    
+    #[test]
+    fn test_mapping_source_evm_contract() {
+        let source = MappingSource::EvmContract {
+            contract_address: "0xdAC17F958D2ee523a2206206994597C13D831ec7".to_string(),
+            chain: "ethereum".to_string(),
+        };
+        
+        match source {
+            MappingSource::EvmContract { contract_address, chain } => {
+                assert_eq!(contract_address, "0xdAC17F958D2ee523a2206206994597C13D831ec7");
+                assert_eq!(chain, "ethereum");
+            }
+            _ => panic!("Wrong mapping source variant"),
+        }
+    }
+    
+    #[test]
+    fn test_mapping_source_direct_symbol() {
+        let source = MappingSource::DirectSymbolMatch {
+            original_symbol: "ETH".to_string(),
+        };
+        
+        match source {
+            MappingSource::DirectSymbolMatch { original_symbol } => {
+                assert_eq!(original_symbol, "ETH");
+            }
+            _ => panic!("Wrong mapping source variant"),
+        }
+    }
+    
+    #[test]
+    fn test_asset_identity_fields() {
+        let asset_id = Uuid::new_v4();
+        let identity = AssetIdentity {
+            asset_id,
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            mapping_source: MappingSource::OkxSymbol {
+                original_symbol: "btc".to_string(),
+            },
+            debug_info: "Mapped from OKX".to_string(),
+        };
+        
+        assert_eq!(identity.asset_id, asset_id);
+        assert_eq!(identity.symbol, "BTC");
+        assert_eq!(identity.name, "Bitcoin");
+        assert_eq!(identity.debug_info, "Mapped from OKX");
+    }
+    
+    #[test]
+    fn test_serialization() {
+        let result = NormalizationResult::Unknown {
+            original_identifier: "UNKNOWN".to_string(),
+            identifier_type: "symbol".to_string(),
+            context: "Not found".to_string(),
+        };
+        
+        // Test that the result can be serialized
+        let json = serde_json::to_string(&result);
+        assert!(json.is_ok());
+    }
+    
+    #[test]
+    fn test_normalization_result_variants() {
+        // Test Mapped variant
+        let mapped = NormalizationResult::Mapped(AssetIdentity {
+            asset_id: Uuid::new_v4(),
+            symbol: "BTC".to_string(),
+            name: "Bitcoin".to_string(),
+            mapping_source: MappingSource::OkxSymbol {
+                original_symbol: "BTC".to_string(),
+            },
+            debug_info: "test".to_string(),
+        });
+        
+        assert!(matches!(mapped, NormalizationResult::Mapped(_)));
+        
+        // Test Unknown variant
+        let unknown = NormalizationResult::Unknown {
+            original_identifier: "TEST".to_string(),
+            identifier_type: "test_type".to_string(),
+            context: "Test context".to_string(),
+        };
+        
+        assert!(matches!(unknown, NormalizationResult::Unknown { .. }));
+    }
 }

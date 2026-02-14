@@ -75,13 +75,28 @@ export async function apiClient<T>(
     const response = await fetch(`/api/backend${endpoint}`, config);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ 
-        error: `Failed to parse error response (HTTP ${response.status})` 
-      }));
+      // Error responses often include JSON, but do not assume a body.
+      const errorText = await response.text().catch(() => "");
+      let errorData: any;
+      try {
+        errorData = errorText ? JSON.parse(errorText) : { error: response.statusText };
+      } catch {
+        errorData = { error: errorText || response.statusText };
+      }
       throw parseErrorResponse(response, errorData);
     }
 
-    return response.json();
+    // 204 No Content (common for DELETE)
+    if (response.status === 204) {
+      return undefined as unknown as T;
+    }
+
+    // Success responses may still have an empty body.
+    const text = await response.text().catch(() => "");
+    if (!text) {
+      return undefined as unknown as T;
+    }
+    return JSON.parse(text) as T;
   } catch (error) {
     // Handle network errors
     if (error instanceof TypeError && error.message.includes("fetch")) {
@@ -126,13 +141,25 @@ export async function directBackendClient<T>(
     const response = await fetch(`${BACKEND_URL}${endpoint}`, config);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ 
-        error: `Failed to parse error response (HTTP ${response.status})` 
-      }));
+      const errorText = await response.text().catch(() => "");
+      let errorData: any;
+      try {
+        errorData = errorText ? JSON.parse(errorText) : { error: response.statusText };
+      } catch {
+        errorData = { error: errorText || response.statusText };
+      }
       throw parseErrorResponse(response, errorData);
     }
 
-    return response.json();
+    if (response.status === 204) {
+      return undefined as unknown as T;
+    }
+
+    const text = await response.text().catch(() => "");
+    if (!text) {
+      return undefined as unknown as T;
+    }
+    return JSON.parse(text) as T;
   } catch (error) {
     // Handle network errors
     if (error instanceof TypeError && error.message.includes("fetch")) {

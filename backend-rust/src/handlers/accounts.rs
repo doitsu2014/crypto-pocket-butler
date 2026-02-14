@@ -1,7 +1,7 @@
 use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json, Response},
+    response::Json,
     routing::{get, post},
     Router,
 };
@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::entities::accounts;
 use crate::helpers::auth::get_or_create_user;
 use crate::jobs::account_sync;
+use super::error::ApiError;
 
 // === Request/Response DTOs ===
 
@@ -171,26 +172,13 @@ pub struct SyncAllAccountsResponse {
 async fn list_accounts_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
-) -> Result<Json<Vec<AccountResponse>>, Response> {
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+) -> Result<Json<Vec<AccountResponse>>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
 
     let accounts = accounts::Entity::find()
         .filter(accounts::Column::UserId.eq(user.id))
         .all(&db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?;
+        .await?;
 
     Ok(Json(accounts.into_iter().map(|a| a.into()).collect()))
 }
@@ -216,29 +204,16 @@ async fn get_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Path(account_id): Path<Uuid>,
-) -> Result<Json<AccountResponse>, Response> {
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+) -> Result<Json<AccountResponse>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
 
     let account = accounts::Entity::find_by_id(account_id)
         .one(&db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Account not found").into_response())?;
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
     if account.user_id != user.id {
-        return Err((StatusCode::FORBIDDEN, "Access denied").into_response());
+        return Err(ApiError::Forbidden);
     }
 
     Ok(Json(account.into()))
@@ -262,50 +237,35 @@ async fn create_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Json(req): Json<CreateAccountRequest>,
-) -> Result<Json<AccountResponse>, Response> {
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+) -> Result<Json<AccountResponse>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
 
     // Validate account type
     if req.account_type != "exchange" && req.account_type != "wallet" {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "account_type must be 'exchange' or 'wallet'",
-        )
-            .into_response());
+        return Err(ApiError::BadRequest(
+            "account_type must be 'exchange' or 'wallet'".to_string(),
+        ));
     }
 
     // Validate required fields based on account type
     if req.account_type == "exchange" && req.exchange_name.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "exchange_name is required for exchange accounts",
-        )
-            .into_response());
+        return Err(ApiError::BadRequest(
+            "exchange_name is required for exchange accounts".to_string(),
+        ));
     }
 
     if req.account_type == "wallet" && req.wallet_address.is_none() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "wallet_address is required for wallet accounts",
-        )
-            .into_response());
+        return Err(ApiError::BadRequest(
+            "wallet_address is required for wallet accounts".to_string(),
+        ));
     }
 
     // Serialize enabled_chains if provided
     let enabled_chains_json = if let Some(chains) = req.enabled_chains {
-        Some(serde_json::to_value(&chains).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to serialize enabled_chains: {}", e),
-            )
-                .into_response()
-        })?)
+        Some(
+            serde_json::to_value(&chains)
+                .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize enabled_chains: {}", e)))?,
+        )
     } else {
         None
     };
@@ -329,13 +289,7 @@ async fn create_account_handler(
         ..Default::default()
     };
 
-    let account = new_account.insert(&db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create account: {}", e),
-        )
-            .into_response()
-    })?;
+    let account = new_account.insert(&db).await?;
 
     Ok(Json(account.into()))
 }
@@ -363,30 +317,17 @@ async fn update_account_handler(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(account_id): Path<Uuid>,
     Json(req): Json<UpdateAccountRequest>,
-) -> Result<Json<AccountResponse>, Response> {
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+) -> Result<Json<AccountResponse>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
 
     // Find and verify ownership
     let account = accounts::Entity::find_by_id(account_id)
         .one(&db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Account not found").into_response())?;
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
     if account.user_id != user.id {
-        return Err((StatusCode::FORBIDDEN, "Access denied").into_response());
+        return Err(ApiError::Forbidden);
     }
 
     // Update account
@@ -410,13 +351,7 @@ async fn update_account_handler(
         active_account.passphrase_encrypted = Set(Some(passphrase)); // TODO: Encrypt before storing
     }
 
-    let updated_account = active_account.update(&db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to update account: {}", e),
-        )
-            .into_response()
-    })?;
+    let updated_account = active_account.update(&db).await?;
 
     Ok(Json(updated_account.into()))
 }
@@ -442,41 +377,22 @@ async fn delete_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Path(account_id): Path<Uuid>,
-) -> Result<StatusCode, Response> {
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+) -> Result<StatusCode, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
 
     // Find and verify ownership
     let account = accounts::Entity::find_by_id(account_id)
         .one(&db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Account not found").into_response())?;
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
     if account.user_id != user.id {
-        return Err((StatusCode::FORBIDDEN, "Access denied").into_response());
+        return Err(ApiError::Forbidden);
     }
 
     // Delete account
     let active_account: accounts::ActiveModel = account.into();
-    active_account.delete(&db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to delete account: {}", e),
-        )
-            .into_response()
-    })?;
+    active_account.delete(&db).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -503,45 +419,24 @@ async fn sync_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Path(account_id): Path<Uuid>,
-) -> Result<Json<SyncResultResponse>, Response> {
+) -> Result<Json<SyncResultResponse>, ApiError> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+    let user = get_or_create_user(&db, &token).await?;
 
     // Verify account belongs to user
     let account = accounts::Entity::find_by_id(account_id)
         .one(&db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-                .into_response()
-        })?
-        .ok_or_else(|| {
-            (StatusCode::NOT_FOUND, "Account not found").into_response()
-        })?;
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
     if account.user_id != user.id {
-        return Err((StatusCode::FORBIDDEN, "Access denied").into_response());
+        return Err(ApiError::Forbidden);
     }
 
     // Perform sync
     let result = account_sync::sync_account(&db, account_id)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Sync failed: {}", e),
-            )
-                .into_response()
-        })?;
+        .map_err(|e| ApiError::InternalServerError(format!("Sync failed: {}", e)))?;
 
     Ok(Json(result.into()))
 }
@@ -563,26 +458,14 @@ async fn sync_account_handler(
 async fn sync_all_accounts_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
-) -> Result<Json<SyncAllAccountsResponse>, Response> {
+) -> Result<Json<SyncAllAccountsResponse>, ApiError> {
     // Get or create user
-    let user = get_or_create_user(&db, &token).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Database error: {}", e),
-        )
-            .into_response()
-    })?;
+    let user = get_or_create_user(&db, &token).await?;
 
     // Perform sync for all user accounts
     let results = account_sync::sync_user_accounts(&db, user.id)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Sync failed: {}", e),
-            )
-                .into_response()
-        })?;
+        .map_err(|e| ApiError::InternalServerError(format!("Sync failed: {}", e)))?;
 
     let total = results.len();
     let successful = results.iter().filter(|r| r.success).count();

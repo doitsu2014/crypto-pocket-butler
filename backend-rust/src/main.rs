@@ -118,6 +118,7 @@ struct HealthResponse {
             handlers::jobs::CollectTopCoinsResponse,
             handlers::jobs::CollectContractAddressesRequest,
             handlers::jobs::CollectContractAddressesResponse,
+            handlers::error::ErrorResponse,
         )
     ),
     modifiers(&SecurityAddon),

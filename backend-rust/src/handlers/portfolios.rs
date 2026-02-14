@@ -1,7 +1,7 @@
 use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json, Response},
+    response::Json,
     routing::{delete, get},
     Router,
 };
@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use crate::entities::{accounts, portfolio_accounts, portfolios};
 use crate::helpers::auth::get_or_create_user;
+use super::error::ApiError;
 
 // === Internal DTOs for deserialization ===
 
@@ -220,41 +221,6 @@ pub struct PortfolioHoldingsResponse {
     pub as_of: String,
 }
 
-// === Error handling ===
-
-#[derive(Debug)]
-pub enum ApiError {
-    DatabaseError(sea_orm::DbErr),
-    NotFound,
-    Unauthorized,
-    BadRequest(String),
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        let (status, message) = match self {
-            ApiError::DatabaseError(err) => {
-                tracing::error!("Database error: {:?}", err);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".to_string(),
-                )
-            }
-            ApiError::NotFound => (StatusCode::NOT_FOUND, "Resource not found".to_string()),
-            ApiError::Unauthorized => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
-            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-        };
-
-        (status, Json(serde_json::json!({ "error": message }))).into_response()
-    }
-}
-
-impl From<sea_orm::DbErr> for ApiError {
-    fn from(err: sea_orm::DbErr) -> Self {
-        ApiError::DatabaseError(err)
-    }
-}
-
 // === Helper functions ===
 
 /// Get or create user in database based on Keycloak token
@@ -271,7 +237,7 @@ async fn check_portfolio_ownership(
         .ok_or(ApiError::NotFound)?;
 
     if portfolio.user_id != user_id {
-        return Err(ApiError::Unauthorized);
+        return Err(ApiError::Forbidden);
     }
 
     Ok(portfolio)
@@ -289,7 +255,7 @@ async fn check_account_ownership(
         .ok_or(ApiError::NotFound)?;
 
     if account.user_id != user_id {
-        return Err(ApiError::Unauthorized);
+        return Err(ApiError::Forbidden);
     }
 
     Ok(account)

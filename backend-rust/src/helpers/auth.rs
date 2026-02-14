@@ -45,20 +45,3 @@ pub async fn get_or_create_user(
     let user = new_user.insert(db).await?;
     Ok(user)
 }
-
-#[cfg(test)]
-mod tests {
-    // Note: Full integration tests for get_or_create_user are done
-    // in the handler integration tests. These are simple unit tests
-    // to verify the function signature and basic compilation.
-
-    #[test]
-    fn test_helper_module_exists() {
-        // This test ensures the module is properly structured
-        // and the function signature is correct
-        assert!(true);
-    }
-
-    // Additional integration tests should be added to test the actual
-    // database interaction with a test database or in handler tests.
-}

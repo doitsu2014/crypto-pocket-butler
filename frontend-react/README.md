@@ -4,6 +4,8 @@ For detailed setup and usage instructions, see [../docs/FRONTEND_SETUP.md](../do
 
 For UI/UX design system documentation, see [../docs/UI-STYLE-GUIDE.md](../docs/UI-STYLE-GUIDE.md).
 
+**For API integration guidelines, see [lib/API_INTEGRATION.md](lib/API_INTEGRATION.md).**
+
 ## Quick Start
 
 ```bash
@@ -28,9 +30,45 @@ Open [http://localhost:3001](http://localhost:3001) with your browser.
 - 🛡️ Secure token management (server-side)
 - 📱 Responsive design
 - 📚 Comprehensive design system documentation
+- 🔌 **Unified API integration with automatic authentication**
 
 ## Documentation
 
 - **Setup Guide**: [../docs/FRONTEND_SETUP.md](../docs/FRONTEND_SETUP.md)
 - **Design System**: [../docs/UI-STYLE-GUIDE.md](../docs/UI-STYLE-GUIDE.md)
 - **Keycloak Setup**: [../docs/KEYCLOAK_SETUP.md](../docs/KEYCLOAK_SETUP.md)
+- **API Integration**: [lib/API_INTEGRATION.md](lib/API_INTEGRATION.md) ⭐
+
+## API Integration
+
+All backend API calls use a **unified, centralized approach**:
+
+1. **Client-side**: Use custom TanStack Query hooks (e.g., `useAccounts`, `usePortfolios`)
+2. **API Client**: All requests go through `lib/api-client.ts`
+3. **Proxy Layer**: Single catch-all route at `/api/backend/[...path]` handles authentication
+4. **Backend**: Requests are forwarded with proper authorization headers
+
+### Example Usage
+
+```typescript
+// ✅ Correct way - Use custom hooks
+import { useAccounts } from "@/hooks/useAccounts";
+
+function MyComponent() {
+  const { data: accounts, isLoading, error } = useAccounts();
+  // Component logic...
+}
+
+// ✅ For mutations
+import { useCreateAccount } from "@/hooks/useAccounts";
+
+function MyForm() {
+  const createAccount = useCreateAccount();
+  
+  const handleSubmit = async (data) => {
+    await createAccount.mutateAsync(data);
+  };
+}
+```
+
+**See [lib/API_INTEGRATION.md](lib/API_INTEGRATION.md) for complete documentation.**

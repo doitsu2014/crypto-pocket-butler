@@ -78,11 +78,7 @@ export default function AccountDetailClient() {
   if (!account) {
     return (
       <EmptyState
-        icon={
-          <svg className="w-16 h-16 text-fuchsia-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-          </svg>
-        }
+        icon="account"
         title="Account not found"
         description="The account you're looking for doesn't exist or you don't have access to it."
       />
@@ -200,11 +196,7 @@ export default function AccountDetailClient() {
         </h3>
         {!account.holdings || account.holdings.length === 0 ? (
           <EmptyState
-            icon={
-              <svg className="w-12 h-12 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-              </svg>
-            }
+            icon="default"
             title="No holdings"
             description="This account has no holdings. Sync the account to fetch the latest holdings data."
           />

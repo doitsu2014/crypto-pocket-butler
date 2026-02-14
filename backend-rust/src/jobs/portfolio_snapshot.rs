@@ -1,3 +1,4 @@
+use crate::domain::{AllocationItem, SnapshotHolding, SnapshotMetadata};
 use crate::entities::{portfolio_allocations, portfolios, snapshots};
 use chrono::{Utc, NaiveDate};
 use sea_orm::{
@@ -83,10 +84,16 @@ pub async fn create_portfolio_snapshot(
         allocation.total_value_usd
     );
 
-    // Deserialize holdings from allocation
-    let holdings: Vec<serde_json::Value> =
+    // Deserialize holdings from allocation to typed structs
+    let allocation_items: Vec<AllocationItem> =
         serde_json::from_value(serde_json::Value::from(allocation.holdings.clone()))
             .map_err(|e| format!("Failed to deserialize allocation holdings: {}", e))?;
+
+    // Convert AllocationItems to SnapshotHoldings using From trait
+    let holdings: Vec<SnapshotHolding> = allocation_items
+        .into_iter()
+        .map(SnapshotHolding::from)
+        .collect();
 
     let holdings_count = holdings.len();
     let total_value_usd = allocation.total_value_usd;
@@ -100,6 +107,15 @@ pub async fn create_portfolio_snapshot(
 
     // Create snapshot record
     let now = Utc::now();
+    
+    // Create strongly-typed metadata
+    let metadata = SnapshotMetadata {
+        portfolio_name: portfolio.name,
+        allocation_as_of: allocation.as_of.to_rfc3339(),
+        snapshot_time: now.to_rfc3339(),
+        created_at: now.to_rfc3339(),
+    };
+    
     let snapshot = snapshots::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
         portfolio_id: ActiveValue::Set(portfolio_id),
@@ -108,15 +124,7 @@ pub async fn create_portfolio_snapshot(
         total_value_usd: ActiveValue::Set(total_value_usd),
         holdings: ActiveValue::Set(json!(holdings).into()),
         allocation_id: ActiveValue::Set(Some(allocation.id)),
-        metadata: ActiveValue::Set(Some(
-            json!({
-                "portfolio_name": portfolio.name,
-                "allocation_as_of": allocation.as_of.to_rfc3339(),
-                "snapshot_time": now.to_rfc3339(),
-                "created_at": now.to_rfc3339(),
-            })
-            .into(),
-        )),
+        metadata: ActiveValue::Set(Some(json!(metadata).into())),
         created_at: ActiveValue::Set(now.into()),
     };
 

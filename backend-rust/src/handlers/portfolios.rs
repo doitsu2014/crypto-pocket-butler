@@ -18,23 +18,10 @@ use std::str::FromStr;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::domain::AccountHolding;
 use crate::entities::{accounts, portfolio_accounts, portfolios};
 use crate::helpers::auth::get_or_create_user;
 use super::error::ApiError;
-
-// === Internal DTOs for deserialization ===
-
-#[derive(Debug, Deserialize)]
-struct HoldingData {
-    asset: String,
-    quantity: String,
-    available: String,
-    frozen: String,
-    #[serde(default)]
-    price_usd: f64,
-    #[serde(default)]
-    value_usd: f64,
-}
 
 // === Request/Response DTOs ===
 
@@ -754,7 +741,7 @@ pub async fn get_portfolio_holdings(
     for account in accounts {
         if let Some(holdings_json) = account.holdings {
             // Deserialize holdings directly to typed struct
-            let holdings: Vec<HoldingData> = match serde_json::from_value(serde_json::Value::from(holdings_json)) {
+            let holdings: Vec<AccountHolding> = match serde_json::from_value(serde_json::Value::from(holdings_json)) {
                 Ok(h) => h,
                 Err(e) => {
                     tracing::warn!(
@@ -781,7 +768,7 @@ pub async fn get_portfolio_holdings(
                         total_quantity: "0".to_string(),
                         total_available: "0".to_string(),
                         total_frozen: "0".to_string(),
-                        price_usd: holding.price_usd,
+                        price_usd: holding.price_usd.unwrap_or(0.0),
                         value_usd: 0.0,
                         accounts: Vec::new(),
                     }
@@ -798,7 +785,7 @@ pub async fn get_portfolio_holdings(
                 entry.total_quantity = (curr_qty + qty).to_string();
                 entry.total_available = (curr_avail + avail).to_string();
                 entry.total_frozen = (curr_frz + frz).to_string();
-                entry.value_usd += holding.value_usd;
+                entry.value_usd += holding.value_usd.unwrap_or(0.0);
 
                 entry.accounts.push(AccountHoldingDetail {
                     account_id: account.id,
@@ -847,22 +834,8 @@ pub async fn get_portfolio_holdings(
 
 // === Construct allocation DTOs ===
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct AllocationHolding {
-    /// Asset symbol
-    pub asset: String,
-    /// Total quantity across all accounts
-    pub quantity: String,
-    /// Value in USD
-    pub value_usd: f64,
-    /// Percentage of total portfolio (0-100)
-    pub weight: f64,
-    /// Price per unit in USD (None if unpriced)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub price_usd: Option<f64>,
-    /// Whether the asset is unpriced
-    pub unpriced: bool,
-}
+// Use domain struct for AllocationHolding to ensure type safety
+pub use crate::domain::AllocationItem as AllocationHolding;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ConstructAllocationResponse {
@@ -923,7 +896,7 @@ pub async fn construct_portfolio_allocation(
 
     for account in &accounts_list {
         if let Some(holdings_json) = &account.holdings {
-            let holdings: Vec<HoldingData> = match serde_json::from_value(serde_json::Value::from(holdings_json.clone())) {
+            let holdings: Vec<AccountHolding> = match serde_json::from_value(serde_json::Value::from(holdings_json.clone())) {
                 Ok(h) => h,
                 Err(e) => {
                     tracing::warn!(
@@ -939,7 +912,7 @@ pub async fn construct_portfolio_allocation(
                     continue;
                 }
 
-                let qty = parse_decimal_or_zero(&holding.quantity);
+                let qty = holding.quantity_decimal();
                 let curr_qty = holdings_map.get(&holding.asset).copied().unwrap_or(Decimal::ZERO);
                 holdings_map.insert(holding.asset.clone(), curr_qty + qty);
             }

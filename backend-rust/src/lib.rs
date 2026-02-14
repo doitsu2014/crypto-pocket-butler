@@ -4,6 +4,7 @@ pub use axum_keycloak_auth;
 // Database and entities modules
 pub mod connectors;
 pub mod db;
+pub mod domain;
 pub mod entities;
 pub mod handlers;
 pub mod helpers;

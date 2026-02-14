@@ -77,6 +77,7 @@ pub async fn collect_contract_addresses(
         let mut assets_processed = 0;
         let mut contracts_created = 0;
         let mut assets_skipped = 0;
+        let mut all_contracts = Vec::new();
 
         for asset in assets_list {
             let coingecko_id = match &asset.coingecko_id {
@@ -87,7 +88,7 @@ pub async fn collect_contract_addresses(
                 }
             };
 
-            // Fetch coin detail from CoinGecko
+            // Fetch coin detail from CoinGecko (rate limited)
             let coin_detail = match connector.fetch_coin_detail(coingecko_id).await {
                 Ok(detail) => detail,
                 Err(e) => {
@@ -102,7 +103,7 @@ pub async fn collect_contract_addresses(
                 }
             };
 
-            // Process each platform/contract address
+            // Collect contracts for this asset
             for (platform, contract_address) in coin_detail.platforms {
                 // Skip empty contract addresses
                 if contract_address.is_empty() {
@@ -112,8 +113,7 @@ pub async fn collect_contract_addresses(
                 // Normalize platform name to chain identifier
                 let chain = normalize_platform_name(&platform);
 
-                // Upsert contract using ON CONFLICT (idempotent)
-                // The unique constraint on (chain, contract_address) ensures idempotency
+                // Prepare contract for batch insert
                 let new_contract = asset_contracts::ActiveModel {
                     id: ActiveValue::Set(Uuid::new_v4()),
                     asset_id: ActiveValue::Set(asset.id),
@@ -126,7 +126,22 @@ pub async fn collect_contract_addresses(
                     updated_at: ActiveValue::Set(Utc::now().into()),
                 };
 
-                match Insert::one(new_contract)
+                all_contracts.push(new_contract);
+                
+                tracing::debug!(
+                    "Prepared contract for {} on {} at {}",
+                    asset.symbol,
+                    chain,
+                    contract_address
+                );
+            }
+
+            assets_processed += 1;
+            
+            // Batch insert every 100 assets to avoid too large transactions
+            if all_contracts.len() >= 100 {
+                let count = all_contracts.len();
+                match Insert::many(all_contracts)
                     .on_conflict(
                         OnConflict::columns([
                             asset_contracts::Column::Chain,
@@ -145,30 +160,46 @@ pub async fn collect_contract_addresses(
                     .await
                 {
                     Ok(_) => {
-                        contracts_created += 1;
-                        tracing::debug!(
-                            "Upserted contract for {} on {} at {}",
-                            asset.symbol,
-                            chain,
-                            contract_address
-                        );
+                        contracts_created += count;
+                        tracing::info!("Batch upserted {} contracts", count);
                     }
                     Err(e) => {
-                        tracing::warn!(
-                            "Failed to upsert contract for {} on {}: {}",
-                            asset.symbol,
-                            chain,
-                            e
-                        );
+                        tracing::error!("Failed to batch upsert contracts: {}", e);
                     }
                 }
+                all_contracts = Vec::new();
             }
+        }
 
-            assets_processed += 1;
-
-            // Add a small delay to respect rate limits (CoinGecko free tier has rate limits)
-            // Sleep for 1.5 seconds to stay under 40 calls/minute (60,000ms / 1,500ms = 40)
-            tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+        // Insert remaining contracts
+        if !all_contracts.is_empty() {
+            let count = all_contracts.len();
+            match Insert::many(all_contracts)
+                .on_conflict(
+                    OnConflict::columns([
+                        asset_contracts::Column::Chain,
+                        asset_contracts::Column::ContractAddress,
+                    ])
+                    .update_columns([
+                        asset_contracts::Column::AssetId,
+                        asset_contracts::Column::TokenStandard,
+                        asset_contracts::Column::Decimals,
+                        asset_contracts::Column::IsVerified,
+                        asset_contracts::Column::UpdatedAt,
+                    ])
+                    .to_owned(),
+                )
+                .exec(db)
+                .await
+            {
+                Ok(_) => {
+                    contracts_created += count;
+                    tracing::info!("Batch upserted {} contracts", count);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to batch upsert contracts: {}", e);
+                }
+            }
         }
 
         Ok(JobMetrics {

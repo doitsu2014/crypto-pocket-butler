@@ -260,13 +260,16 @@ struct PriceData {
 }
 
 /// Store prices in the database using ON CONFLICT for idempotency
+/// Uses batched inserts for better performance
 async fn store_prices(
     db: &DatabaseConnection,
     price_data: &[PriceData],
 ) -> Result<usize, Box<dyn Error + Send + Sync>> {
     let timestamp = Utc::now();
     let source = "coingecko";
-    let mut stored_count = 0;
+    
+    // Prepare all price records in a batch
+    let mut price_models = Vec::new();
 
     for data in price_data {
         // Round timestamp to the nearest minute for consistent time buckets
@@ -341,37 +344,42 @@ async fn store_prices(
             created_at: ActiveValue::Set(timestamp.into()),
         };
 
-        // Use ON CONFLICT to handle duplicates (idempotent upsert)
-        // The unique constraint on (asset_id, timestamp, source) ensures idempotency
-        match Insert::one(new_price)
-            .on_conflict(
-                OnConflict::columns([
-                    asset_prices::Column::AssetId,
-                    asset_prices::Column::Timestamp,
-                    asset_prices::Column::Source,
-                ])
-                .update_columns([
-                    asset_prices::Column::PriceUsd,
-                    asset_prices::Column::Volume24hUsd,
-                    asset_prices::Column::MarketCapUsd,
-                    asset_prices::Column::ChangePercent24h,
-                ])
-                .to_owned(),
-            )
-            .exec(db)
-            .await
-        {
-            Ok(_) => {
-                stored_count += 1;
-                tracing::debug!("Upserted price for asset {} at {}", data.asset_id, rounded_timestamp);
-            }
-            Err(e) => {
-                tracing::warn!("Failed to upsert price for asset {}: {}", data.asset_id, e);
-            }
-        }
+        price_models.push(new_price);
     }
 
-    Ok(stored_count)
+    if price_models.is_empty() {
+        return Ok(0);
+    }
+
+    // Batch insert with ON CONFLICT for idempotency
+    // The unique constraint on (asset_id, timestamp, source) ensures idempotency
+    match Insert::many(price_models)
+        .on_conflict(
+            OnConflict::columns([
+                asset_prices::Column::AssetId,
+                asset_prices::Column::Timestamp,
+                asset_prices::Column::Source,
+            ])
+            .update_columns([
+                asset_prices::Column::PriceUsd,
+                asset_prices::Column::Volume24hUsd,
+                asset_prices::Column::MarketCapUsd,
+                asset_prices::Column::ChangePercent24h,
+            ])
+            .to_owned(),
+        )
+        .exec(db)
+        .await
+    {
+        Ok(_) => {
+            tracing::info!("Batch upserted {} prices", price_data.len());
+            Ok(price_data.len())
+        }
+        Err(e) => {
+            tracing::error!("Failed to batch upsert prices: {}", e);
+            Err(Box::new(e))
+        }
+    }
 }
 
 #[cfg(test)]

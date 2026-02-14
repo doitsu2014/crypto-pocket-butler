@@ -254,8 +254,270 @@ Expected results with default configuration:
 - Set statement timeouts in PostgreSQL
 - Increase `DB_MAX_CONNECTIONS`
 
+## External API Concurrency Control
+
+### Overview
+
+The backend implements bounded concurrency and rate limiting for external API calls to prevent overwhelming external services and respect rate limits. This uses the **bulkhead pattern** for fault isolation.
+
+### Rate Limiters
+
+Rate limiters are implemented using Tokio semaphores in `src/concurrency/mod.rs`:
+
+```rust
+use crate::concurrency::RateLimiter;
+
+// Create a rate limiter for CoinGecko API
+let rate_limiter = RateLimiter::coingecko();
+
+// Acquire permit before making API call
+let _permit = rate_limiter.acquire().await?;
+// Make API call
+```
+
+### Available Rate Limiters
+
+#### CoinGecko API
+- **Max concurrent**: 5 requests
+- **Min delay**: 2 seconds between requests
+- **Rate limit**: ~30 requests/minute (demo plan)
+- **Usage**: Automatically applied in `CoinGeckoConnector`
+
+```rust
+let connector = CoinGeckoConnector::new();
+// Rate limiting is built-in, no need to manually acquire permits
+let coins = connector.fetch_top_coins(100).await?;
+```
+
+#### OKX API
+- **Max concurrent**: 3 requests
+- **Min delay**: 100ms between requests
+- **Usage**: For OKX exchange API calls
+
+```rust
+let rate_limiter = RateLimiter::okx();
+let _permit = rate_limiter.acquire().await?;
+// Make OKX API call
+```
+
+#### EVM RPC Calls
+- **Max concurrent**: 5 chain requests
+- **Min delay**: 50ms between requests
+- **Usage**: For blockchain RPC calls (Ethereum, Arbitrum, etc.)
+
+```rust
+// Automatically applied in EvmConnector
+let connector = EvmConnector::new(wallet_address, chains)?;
+// Chains are fetched in parallel with rate limiting
+let balances = connector.fetch_spot_balances().await?;
+```
+
+### Parallel Chain Fetching
+
+The EVM connector fetches balances from multiple chains **in parallel** instead of sequentially:
+
+```rust
+// OLD: Sequential (5x slower for 5 chains)
+for chain in chains {
+    fetch_balance(chain).await;  // One at a time
+}
+
+// NEW: Parallel (bounded concurrency)
+let tasks = chains.map(|chain| async move {
+    let _permit = rate_limiter.acquire().await;
+    fetch_balance(chain).await
+});
+futures::join_all(tasks).await;
+```
+
+**Performance Impact**: ~5x faster for multi-chain wallets
+
+### Benefits
+
+1. **Prevents Rate Limiting**: Respects API rate limits automatically
+2. **Fault Isolation**: Failures in one service don't affect others
+3. **Resource Protection**: Prevents overwhelming external services
+4. **Predictable Performance**: Bounded concurrency ensures stable behavior
+
+## Database Batching
+
+### Overview
+
+Database operations are batched to reduce roundtrips and improve performance. Instead of inserting/updating one record at a time, multiple records are batched in a single query.
+
+### Batched Operations
+
+#### Price Collection (`src/jobs/price_collection.rs`)
+
+```rust
+// OLD: N individual inserts for N prices
+for price in prices {
+    Insert::one(price).exec(db).await?;  // 1 DB roundtrip per price
+}
+
+// NEW: Single batch insert
+Insert::many(prices)
+    .on_conflict(...)
+    .exec(db).await?;  // 1 DB roundtrip for all prices
+```
+
+**Performance Impact**: Reduces DB roundtrips from N to 1
+
+#### Contract Addresses Collection
+
+Batches contract inserts with a maximum batch size of 100:
+
+```rust
+// Collect contracts in a batch
+let mut contracts = Vec::new();
+for asset in assets {
+    contracts.push(prepare_contract(asset));
+    
+    // Batch insert every 100 contracts
+    if contracts.len() >= 100 {
+        Insert::many(contracts).exec(db).await?;
+        contracts.clear();
+    }
+}
+```
+
+**Performance Impact**: Reduces DB roundtrips by ~100x
+
+#### Top Coins Collection
+
+Batches ranking inserts for all coins in a single transaction:
+
+```rust
+// Collect all rankings first
+let mut rankings = Vec::new();
+for coin in coins {
+    rankings.push(prepare_ranking(coin));
+}
+
+// Single batch insert
+Insert::many(rankings)
+    .on_conflict(...)
+    .exec(db).await?;
+```
+
+**Performance Impact**: Reduces DB roundtrips from N to 1
+
+### Idempotency
+
+All batch operations use `ON CONFLICT` clauses to maintain idempotency:
+
+```rust
+Insert::many(records)
+    .on_conflict(
+        OnConflict::columns([...])  // Unique constraint columns
+        .update_columns([...])       // Columns to update on conflict
+        .to_owned(),
+    )
+    .exec(db).await?;
+```
+
+This ensures that running jobs multiple times produces the same result.
+
+## Caching Layer
+
+### Overview
+
+A simple in-memory cache reduces redundant API calls and database queries using the `moka` crate.
+
+### Available Caches
+
+#### Price Cache (`src/cache.rs`)
+
+Caches latest asset prices with a 60-second TTL:
+
+```rust
+use crate::cache::PriceCache;
+
+let cache = PriceCache::new();
+
+// Check cache first
+if let Some(price) = cache.get(&asset_id).await {
+    return price;
+}
+
+// Fetch from DB/API and cache
+let price = fetch_price(asset_id).await?;
+cache.insert(asset_id, price).await;
+```
+
+**Configuration**:
+- **Max capacity**: 10,000 assets
+- **TTL**: 60 seconds
+- **Use case**: Portfolio valuation, price lookups
+
+#### Chain Data Cache
+
+Caches blockchain RPC responses with a 30-second TTL:
+
+```rust
+use crate::cache::ChainDataCache;
+
+let cache = ChainDataCache::new();
+let key = format!("{}:{}:balance", chain, address);
+
+if let Some(cached) = cache.get(&key).await {
+    return cached;
+}
+
+let data = fetch_chain_data(chain, address).await?;
+cache.insert(key, data.clone()).await;
+```
+
+**Configuration**:
+- **Max capacity**: 1,000 responses
+- **TTL**: 30 seconds
+- **Use case**: Wallet balance queries, chain data
+
+### Cache Benefits
+
+1. **Reduced API Calls**: Avoid redundant external requests
+2. **Lower Latency**: In-memory access is much faster than API calls
+3. **Cost Savings**: Fewer API calls = lower costs for paid tiers
+4. **Graceful Degradation**: Cache continues serving during brief API outages
+
+### Cache Invalidation
+
+Caches use **time-based expiration** (TTL):
+- Entries automatically expire after TTL
+- No manual invalidation needed
+- Short TTLs ensure data freshness
+
+## Performance Summary
+
+### Before Optimizations
+
+- **EVM chains**: Sequential fetching (5x slower for 5 chains)
+- **Price storage**: N DB roundtrips for N prices
+- **Contract storage**: N DB roundtrips for N contracts
+- **No rate limiting**: Risk of hitting API rate limits
+- **No caching**: Every request hits external APIs/DB
+
+### After Optimizations
+
+- **EVM chains**: Parallel fetching with bounded concurrency
+- **Price storage**: 1 DB roundtrip per batch
+- **Contract storage**: 1 DB roundtrip per 100 contracts
+- **Rate limiting**: Respects API limits automatically
+- **Caching**: Hot data served from memory
+
+### Expected Performance Improvements
+
+| Operation | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| Multi-chain balance fetch | 5-10s | 1-2s | 5x faster |
+| Price collection (100 assets) | 100 DB roundtrips | 1 DB roundtrip | 100x fewer queries |
+| Contract collection (100 assets) | 100 DB roundtrips | 1-2 DB roundtrips | 50-100x fewer queries |
+| Cached price lookup | 10-50ms (DB) | <1ms (memory) | 10-50x faster |
+
 ## Further Reading
 
 - [Tokio Runtime Documentation](https://docs.rs/tokio/latest/tokio/runtime/)
 - [SeaORM Connection Pool](https://www.sea-ql.org/SeaORM/docs/install-and-config/connection/)
 - [Axum Concurrency Guide](https://docs.rs/axum/latest/axum/)
+- [Moka Cache Documentation](https://docs.rs/moka/latest/moka/)
+- [Tokio Semaphore](https://docs.rs/tokio/latest/tokio/sync/struct.Semaphore.html)

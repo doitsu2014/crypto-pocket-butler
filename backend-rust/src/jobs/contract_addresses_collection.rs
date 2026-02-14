@@ -140,7 +140,8 @@ pub async fn collect_contract_addresses(
             
             // Batch insert every 100 assets to avoid too large transactions
             if all_contracts.len() >= 100 {
-                match Insert::many(all_contracts.clone())
+                let count = all_contracts.len();
+                match Insert::many(all_contracts)
                     .on_conflict(
                         OnConflict::columns([
                             asset_contracts::Column::Chain,
@@ -159,20 +160,21 @@ pub async fn collect_contract_addresses(
                     .await
                 {
                     Ok(_) => {
-                        contracts_created += all_contracts.len();
-                        tracing::info!("Batch upserted {} contracts", all_contracts.len());
+                        contracts_created += count;
+                        tracing::info!("Batch upserted {} contracts", count);
                     }
                     Err(e) => {
                         tracing::error!("Failed to batch upsert contracts: {}", e);
                     }
                 }
-                all_contracts.clear();
+                all_contracts = Vec::new();
             }
         }
 
         // Insert remaining contracts
         if !all_contracts.is_empty() {
-            match Insert::many(all_contracts.clone())
+            let count = all_contracts.len();
+            match Insert::many(all_contracts)
                 .on_conflict(
                     OnConflict::columns([
                         asset_contracts::Column::Chain,
@@ -191,8 +193,8 @@ pub async fn collect_contract_addresses(
                 .await
             {
                 Ok(_) => {
-                    contracts_created += all_contracts.len();
-                    tracing::info!("Batch upserted {} contracts", all_contracts.len());
+                    contracts_created += count;
+                    tracing::info!("Batch upserted {} contracts", count);
                 }
                 Err(e) => {
                     tracing::error!("Failed to batch upsert contracts: {}", e);

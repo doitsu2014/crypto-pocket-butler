@@ -225,6 +225,7 @@ async fn fetch_token_balances_for_chain(
     let token_addresses = get_common_tokens(chain);
     let mut balances = Vec::new();
     
+    // Note: provider.clone() is cheap (Arc-based in alloy)
     for (symbol, token_address) in token_addresses {
         let contract_address: Address = match token_address.parse() {
             Ok(addr) => addr,

@@ -159,7 +159,8 @@ pub async fn collect_top_coins(
 
         // Batch insert all rankings
         if !rankings_to_insert.is_empty() {
-            match Insert::many(rankings_to_insert.clone())
+            let count = rankings_to_insert.len();
+            match Insert::many(rankings_to_insert)
                 .on_conflict(
                     OnConflict::columns([
                         asset_rankings::Column::AssetId,
@@ -180,7 +181,7 @@ pub async fn collect_top_coins(
                 .await
             {
                 Ok(_) => {
-                    rankings_created = rankings_to_insert.len();
+                    rankings_created = count;
                     tracing::info!("Batch upserted {} rankings", rankings_created);
                 }
                 Err(e) => {

@@ -103,21 +103,32 @@ export class ApiError extends Error {
   }
 }
 
-function parseErrorResponse(response: Response, errorData: any): ApiError {
+function parseErrorResponse(response: Response, errorData: unknown): ApiError {
   const status = response.status;
-  let message = errorData?.error || errorData?.message || response.statusText || "An error occurred";
+  
+  // Safely extract error message from unknown errorData
+  const getErrorMessage = (): string => {
+    if (errorData && typeof errorData === 'object') {
+      const data = errorData as Record<string, unknown>;
+      if (typeof data.error === 'string') return data.error;
+      if (typeof data.message === 'string') return data.message;
+    }
+    return response.statusText || "An error occurred";
+  };
+
+  let message = getErrorMessage();
   let type: ApiErrorType = "unknown";
 
   // Categorize errors by status code
   if (status === 401 || status === 403) {
     type = "auth";
-    message = errorData?.error || "Authentication failed. Please sign in again.";
+    message = getErrorMessage() || "Authentication failed. Please sign in again.";
   } else if (status === 400 || status === 422) {
     type = "validation";
-    message = errorData?.error || "Invalid input. Please check your data.";
+    message = getErrorMessage() || "Invalid input. Please check your data.";
   } else if (status >= 500) {
     type = "server";
-    message = errorData?.error || "Server error. Please try again later.";
+    message = getErrorMessage() || "Server error. Please try again later.";
   } else if (status >= 400) {
     type = "unknown";
   }
@@ -154,7 +165,7 @@ export async function apiClient<T>(
     if (!response.ok) {
       // Error responses often include JSON, but do not assume a body.
       const errorText = await response.text().catch(() => "");
-      let errorData: any;
+      let errorData: unknown;
       try {
         errorData = errorText ? JSON.parse(errorText) : { error: response.statusText };
       } catch {
@@ -219,7 +230,7 @@ export async function directBackendClient<T>(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      let errorData: any;
+      let errorData: unknown;
       try {
         errorData = errorText ? JSON.parse(errorText) : { error: response.statusText };
       } catch {

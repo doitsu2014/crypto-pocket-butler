@@ -88,8 +88,8 @@ pub async fn collect_prices(
         Ok(JobMetrics {
             items_processed: assets_tracked,
             items_created: prices_stored,
-            items_updated: 0, // ON CONFLICT upserts all prices
-            items_skipped: 0, // All prices are stored (inserted or updated)
+            items_updated: 0, // Upserts treated as creates for metrics simplicity
+            items_skipped: 0, // All prices are upserted (inserted or updated)
             custom: serde_json::json!({
                 "assets_tracked": assets_tracked,
                 "prices_collected": prices_collected,

@@ -195,7 +195,7 @@ pub async fn collect_top_coins(
     Ok(CollectionResult {
         success: result.success,
         coins_collected: result.metrics.custom["coins_collected"].as_u64().unwrap_or(0) as usize,
-        assets_created: result.metrics.items_created,
+        assets_created: result.metrics.custom["assets_created"].as_u64().unwrap_or(0) as usize,
         assets_updated: result.metrics.custom["assets_updated"].as_u64().unwrap_or(0) as usize,
         rankings_created: result.metrics.custom["rankings_created"].as_u64().unwrap_or(0) as usize,
         error: result.error,

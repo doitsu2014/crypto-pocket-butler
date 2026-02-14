@@ -174,7 +174,7 @@ pub async fn collect_contract_addresses(
         Ok(JobMetrics {
             items_processed: assets_processed,
             items_created: contracts_created,
-            items_updated: 0, // ON CONFLICT doesn't return affected row count
+            items_updated: 0, // Upserts not tracked separately for simplicity
             items_skipped: assets_skipped,
             custom: serde_json::json!({
                 "assets_processed": assets_processed,
@@ -189,7 +189,7 @@ pub async fn collect_contract_addresses(
         success: result.success,
         assets_processed: result.metrics.items_processed,
         contracts_created: result.metrics.items_created,
-        contracts_updated: 0, // Not tracked with ON CONFLICT
+        contracts_updated: 0, // Upserts not tracked separately for simplicity
         assets_skipped: result.metrics.items_skipped,
         error: result.error,
     })

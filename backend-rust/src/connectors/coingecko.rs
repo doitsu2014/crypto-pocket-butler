@@ -1,3 +1,4 @@
+use crate::concurrency::RateLimiter;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -8,6 +9,7 @@ use tracing;
 pub struct CoinGeckoConnector {
     client: Client,
     base_url: String,
+    rate_limiter: RateLimiter,
 }
 
 /// Coin data from CoinGecko API
@@ -43,6 +45,7 @@ impl CoinGeckoConnector {
         Self {
             client: Client::new(),
             base_url: "https://api.coingecko.com/api/v3".to_string(),
+            rate_limiter: RateLimiter::coingecko(),
         }
     }
 
@@ -58,6 +61,9 @@ impl CoinGeckoConnector {
             return Err(format!("Invalid limit: {}. Limit must be between 1 and 250", limit).into());
         }
 
+        // Acquire rate limit permit
+        let _permit = self.rate_limiter.acquire().await?;
+        
         tracing::info!("Fetching top {} coins from CoinGecko", limit);
 
         let url = format!(
@@ -110,6 +116,9 @@ impl CoinGeckoConnector {
             return Ok(Vec::new());
         }
 
+        // Acquire rate limit permit
+        let _permit = self.rate_limiter.acquire().await?;
+        
         // CoinGecko API accepts comma-separated list of IDs
         let ids_param = coin_ids.join(",");
         
@@ -149,6 +158,9 @@ impl CoinGeckoConnector {
     /// # Returns
     /// Detailed coin data including platforms/contract addresses
     pub async fn fetch_coin_detail(&self, coin_id: &str) -> Result<CoinDetailData, Box<dyn Error + Send + Sync>> {
+        // Acquire rate limit permit
+        let _permit = self.rate_limiter.acquire().await?;
+        
         tracing::debug!("Fetching coin detail for {} from CoinGecko", coin_id);
 
         let url = format!(

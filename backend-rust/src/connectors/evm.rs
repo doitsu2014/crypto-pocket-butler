@@ -1,10 +1,12 @@
 use super::{Balance, ExchangeConnector};
+use crate::concurrency::RateLimiter;
 use alloy::{
     primitives::{Address, U256},
     providers::{Provider, ProviderBuilder},
     sol,
 };
 use async_trait::async_trait;
+use futures::future::join_all;
 use std::error::Error;
 use tracing;
 
@@ -127,111 +129,146 @@ impl EvmConnector {
             chains,
         })
     }
-
-    /// Fetch native balance (ETH) for the wallet
-    async fn fetch_native_balance(&self, chain: &EvmChain) -> Result<Option<Balance>, Box<dyn Error + Send + Sync>> {
-        tracing::debug!("Fetching native balance for {} on {}", self.wallet_address, chain.name());
-        
-        let provider = ProviderBuilder::new()
-            .connect_http(chain.rpc_url().parse()?);
-        
-        let balance = provider.get_balance(self.wallet_address).await?;
-        
-        // Only include if balance > 0
-        if balance > U256::ZERO {
-            let balance_str = format!("{}", balance);
-            tracing::info!("Found {} balance: {} wei", chain.native_symbol(), balance_str);
-            
-            Ok(Some(Balance {
-                asset: format!("{}-{}", chain.native_symbol(), chain.name()),
-                quantity: balance_str.clone(),
-                available: balance_str.clone(),
-                frozen: "0".to_string(),
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Fetch ERC-20 token balances for the wallet
-    async fn fetch_token_balances(&self, chain: &EvmChain) -> Result<Vec<Balance>, Box<dyn Error + Send + Sync>> {
-        tracing::debug!("Fetching token balances for {} on {}", self.wallet_address, chain.name());
-        
-        let provider = ProviderBuilder::new()
-            .connect_http(chain.rpc_url().parse()?);
-        
-        let mut balances = Vec::new();
-        let common_tokens = get_common_tokens(chain);
-        
-        for (symbol, token_address_str) in common_tokens {
-            // Parse token address
-            let token_address = match token_address_str.parse::<Address>() {
-                Ok(addr) => addr,
-                Err(e) => {
-                    tracing::warn!("Failed to parse token address {}: {}", token_address_str, e);
-                    continue;
-                }
-            };
-            
-            let erc20 = ERC20::new(token_address, &provider);
-            
-            // Fetch balance
-            match erc20.balanceOf(self.wallet_address).call().await {
-                Ok(balance) => {
-                    if balance > U256::ZERO {
-                        let balance_str = format!("{}", balance);
-                        tracing::info!("Found {} balance on {}: {}", symbol, chain.name(), balance_str);
-                        
-                        balances.push(Balance {
-                            asset: format!("{}-{}", symbol, chain.name()),
-                            quantity: balance_str.clone(),
-                            available: balance_str.clone(),
-                            frozen: "0".to_string(),
-                        });
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to fetch {} balance on {}: {}", symbol, chain.name(), e);
-                }
-            }
-        }
-        
-        Ok(balances)
-    }
 }
 
 #[async_trait]
 impl ExchangeConnector for EvmConnector {
     async fn fetch_spot_balances(&self) -> Result<Vec<Balance>, Box<dyn Error + Send + Sync>> {
-        tracing::info!("Fetching balances for wallet {} across {} chains", 
+        tracing::info!("Fetching balances for wallet {} across {} chains (parallel)", 
             self.wallet_address, self.chains.len());
         
-        let mut all_balances = Vec::new();
+        // Create rate limiter for RPC calls
+        let rate_limiter = RateLimiter::evm_rpc();
         
-        for chain in &self.chains {
-            tracing::info!("Checking {} chain", chain.name());
+        // Fetch balances from all chains in parallel
+        let fetch_tasks: Vec<_> = self.chains.iter().map(|chain| {
+            let chain = chain.clone();
+            let wallet_address = format!("{:?}", self.wallet_address); // Convert Address to hex string
+            let rate_limiter = rate_limiter.clone();
             
-            // Fetch native balance
-            match self.fetch_native_balance(chain).await {
-                Ok(Some(balance)) => all_balances.push(balance),
-                Ok(None) => {},
-                Err(e) => {
-                    tracing::error!("Failed to fetch native balance on {}: {}", chain.name(), e);
+            async move {
+                // Acquire rate limit permit
+                let _permit = rate_limiter.acquire().await.ok()?;
+                
+                tracing::info!("Checking {} chain", chain.name());
+                let mut chain_balances = Vec::new();
+                
+                // Fetch native balance
+                match fetch_native_balance_for_chain(&wallet_address, &chain).await {
+                    Ok(Some(balance)) => chain_balances.push(balance),
+                    Ok(None) => {},
+                    Err(e) => {
+                        tracing::error!("Failed to fetch native balance on {}: {}", chain.name(), e);
+                    }
                 }
+                
+                // Fetch token balances
+                match fetch_token_balances_for_chain(&wallet_address, &chain).await {
+                    Ok(balances) => chain_balances.extend(balances),
+                    Err(e) => {
+                        tracing::error!("Failed to fetch token balances on {}: {}", chain.name(), e);
+                    }
+                }
+                
+                Some(chain_balances)
             }
-            
-            // Fetch token balances
-            match self.fetch_token_balances(chain).await {
-                Ok(balances) => all_balances.extend(balances),
-                Err(e) => {
-                    tracing::error!("Failed to fetch token balances on {}: {}", chain.name(), e);
-                }
+        }).collect();
+        
+        // Wait for all chain queries to complete
+        let results = join_all(fetch_tasks).await;
+        
+        // Flatten results
+        let mut all_balances = Vec::new();
+        for result in results {
+            if let Some(balances) = result {
+                all_balances.extend(balances);
             }
         }
         
         tracing::info!("Fetched {} total balances for wallet", all_balances.len());
         Ok(all_balances)
     }
+}
+
+// Helper function to fetch native balance for a chain
+async fn fetch_native_balance_for_chain(
+    wallet_address: &str,
+    chain: &EvmChain,
+) -> Result<Option<Balance>, Box<dyn Error + Send + Sync>> {
+    let provider = ProviderBuilder::new().connect_http(chain.rpc_url().parse()?);
+    let address: Address = wallet_address.parse()?;
+    
+    let balance = provider.get_balance(address).await?;
+    
+    if balance == U256::ZERO {
+        return Ok(None);
+    }
+    
+    let balance_str = balance.to_string();
+    
+    Ok(Some(Balance {
+        asset: format!("{}-{}", chain.native_symbol(), chain.name()),
+        quantity: balance_str.clone(),
+        available: balance_str.clone(),
+        frozen: "0".to_string(),
+    }))
+}
+
+// Helper function to fetch token balances for a chain
+async fn fetch_token_balances_for_chain(
+    wallet_address: &str,
+    chain: &EvmChain,
+) -> Result<Vec<Balance>, Box<dyn Error + Send + Sync>> {
+    let provider = ProviderBuilder::new().connect_http(chain.rpc_url().parse()?);
+    let wallet_address: Address = wallet_address.parse()?;
+    
+    let token_addresses = get_common_tokens(chain);
+    let mut balances = Vec::new();
+    
+    for (symbol, token_address) in token_addresses {
+        let contract_address: Address = match token_address.parse() {
+            Ok(addr) => addr,
+            Err(e) => {
+                tracing::warn!("Failed to parse token address {}: {}", token_address, e);
+                continue;
+            }
+        };
+        
+        let contract = ERC20::new(contract_address, provider.clone());
+        
+        match contract.balanceOf(wallet_address).call().await {
+            Ok(balance) => {
+                if balance > U256::ZERO {
+                    let balance_str = balance.to_string();
+                    
+                    balances.push(Balance {
+                        asset: format!("{}-{}", symbol, chain.name()),
+                        quantity: balance_str.clone(),
+                        available: balance_str.clone(),
+                        frozen: "0".to_string(),
+                    });
+                    
+                    tracing::debug!(
+                        "Found {} {} on {} ({})",
+                        balance_str,
+                        symbol,
+                        chain.name(),
+                        token_address
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    "Failed to check balance for {} on {}: {}",
+                    symbol,
+                    chain.name(),
+                    e
+                );
+            }
+        }
+    }
+    
+    Ok(balances)
 }
 
 #[cfg(test)]

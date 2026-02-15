@@ -254,7 +254,7 @@ Always disable and show loading state for async button actions:
 ## Component Architecture
 
 ```
-frontend-react/
+web/
 ├── contexts/
 │   └── ToastContext.tsx         # Toast state management
 ├── components/

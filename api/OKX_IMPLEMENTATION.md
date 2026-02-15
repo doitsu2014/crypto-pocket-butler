@@ -117,7 +117,7 @@ Response:
 
 ### Running Tests
 ```bash
-cd backend-rust
+cd api
 cargo test
 ```
 
@@ -225,8 +225,8 @@ Each layer handles specific errors:
 
 ## Documentation
 
-- **Connector Documentation**: `backend-rust/src/connectors/README.md`
-- **Main README**: `backend-rust/README.md` (updated with sync feature)
+- **Connector Documentation**: `api/src/connectors/README.md`
+- **Main README**: `api/README.md` (updated with sync feature)
 - **API Documentation**: Available via Swagger UI at `/swagger-ui`
 - **Code Comments**: Inline documentation throughout codebase
 

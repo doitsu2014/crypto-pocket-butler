@@ -79,7 +79,7 @@ The frontend will be available at http://localhost:3001
 ## Project Structure
 
 ```
-frontend-react/
+web/
 ├── app/
 │   ├── api/
 │   │   ├── auth/[...nextauth]/   # NextAuth.js API routes

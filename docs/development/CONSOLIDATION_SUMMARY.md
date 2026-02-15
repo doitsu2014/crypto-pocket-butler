@@ -48,13 +48,13 @@ Added API integration section with:
 
 ### Before
 ```
-Frontend → 16 separate route handlers → Backend
-          (each doing the same auth/proxy logic)
+Web → 16 separate route handlers → API
+      (each doing the same auth/proxy logic)
 ```
 
 ### After
 ```
-Frontend Component
+Web Component
    ↓
 TanStack Query Hook (useAccounts, usePortfolios, etc.)
    ↓
@@ -62,7 +62,7 @@ apiClient() [lib/api-client.ts]
    ↓
 Unified Proxy [/api/backend/[...path]]
    ↓
-Backend (with automatic auth)
+API (with automatic auth)
 ```
 
 ## Statistics

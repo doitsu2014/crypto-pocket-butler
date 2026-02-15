@@ -1,6 +1,6 @@
-FROM alpine:3.21
+FROM ubuntu:22.04
 
-RUN apk add --no-cache curl bash jq openssl
+RUN apt-get update && apt-get install -y curl bash jq openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY init-keycloak.sh /init-keycloak.sh
 RUN chmod +x /init-keycloak.sh

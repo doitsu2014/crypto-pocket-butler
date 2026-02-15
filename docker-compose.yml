@@ -48,7 +48,7 @@ services:
     networks:
       - crypto-pocket-butler-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/realms/master || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -66,8 +66,7 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
       WEB_ROOT_URL: ${WEB_ROOT_URL:-http://localhost:3001}
     depends_on:
-      keycloak:
-        condition: service_healthy
+      - keycloak
     networks:
       - crypto-pocket-butler-network
     restart: "no"

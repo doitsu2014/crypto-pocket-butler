@@ -2,7 +2,7 @@
 set -e
 
 echo "Waiting for Keycloak to be ready..."
-until curl -sf http://localhost:8080/health/ready > /dev/null; do
+until curl -sf http://keycloak:8080/realms/master > /dev/null; do
   echo "Keycloak is not ready yet, waiting..."
   sleep 5
 done
@@ -11,7 +11,7 @@ echo "Keycloak is ready! Starting configuration..."
 
 # Get admin access token
 echo "Getting admin access token..."
-ADMIN_TOKEN=$(curl -s -X POST "http://localhost:8080/realms/master/protocol/openid-connect/token" \
+ADMIN_TOKEN=$(curl -s -X POST "http://keycloak:8080/realms/master/protocol/openid-connect/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin" \
   -d "password=admin" \
@@ -28,13 +28,13 @@ echo "Admin token obtained successfully"
 # Check if realm already exists
 REALM_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "http://localhost:8080/admin/realms/${KEYCLOAK_REALM}")
+  "http://keycloak:8080/admin/realms/${KEYCLOAK_REALM}")
 
 if [ "$REALM_EXISTS" -eq 200 ]; then
   echo "Realm '${KEYCLOAK_REALM}' already exists, skipping creation"
 else
   echo "Creating realm '${KEYCLOAK_REALM}'..."
-  curl -s -X POST "http://localhost:8080/admin/realms" \
+  curl -s -X POST "http://keycloak:8080/admin/realms" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
@@ -60,7 +60,7 @@ else
 fi
 
 # Get updated admin token for the new realm operations
-ADMIN_TOKEN=$(curl -s -X POST "http://localhost:8080/realms/master/protocol/openid-connect/token" \
+ADMIN_TOKEN=$(curl -s -X POST "http://keycloak:8080/realms/master/protocol/openid-connect/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin" \
   -d "password=admin" \
@@ -70,7 +70,7 @@ ADMIN_TOKEN=$(curl -s -X POST "http://localhost:8080/realms/master/protocol/open
 # Check if client already exists
 CLIENT_EXISTS=$(curl -s \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "http://localhost:8080/admin/realms/${KEYCLOAK_REALM}/clients" | jq -r ".[] | select(.clientId==\"${KEYCLOAK_CLIENT_ID}\") | .id")
+  "http://keycloak:8080/admin/realms/${KEYCLOAK_REALM}/clients" | jq -r ".[] | select(.clientId==\"${KEYCLOAK_CLIENT_ID}\") | .id")
 
 if [ -n "$CLIENT_EXISTS" ]; then
   echo "Client '${KEYCLOAK_CLIENT_ID}' already exists, skipping creation"
@@ -84,7 +84,7 @@ else
     echo "IMPORTANT: Save this client secret in your .env file as KEYCLOAK_CLIENT_SECRET"
   fi
   
-  curl -s -X POST "http://localhost:8080/admin/realms/${KEYCLOAK_REALM}/clients" \
+  curl -s -X POST "http://keycloak:8080/admin/realms/${KEYCLOAK_REALM}/clients" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
@@ -122,13 +122,13 @@ fi
 # Check if test user already exists
 USER_EXISTS=$(curl -s \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "http://localhost:8080/admin/realms/${KEYCLOAK_REALM}/users?username=testuser" | jq -r '.[0].id')
+  "http://keycloak:8080/admin/realms/${KEYCLOAK_REALM}/users?username=testuser" | jq -r '.[0].id')
 
 if [ -n "$USER_EXISTS" ] && [ "$USER_EXISTS" != "null" ]; then
   echo "Test user already exists, skipping creation"
 else
   echo "Creating test user..."
-  USER_ID=$(curl -s -X POST "http://localhost:8080/admin/realms/${KEYCLOAK_REALM}/users" \
+  USER_ID=$(curl -s -X POST "http://keycloak:8080/admin/realms/${KEYCLOAK_REALM}/users" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
@@ -159,5 +159,5 @@ echo "=========================================="
 echo "Realm: ${KEYCLOAK_REALM}"
 echo "Client ID: ${KEYCLOAK_CLIENT_ID}"
 echo "Test User: testuser / testpass123"
-echo "Admin Console: http://localhost:8080"
+echo "Admin Console: http://keycloak:8080"
 echo "=========================================="

@@ -53,7 +53,7 @@ After the services are up, configure Keycloak:
    - Web origins: `http://localhost:3001`
 6. Create a test user
 
-See [docs/KEYCLOAK_SETUP.md](docs/KEYCLOAK_SETUP.md) for detailed instructions.
+See [KEYCLOAK_SETUP.md](KEYCLOAK_SETUP.md) for detailed instructions.
 
 ### 4. Access the Application
 

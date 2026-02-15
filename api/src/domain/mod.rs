@@ -19,7 +19,7 @@
 ///
 /// # JSON Schema Documentation
 ///
-/// See [`JSON_SCHEMA.md`](./JSON_SCHEMA.md) for complete JSON schema documentation
+/// See [docs/backend/JSON_SCHEMA.md](../../../../docs/backend/JSON_SCHEMA.md) for complete JSON schema documentation
 /// including examples, field descriptions, and storage locations.
 
 pub mod holdings;

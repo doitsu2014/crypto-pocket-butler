@@ -263,6 +263,7 @@ See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for frontend configuration.
 - [UI Style Guide](docs/UI-STYLE-GUIDE.md)
 - [Backend README](backend-rust/README.md)
 - [Technical Design](docs/TECHNICAL_DESIGN.md)
+- [Naming Convention](NAMING_CONVENTION.md)
 
 ## Troubleshooting
 

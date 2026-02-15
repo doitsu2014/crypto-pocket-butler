@@ -69,27 +69,15 @@ cargo run
 
 ### 2. Keycloak Setup
 
-Follow the [Keycloak Setup Guide](docs/setup/KEYCLOAK_SETUP.md) to set up authentication.
+When using Docker Compose (recommended), Keycloak is **automatically configured** with:
+- PostgreSQL database for persistent storage
+- Realm: `myrealm`
+- OAuth 2.0 client with Authorization Code flow and PKCE
+- Test user: `testuser` / `testpass123`
 
-**Quick setup for local development:**
+No manual Keycloak configuration needed!
 
-```bash
-docker run -d \
-  --name keycloak \
-  -p 8080:8080 \
-  -e KEYCLOAK_ADMIN=admin \
-  -e KEYCLOAK_ADMIN_PASSWORD=admin \
-  quay.io/keycloak/keycloak:latest \
-  start-dev
-```
-
-Then configure:
-1. Create realm: `myrealm`
-2. Create client: `crypto-pocket-butler`
-3. Configure redirect URIs and client settings
-4. Create a test user
-
-See [docs/setup/KEYCLOAK_SETUP.md](docs/setup/KEYCLOAK_SETUP.md) for detailed instructions.
+For manual setup or additional configuration, see [docs/setup/KEYCLOAK_SETUP.md](docs/setup/KEYCLOAK_SETUP.md).
 
 ### 3. API Setup
 

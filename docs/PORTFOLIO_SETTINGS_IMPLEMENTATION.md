@@ -6,7 +6,7 @@ This implementation adds UI and backend support for portfolio targets (target al
 ## Backend Changes
 
 ### Database Migration
-**File**: `backend-rust/migration/src/m20240101_000008_add_settings_to_portfolios.rs`
+**File**: `api/migration/src/m20240101_000008_add_settings_to_portfolios.rs`
 
 Added two JSONB columns to the `portfolios` table:
 - `target_allocation`: Stores target percentages for each asset (e.g., `{"BTC": 40, "ETH": 30, "USDT": 30}`)
@@ -19,7 +19,7 @@ ALTER TABLE portfolios ADD COLUMN guardrails JSONB NULL;
 ```
 
 ### Entity Model
-**File**: `backend-rust/src/entities/portfolios.rs`
+**File**: `api/src/entities/portfolios.rs`
 
 Updated the Portfolio entity to include:
 ```rust
@@ -31,7 +31,7 @@ pub struct Model {
 ```
 
 ### API DTOs
-**File**: `backend-rust/src/handlers/portfolios.rs`
+**File**: `api/src/handlers/portfolios.rs`
 
 Updated request/response DTOs:
 
@@ -55,7 +55,7 @@ Updated handlers to persist the new fields:
 ## Frontend Changes
 
 ### New Settings Page
-**File**: `frontend-react/app/portfolios/[id]/settings/page.tsx`
+**File**: `web/app/portfolios/[id]/settings/page.tsx`
 
 Server-side page component that:
 - Checks authentication
@@ -63,7 +63,7 @@ Server-side page component that:
 - Provides navigation breadcrumbs
 
 ### Settings Client Component
-**File**: `frontend-react/app/portfolios/[id]/settings/components/SettingsClient.tsx`
+**File**: `web/app/portfolios/[id]/settings/components/SettingsClient.tsx`
 
 Main interactive component with:
 
@@ -102,7 +102,7 @@ validateForm(): string | null {
 ```
 
 ### Navigation Update
-**File**: `frontend-react/app/portfolios/[id]/components/PortfolioDetailClient.tsx`
+**File**: `web/app/portfolios/[id]/components/PortfolioDetailClient.tsx`
 
 Added "Settings" button to Quick Actions section:
 - Links to `/portfolios/[id]/settings`
@@ -226,14 +226,14 @@ Response:
 
 ### Backend Build
 ```bash
-cd backend-rust
+cd api
 cargo build
 # Success - compiles with new fields
 ```
 
 ### Frontend Build
 ```bash
-cd frontend-react
+cd web
 npm install
 npm run build
 # Success - TypeScript types check, build succeeds
@@ -242,7 +242,7 @@ npm run build
 
 ### Database Migration
 ```bash
-cd backend-rust/migration
+cd api/migration
 cargo run -- up
 # Migration m20240101_000008_add_settings_to_portfolios applied successfully
 ```

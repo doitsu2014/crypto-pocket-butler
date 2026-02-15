@@ -9,14 +9,14 @@ A small (but serious) pet project: **crypto portfolio management** across wallet
 - **Authentication**: Keycloak JWT validation with axum-keycloak-auth
 - **Database**: PostgreSQL with SeaORM
 - **API Documentation**: Swagger UI with utoipa (publicly accessible at `/swagger-ui`)
-- **Location**: `backend-rust/`
+- **Location**: `api/`
 
 ### Frontend (Next.js)
 - **Framework**: Next.js 16 with App Router
 - **Authentication**: NextAuth.js v5 with Keycloak OIDC (Authorization Code + PKCE)
 - **Styling**: TailwindCSS 4
 - **Language**: TypeScript
-- **Location**: `frontend-react/`
+- **Location**: `web/`
 
 See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for detailed setup instructions and [docs/UI-STYLE-GUIDE.md](docs/UI-STYLE-GUIDE.md) for the design system documentation.
 
@@ -51,7 +51,7 @@ See [DOCKER_SETUP.md](DOCKER_SETUP.md) for detailed Docker instructions.
 Start PostgreSQL using Docker Compose:
 
 ```bash
-cd backend-rust
+cd api
 docker-compose up -d
 ```
 
@@ -63,7 +63,7 @@ This will start PostgreSQL on `localhost:5432` with:
 Run database migrations:
 
 ```bash
-cd backend-rust/migration
+cd api/migration
 cargo run
 ```
 
@@ -96,7 +96,7 @@ See [docs/KEYCLOAK_SETUP.md](docs/KEYCLOAK_SETUP.md) for detailed instructions.
 Configure environment variables:
 
 ```bash
-cd backend-rust
+cd api
 cp .env.example .env
 # Edit .env with your actual configuration
 ```
@@ -110,7 +110,7 @@ Required environment variables in `.env`:
 Start the backend server:
 
 ```bash
-cd backend-rust
+cd api
 cargo run
 ```
 
@@ -124,7 +124,7 @@ The backend will be available at:
 Configure environment variables:
 
 ```bash
-cd frontend-react
+cd web
 npm install
 # Create .env.local with your Keycloak settings (see docs/FRONTEND_SETUP.md)
 ```
@@ -132,7 +132,7 @@ npm install
 Start the frontend development server:
 
 ```bash
-cd frontend-react
+cd web
 npm run dev
 ```
 
@@ -146,13 +146,13 @@ See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for detailed frontend setup
 
 **Backend:**
 ```bash
-cd backend-rust
+cd api
 cargo test
 ```
 
 **Frontend:**
 ```bash
-cd frontend-react
+cd web
 npm test
 ```
 
@@ -160,13 +160,13 @@ npm test
 
 **Backend:**
 ```bash
-cd backend-rust
+cd api
 cargo build --release
 ```
 
 **Frontend:**
 ```bash
-cd frontend-react
+cd web
 npm run build
 ```
 
@@ -174,19 +174,19 @@ npm run build
 
 **Run migrations:**
 ```bash
-cd backend-rust/migration
+cd api/migration
 cargo run -- up
 ```
 
 **Rollback last migration:**
 ```bash
-cd backend-rust/migration
+cd api/migration
 cargo run -- down
 ```
 
 **Reset database:**
 ```bash
-cd backend-rust/migration
+cd api/migration
 cargo run -- reset
 ```
 
@@ -194,12 +194,12 @@ cargo run -- reset
 
 ```
 .
-├── backend-rust/          # Rust backend with Axum
+├── api/                   # Rust backend with Axum
 │   ├── src/              # Source code
 │   ├── migration/        # Database migrations
 │   ├── .env.example      # Environment variables template
 │   └── Cargo.toml        # Rust dependencies
-├── frontend-react/        # Next.js frontend
+├── web/                   # Next.js frontend
 │   ├── app/              # App Router pages
 │   ├── components/       # React components
 │   └── lib/              # Utilities and helpers
@@ -214,7 +214,7 @@ cargo run -- reset
 
 ### Backend Environment Variables
 
-See `backend-rust/.env.example` for the complete list. Key variables:
+See `api/.env.example` for the complete list. Key variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -261,8 +261,9 @@ See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for frontend configuration.
 - [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
 - [Swagger UI Guide](docs/SWAGGER_UI_GUIDE.md)
 - [UI Style Guide](docs/UI-STYLE-GUIDE.md)
-- [Backend README](backend-rust/README.md)
+- [Backend README](api/README.md)
 - [Technical Design](docs/TECHNICAL_DESIGN.md)
+- [Naming Convention](NAMING_CONVENTION.md)
 
 ## Troubleshooting
 

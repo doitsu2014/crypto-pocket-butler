@@ -237,7 +237,7 @@ Snapshot holdings use the same structure as allocation items:
 
 ### Type Safety
 
-All JSON structures have corresponding Rust structs in `backend-rust/src/domain/`:
+All JSON structures have corresponding Rust structs in `api/src/domain/`:
 
 - `AccountHolding` - for account holdings
 - `AllocationItem` - for allocation holdings

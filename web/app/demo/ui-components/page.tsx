@@ -380,7 +380,7 @@ if (loading) {
 
         {/* Footer */}
         <div className="text-center text-slate-500 text-sm py-8 border-t-2 border-violet-500/20">
-          <p>For more details, see the components README at <code className="text-violet-400">/frontend-react/components/README.md</code></p>
+          <p>For more details, see the components README at <code className="text-violet-400">/web/components/README.md</code></p>
         </div>
       </div>
     </div>

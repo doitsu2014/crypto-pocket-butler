@@ -162,7 +162,7 @@ export default function SnapshotsPage() {
 
 ### Build Verification
 ```bash
-cd frontend-react
+cd web
 npm run build
 ```
 Expected: ✅ Build succeeds with no errors
@@ -215,7 +215,7 @@ Potential improvements:
 ## Related Documentation
 
 - [Portfolio UI Components](../../../components/portfolio/README.md)
-- [API Documentation](../../../../backend-rust/README.md)
+- [API Documentation](../../../../api/README.md)
 - [UI Standardization](../../../../docs/UI-STANDARDIZATION.md)
 
 ## Notes

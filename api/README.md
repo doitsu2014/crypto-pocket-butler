@@ -1,4 +1,4 @@
-# backend-rust
+# api
 
 Rust backend service for Crypto Pocket Butler:
 - Axum HTTP API with Keycloak JWT authentication using `axum-keycloak-auth`
@@ -43,7 +43,7 @@ The backend uses [`utoipa`](https://github.com/juhaku/utoipa) for compile-time O
 
 ### Environment Variables
 
-The backend supports configuration via environment variables or a `.env` file. For local development, create a `.env` file in the `backend-rust/` directory:
+The backend supports configuration via environment variables or a `.env` file. For local development, create a `.env` file in the `api/` directory:
 
 ```bash
 cp .env.example .env

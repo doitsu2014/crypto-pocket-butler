@@ -280,15 +280,15 @@ Potential areas for future improvement:
 
 ## Related Files
 
-- **Implementation**: `backend-rust/src/helpers/asset_identity.rs`
-- **Integration**: `backend-rust/src/handlers/portfolios.rs` (construct_portfolio_allocation)
+- **Implementation**: `api/src/helpers/asset_identity.rs`
+- **Integration**: `api/src/handlers/portfolios.rs` (construct_portfolio_allocation)
 - **Database Models**:
-  - `backend-rust/src/entities/assets.rs`
-  - `backend-rust/src/entities/asset_contracts.rs`
-  - `backend-rust/src/entities/asset_prices.rs`
+  - `api/src/entities/assets.rs`
+  - `api/src/entities/asset_contracts.rs`
+  - `api/src/entities/asset_prices.rs`
 - **Connectors**:
-  - `backend-rust/src/connectors/okx.rs`
-  - `backend-rust/src/connectors/evm.rs`
+  - `api/src/connectors/okx.rs`
+  - `api/src/connectors/evm.rs`
 
 ## Contact
 

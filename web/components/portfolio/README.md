@@ -218,7 +218,7 @@ To test these components:
 
 1. **Build the project:**
    ```bash
-   cd frontend-react
+   cd web
    npm run build
    ```
 

@@ -1,10 +1,10 @@
-# Frontend Backend Route Consolidation - Summary
+# Web API Route Consolidation - Summary
 
 ## Problem Solved
 
-The frontend had **16 duplicate API route files** (app/api/backend/v1/**) totaling ~1,158 lines of code. Each route manually:
+The web service had **16 duplicate API route files** (app/api/backend/v1/**) totaling ~1,158 lines of code. Each route manually:
 - Extracted auth tokens from session
-- Forwarded requests to backend
+- Forwarded requests to API
 - Handled responses/errors
 - Duplicated the same logic everywhere
 
@@ -38,7 +38,7 @@ Enhanced `lib/api-client.ts` with:
 - Clear separation of client-side vs server-side usage
 - Examples for all HTTP methods
 
-### 5. Updated Frontend README
+### 5. Updated Web README
 Added API integration section with:
 - Quick reference to the guide
 - Example usage patterns
@@ -141,18 +141,18 @@ queryFn: async () => apiClient<Account[]>("/v1/accounts")
 fetch("/api/backend/v1/accounts")
 
 // 4. Proxy adds auth and forwards
-fetch("http://backend:3000/api/v1/accounts", {
+fetch("http://api:3000/api/v1/accounts", {
   headers: { Authorization: `Bearer ${token}` }
 })
 
 // 5. Response flows back through chain
-Backend → Proxy → apiClient → Hook → Component
+API → Proxy → apiClient → Hook → Component
 ```
 
 ### Authentication
 - **Automatic**: Every request is authenticated
 - **Secure**: Tokens in HTTP-only cookies
-- **Transparent**: Frontend code never handles tokens
+- **Transparent**: Web code never handles tokens
 - **Centralized**: All auth logic in proxy layer
 
 ## Usage Examples
@@ -241,4 +241,4 @@ This refactoring successfully:
 5. Maintained all existing functionality
 6. Passed all quality checks
 
-The frontend now has a **unified, well-documented, type-safe** approach to backend API communication that's easy to understand, maintain, and extend.
+The web service now has a **unified, well-documented, type-safe** approach to API communication that's easy to understand, maintain, and extend.

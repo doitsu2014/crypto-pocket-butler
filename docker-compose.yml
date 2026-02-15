@@ -42,12 +42,12 @@ services:
       retries: 5
       start_period: 60s
 
-  # Rust Backend API
-  backend:
+  # Rust API
+  api:
     build:
       context: ./api
       dockerfile: Dockerfile
-    container_name: crypto-pocket-butler-backend
+    container_name: crypto-pocket-butler-api
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/crypto_pocket_butler
       KEYCLOAK_SERVER: http://keycloak:8080
@@ -67,12 +67,12 @@ services:
       - crypto-pocket-butler-network
     restart: unless-stopped
 
-  # Next.js Frontend
-  frontend:
+  # Next.js Web Interface
+  web:
     build:
       context: ./web
       dockerfile: Dockerfile
-    container_name: crypto-pocket-butler-frontend
+    container_name: crypto-pocket-butler-web
     environment:
       # NextAuth Configuration
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
@@ -81,12 +81,12 @@ services:
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-crypto-pocket-butler}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/myrealm}
-      # Backend API Configuration (client-side, accessed from browser)
+      # API Configuration (client-side, accessed from browser)
       NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:3000}
     ports:
       - "3001:3001"
     depends_on:
-      - backend
+      - api
       - keycloak
     networks:
       - crypto-pocket-butler-network

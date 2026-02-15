@@ -29,7 +29,7 @@ Open http://localhost:8080 and log in with:
 3. Name: `myrealm`
 4. Click "Create"
 
-### 4. Create a Client for Frontend
+### 4. Create a Client for Web
 
 1. Go to **Clients** → Click "Create client"
 2. **General Settings:**
@@ -61,12 +61,12 @@ Open http://localhost:8080 and log in with:
    - Go to the "Credentials" tab
    - Copy the "Client secret" value
 
-### 5. Create a Client for Backend (Optional)
+### 5. Create a Client for API (Optional)
 
-If you want the backend to validate tokens from a different audience:
+If you want the API to validate tokens from a different audience:
 
-1. Create another client with ID matching `KEYCLOAK_AUDIENCE` from backend config
-2. Or use the same client ID for both frontend and backend
+1. Create another client with ID matching `KEYCLOAK_AUDIENCE` from API config
+2. Or use the same client ID for both web and API
 
 ### 6. Create a Test User
 
@@ -84,7 +84,7 @@ If you want the backend to validate tokens from a different audience:
    - Temporary: `OFF`
 6. Click "Save"
 
-### 7. Configure Frontend Environment
+### 7. Configure Web Environment
 
 Update `web/.env.local`:
 
@@ -99,7 +99,7 @@ KEYCLOAK_ISSUER=http://localhost:8080/realms/myrealm
 NEXT_PUBLIC_BACKEND_URL=http://localhost:3000
 ```
 
-### 8. Configure Backend Environment
+### 8. Configure API Environment
 
 Create `api/.env`:
 
@@ -116,27 +116,27 @@ If you have an existing Keycloak server:
 1. Create a realm (or use existing)
 2. Create a client following steps 4-5 above
 3. Update the URLs to match your Keycloak server URL
-4. Configure frontend and backend with your server's URL
+4. Configure web and API with your server's URL
 
 ## Testing the Setup
 
-### 1. Start Backend
+### 1. Start API
 
 ```bash
 cd api
 cargo run
 ```
 
-Backend will be available at http://localhost:3000
+API will be available at http://localhost:3000
 
-### 2. Start Frontend
+### 2. Start Web
 
 ```bash
 cd web
 npm run dev
 ```
 
-Frontend will be available at http://localhost:3001
+Web service will be available at http://localhost:3001
 
 ### 3. Test Authentication Flow
 
@@ -146,7 +146,7 @@ Frontend will be available at http://localhost:3001
 4. Click "Sign in with Keycloak"
 5. Log in with your test user credentials
 6. You should be redirected back to the dashboard
-7. The dashboard should display user information fetched from the backend
+7. The dashboard should display user information fetched from the API
 
 ## Troubleshooting
 
@@ -158,9 +158,9 @@ Frontend will be available at http://localhost:3001
 - Verify the client secret is correct
 - Ensure client authentication is enabled in Keycloak
 
-### Backend returns 401 Unauthorized
-- Check that backend and frontend are using the same Keycloak realm
-- Verify the audience claim matches between frontend and backend
+### API returns 401 Unauthorized
+- Check that API and web service are using the same Keycloak realm
+- Verify the audience claim matches between web and API
 - Ensure the token is being sent in the Authorization header
 
 ### CORS errors

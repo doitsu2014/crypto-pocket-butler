@@ -215,7 +215,7 @@ Potential improvements:
 ## Related Documentation
 
 - [Portfolio Components](portfolio-components.md)
-- [API Documentation](../backend/backend-overview.md)
+- [API Documentation](../api/api-overview.md)
 - [UI Standardization](UI-STANDARDIZATION.md)
 
 ## Notes

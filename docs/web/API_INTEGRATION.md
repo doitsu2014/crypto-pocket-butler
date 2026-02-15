@@ -1,6 +1,6 @@
 # API Integration Guide
 
-This guide explains how to integrate with the backend API in a consistent and maintainable way.
+This guide explains how to integrate with the API in a consistent and maintainable way.
 
 ## Table of Contents
 
@@ -18,7 +18,7 @@ This guide explains how to integrate with the backend API in a consistent and ma
 ### Request Flow
 
 ```
-Frontend Component
+Web Component
     ↓
 TanStack Query Hook (useAccounts, usePortfolios, etc.)
     ↓
@@ -26,7 +26,7 @@ apiClient() function (lib/api-client.ts)
     ↓
 Next.js API Proxy (/api/backend/[...path])
     ↓
-Rust Backend API
+Rust API
 ```
 
 ### Why This Architecture?
@@ -41,14 +41,14 @@ Rust Backend API
 
 ## Authenticated Requests
 
-### All Backend Requests Are Authenticated
+### All API Requests Are Authenticated
 
-Every request to the backend requires authentication. The architecture automatically handles this:
+Every request to the API requires authentication. The architecture automatically handles this:
 
 1. User signs in via Keycloak (OIDC/PKCE flow)
 2. NextAuth stores the access token in a secure HTTP-only cookie
 3. The Next.js API proxy extracts the token from the session
-4. The proxy forwards the request to the backend with `Authorization: Bearer <token>` header
+4. The proxy forwards the request to the API with `Authorization: Bearer <token>` header
 
 ### No Manual Token Handling Required
 
@@ -231,7 +231,7 @@ function MyComponent() {
 |------------|--------------|---------------|
 | `auth` | 401, 403 | Token expired, insufficient permissions |
 | `validation` | 400, 422 | Invalid input data |
-| `server` | 500-599 | Backend errors, database issues |
+| `server` | 500-599 | API errors, database issues |
 | `network` | - | Connection lost, timeout |
 | `unknown` | Other 4xx | Other client errors |
 

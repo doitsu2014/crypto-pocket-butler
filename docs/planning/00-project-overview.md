@@ -7,7 +7,7 @@ Build a crypto portfolio management system that aggregates positions across wall
 
 ## Goals (MVP)
 - Core split: (A) Infrastructure Data (market reference + account holdings) and (B) Portfolios (construct allocation + snapshots).
-- User authentication and authorization via Keycloak (frontend + backend).
+- User authentication and authorization via Keycloak (web + API).
 - User-defined portfolios that choose which wallets/exchanges are included.
 - Daily end-of-day (EOD) portfolio snapshots.
 - Connect data sources: on-chain wallets + exchange accounts (read-only first).

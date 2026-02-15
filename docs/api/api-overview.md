@@ -1,6 +1,6 @@
-# api
+# API
 
-Rust backend service for Crypto Pocket Butler:
+Rust service for Crypto Pocket Butler:
 - Axum HTTP API with Keycloak JWT authentication using `axum-keycloak-auth`
 - OpenAPI documentation with Swagger UI using `utoipa`
 - Scheduled workers for syncing accounts (planned)
@@ -10,7 +10,7 @@ Rust backend service for Crypto Pocket Butler:
 
 ### Concurrency & Performance
 
-The backend is designed for high-performance concurrent request handling:
+The API is designed for high-performance concurrent request handling:
 
 - **Thread Pool**: Tokio multi-threaded runtime with work-stealing scheduler
 - **Connection Pool**: Configurable database connection pool (default: 100 max connections)
@@ -21,7 +21,7 @@ See [CONCURRENCY.md](./CONCURRENCY.md) for detailed information on thread pools,
 
 ### Keycloak JWT Authentication Middleware
 
-The backend uses the [`axum-keycloak-auth`](https://github.com/lpotthast/axum-keycloak-auth) library for robust JWT validation:
+The API uses the [`axum-keycloak-auth`](https://github.com/lpotthast/axum-keycloak-auth) library for robust JWT validation:
 
 - **OIDC Discovery**: Automatically discovers Keycloak configuration via OIDC endpoints
 - **JWKS Validation**: Fetches and caches Keycloak's public keys (JWKS) for JWT signature verification
@@ -32,7 +32,7 @@ The backend uses the [`axum-keycloak-auth`](https://github.com/lpotthast/axum-ke
 
 ### OpenAPI Documentation
 
-The backend uses [`utoipa`](https://github.com/juhaku/utoipa) for compile-time OpenAPI documentation generation:
+The API uses [`utoipa`](https://github.com/juhaku/utoipa) for compile-time OpenAPI documentation generation:
 
 - **Automatic Schema Generation**: Generate OpenAPI schemas from Rust types
 - **Interactive Swagger UI**: Browse and test API endpoints at `/swagger-ui`
@@ -43,7 +43,7 @@ The backend uses [`utoipa`](https://github.com/juhaku/utoipa) for compile-time O
 
 ### Environment Variables
 
-The backend supports configuration via environment variables or a `.env` file. For local development, create a `.env` file in the `api/` directory:
+The API supports configuration via environment variables or a `.env` file. For local development, create a `.env` file in the `api/` directory:
 
 ```bash
 cp .env.example .env
@@ -204,9 +204,9 @@ async fn protected_handler(
 
 This backend provides the server-side JWT validation using the `axum-keycloak-auth` library. The complete authentication flow works as follows:
 
-1. **Frontend → Keycloak**: User authenticates via OIDC Authorization Code + PKCE flow (frontend implementation not included)
-2. **Frontend → Backend**: Sends `Authorization: Bearer <access_token>` with each request
-3. **Backend Middleware** (`axum-keycloak-auth`):
+1. **Web → Keycloak**: User authenticates via OIDC Authorization Code + PKCE flow (web implementation not included)
+2. **Web → API**: Sends `Authorization: Bearer <access_token>` with each request
+3. **API Middleware** (`axum-keycloak-auth`):
    - Extracts token from Authorization header
    - Performs OIDC discovery to get Keycloak configuration
    - Fetches JWKS from Keycloak (cached with automatic rotation)

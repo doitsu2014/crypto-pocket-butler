@@ -27,7 +27,7 @@ Required configuration in `.env`:
 
 ### 2. Start All Services
 
-Start the entire stack (database, Keycloak, backend, frontend):
+Start the entire stack (database, Keycloak, api, web):
 
 ```bash
 docker-compose up -d
@@ -36,8 +36,8 @@ docker-compose up -d
 This will:
 1. Start PostgreSQL database on port 5432
 2. Start Keycloak authentication server on port 8080
-3. Build and start the Rust backend API on port 3000
-4. Build and start the Next.js frontend on port 3001
+3. Build and start the Rust API on port 3000
+4. Build and start the Next.js web service on port 3001
 
 ### 3. Configure Keycloak
 
@@ -57,8 +57,8 @@ See [KEYCLOAK_SETUP.md](KEYCLOAK_SETUP.md) for detailed instructions.
 
 ### 4. Access the Application
 
-- **Frontend**: http://localhost:3001
-- **Backend API**: http://localhost:3000
+- **Web**: http://localhost:3001
+- **API**: http://localhost:3000
 - **Swagger UI**: http://localhost:3000/swagger-ui
 - **Keycloak**: http://localhost:8080
 
@@ -71,8 +71,8 @@ See [KEYCLOAK_SETUP.md](KEYCLOAK_SETUP.md) for detailed instructions.
 docker-compose logs -f
 
 # Specific service
-docker-compose logs -f backend
-docker-compose logs -f frontend
+docker-compose logs -f api
+docker-compose logs -f web
 docker-compose logs -f postgres
 docker-compose logs -f keycloak
 ```
@@ -90,8 +90,8 @@ docker-compose down -v
 ### Restart a Service
 
 ```bash
-docker-compose restart backend
-docker-compose restart frontend
+docker-compose restart api
+docker-compose restart web
 ```
 
 ### Rebuild Services
@@ -100,7 +100,7 @@ After code changes:
 
 ```bash
 # Rebuild specific service
-docker-compose up -d --build backend
+docker-compose up -d --build api
 
 # Rebuild all services
 docker-compose up -d --build
@@ -120,12 +120,12 @@ The Docker Compose setup includes:
    - Admin console: http://localhost:8080
    - Port: 8080
 
-3. **Backend** (Rust/Axum)
+3. **API** (Rust/Axum)
    - RESTful API
    - Automatic database migrations on startup
    - Port: 3000
 
-4. **Frontend** (Next.js)
+4. **Web** (Next.js)
    - React-based web interface
    - Server-side rendering
    - Port: 3001
@@ -142,14 +142,14 @@ For active development, you might prefer to run services locally:
 # Run only infrastructure services (database + Keycloak)
 docker-compose up -d postgres keycloak
 
-# Then run backend and frontend locally
+# Then run api and web locally
 cd api && cargo run
 cd web && npm run dev
 ```
 
-### Backend Only
+### API Only
 
-To run only the backend with database:
+To run only the API with database:
 
 ```bash
 cd api
@@ -158,7 +158,7 @@ docker-compose up -d
 
 ## Troubleshooting
 
-### Backend fails to start
+### API fails to start
 
 1. **Database connection error**: Ensure PostgreSQL is healthy
    ```bash
@@ -166,9 +166,9 @@ docker-compose up -d
    docker-compose logs postgres
    ```
 
-2. **Migration errors**: Check backend logs
+2. **Migration errors**: Check API logs
    ```bash
-   docker-compose logs backend
+   docker-compose logs api
    ```
 
 3. **Keycloak connection error**: Ensure Keycloak is running and healthy
@@ -176,11 +176,11 @@ docker-compose up -d
    docker-compose logs keycloak
    ```
 
-### Frontend fails to start
+### Web fails to start
 
 1. **Build errors**: Check if standalone output is enabled
    ```bash
-   docker-compose logs frontend
+   docker-compose logs web
    ```
 
 2. **Authentication errors**: Verify Keycloak configuration in `.env`
@@ -193,8 +193,8 @@ If ports are already in use, you can modify them in `docker-compose.yml`:
 ports:
   - "5433:5432"  # Use 5433 instead of 5432 for PostgreSQL
   - "8081:8080"  # Use 8081 instead of 8080 for Keycloak
-  - "3001:3000"  # Use 3001 instead of 3000 for backend
-  - "3002:3001"  # Use 3002 instead of 3001 for frontend
+  - "3001:3000"  # Use 3001 instead of 3000 for api
+  - "3002:3001"  # Use 3002 instead of 3001 for web
 ```
 
 ### Clean start
@@ -224,13 +224,13 @@ This Docker Compose setup is designed for development. For production:
 |----------|-------------|---------|
 | `KEYCLOAK_REALM` | Keycloak realm name | `myrealm` |
 | `KEYCLOAK_AUDIENCE` | Keycloak client ID for backend JWT validation | `crypto-pocket-butler` |
-| `KEYCLOAK_CLIENT_ID` | Keycloak client ID for frontend | `crypto-pocket-butler` |
+| `KEYCLOAK_CLIENT_ID` | Keycloak client ID for web | `crypto-pocket-butler` |
 | `KEYCLOAK_CLIENT_SECRET` | Keycloak client secret (if confidential client) | (empty) |
 | `NEXTAUTH_SECRET` | NextAuth.js secret for session encryption | `change-me-in-production-use-openssl-rand-base64-32` |
-| `RUST_LOG` | Backend logging level | `crypto_pocket_butler_backend=info` |
+| `RUST_LOG` | API logging level | `crypto_pocket_butler_backend=info` |
 
 ## Additional Resources
 
-- [Frontend Setup Guide](FRONTEND_SETUP.md)
+- [Web Setup Guide](WEB_SETUP.md)
 - [Keycloak Setup Guide](KEYCLOAK_SETUP.md)
-- [Backend Documentation](../backend/backend-overview.md)
+- [API Documentation](../api/api-overview.md)

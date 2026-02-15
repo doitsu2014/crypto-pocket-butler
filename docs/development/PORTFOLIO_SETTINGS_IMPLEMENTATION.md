@@ -3,7 +3,7 @@
 ## Overview
 This implementation adds UI and backend support for portfolio targets (target allocation) and guardrails (risk management parameters).
 
-## Backend Changes
+## API Changes
 
 ### Database Migration
 **File**: `api/migration/src/m20240101_000008_add_settings_to_portfolios.rs`
@@ -52,7 +52,7 @@ Updated handlers to persist the new fields:
 - `create_portfolio`: Saves target_allocation and guardrails on creation
 - `update_portfolio`: Updates target_allocation and guardrails on edit
 
-## Frontend Changes
+## Web Changes
 
 ### New Settings Page
 **File**: `web/app/portfolios/[id]/settings/page.tsx`
@@ -212,8 +212,8 @@ Response:
 5. Reduces database complexity
 
 ### Validation Approach: Client + Server
-- Frontend validation provides immediate feedback
-- Backend can add additional validation in handlers if needed
+- Web validation provides immediate feedback
+- API can add additional validation in handlers if needed
 - Validation is simple (sums, ranges) and doesn't require complex logic
 
 ### UI Design
@@ -224,14 +224,14 @@ Response:
 
 ## Testing
 
-### Backend Build
+### API Build
 ```bash
 cd api
 cargo build
 # Success - compiles with new fields
 ```
 
-### Frontend Build
+### Web Build
 ```bash
 cd web
 npm install
@@ -268,7 +268,7 @@ Potential improvements (not in current scope):
 ## Summary
 
 This implementation provides a complete solution for portfolio settings:
-- ✅ Backend storage with JSONB columns
+- ✅ API storage with JSONB columns
 - ✅ API support for create/update/read
 - ✅ Full UI with form and validation
 - ✅ Navigation integration

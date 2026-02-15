@@ -19,7 +19,7 @@ The API supports three authentication methods that can be used in Swagger UI:
 This is the most common method for user authentication. You need to obtain a valid JWT token from Keycloak.
 
 **Steps:**
-1. Log in to your application frontend or obtain a JWT token through Keycloak
+1. Log in to your application web service or obtain a JWT token through Keycloak
 2. In Swagger UI, click the **Authorize** button at the top
 3. In the **bearer_auth** section, enter your token in the format: `Bearer <your-token>`
 4. Click **Authorize**
@@ -189,5 +189,5 @@ KEYCLOAK_AUDIENCE=crypto-pocket-butler-prod
 ## Additional Resources
 
 - [Keycloak Setup Guide](./KEYCLOAK_SETUP.md)
-- [Frontend Setup Guide](./FRONTEND_SETUP.md)
+- [Web Setup Guide](./WEB_SETUP.md)
 - [Keycloak OAuth2 Documentation](https://www.keycloak.org/docs/latest/securing_apps/)

@@ -4,27 +4,27 @@ A small (but serious) pet project: **crypto portfolio management** across wallet
 
 ## Architecture
 
-### Backend (Rust)
+### API (Rust)
 - **Framework**: Axum 0.8
 - **Authentication**: Keycloak JWT validation with axum-keycloak-auth
 - **Database**: PostgreSQL with SeaORM
 - **API Documentation**: Swagger UI with utoipa (publicly accessible at `/swagger-ui`)
 - **Location**: `api/`
 
-### Frontend (Next.js)
+### Web (Next.js)
 - **Framework**: Next.js 16 with App Router
 - **Authentication**: NextAuth.js v5 with Keycloak OIDC (Authorization Code + PKCE)
 - **Styling**: TailwindCSS 4
 - **Language**: TypeScript
 - **Location**: `web/`
 
-See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for detailed setup instructions and [docs/frontend/UI-STYLE-GUIDE.md](docs/frontend/UI-STYLE-GUIDE.md) for the design system documentation.
+See [docs/setup/WEB_SETUP.md](docs/setup/WEB_SETUP.md) for detailed setup instructions and [docs/web/UI-STYLE-GUIDE.md](docs/web/UI-STYLE-GUIDE.md) for the design system documentation.
 
 ## Quick Start
 
 ### Option 1: Docker Compose (Recommended)
 
-The easiest way to get started is using Docker Compose, which sets up the entire stack (database, Keycloak, backend, frontend):
+The easiest way to get started is using Docker Compose, which sets up the entire stack (database, Keycloak, api, web):
 
 ```bash
 # Copy environment variables
@@ -91,7 +91,7 @@ Then configure:
 
 See [docs/setup/KEYCLOAK_SETUP.md](docs/setup/KEYCLOAK_SETUP.md) for detailed instructions.
 
-### 3. Backend Setup
+### 3. API Setup
 
 Configure environment variables:
 
@@ -107,50 +107,50 @@ Required environment variables in `.env`:
 - `KEYCLOAK_REALM`: Keycloak realm name (e.g., `myrealm`)
 - `KEYCLOAK_AUDIENCE`: Keycloak client ID (e.g., `crypto-pocket-butler`)
 
-Start the backend server:
+Start the API server:
 
 ```bash
 cd api
 cargo run
 ```
 
-The backend will be available at:
+The API will be available at:
 - **API**: http://localhost:3000
 - **Swagger UI**: http://localhost:3000/swagger-ui
 - **OpenAPI Spec**: http://localhost:3000/api-docs/openapi.json
 
-### 4. Frontend Setup
+### 4. Web Setup
 
 Configure environment variables:
 
 ```bash
 cd web
 npm install
-# Create .env.local with your Keycloak settings (see docs/setup/FRONTEND_SETUP.md)
+# Create .env.local with your Keycloak settings (see docs/setup/WEB_SETUP.md)
 ```
 
-Start the frontend development server:
+Start the web development server:
 
 ```bash
 cd web
 npm run dev
 ```
 
-The frontend will be available at http://localhost:3001
+The web interface will be available at http://localhost:3001
 
-See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for detailed frontend setup and configuration.
+See [docs/setup/WEB_SETUP.md](docs/setup/WEB_SETUP.md) for detailed web setup and configuration.
 
 ## Development Workflow
 
 ### Running Tests
 
-**Backend:**
+**API:**
 ```bash
 cd api
 cargo test
 ```
 
-**Frontend:**
+**Web:**
 ```bash
 cd web
 npm test
@@ -158,13 +158,13 @@ npm test
 
 ### Building for Production
 
-**Backend:**
+**API:**
 ```bash
 cd api
 cargo build --release
 ```
 
-**Frontend:**
+**Web:**
 ```bash
 cd web
 npm run build
@@ -194,20 +194,20 @@ cargo run -- reset
 
 ```
 .
-├── api/                   # Rust backend with Axum
+├── api/                   # Rust API with Axum
 │   ├── src/              # Source code
 │   ├── migration/        # Database migrations
 │   ├── .env.example      # Environment variables template
 │   └── Cargo.toml        # Rust dependencies
-├── web/                   # Next.js frontend
+├── web/                   # Next.js web interface
 │   ├── app/              # App Router pages
 │   ├── components/       # React components
 │   └── lib/              # Utilities and helpers
 ├── docs/                  # Documentation (see docs/README.md)
 │   ├── setup/            # Setup and configuration guides
 │   ├── architecture/     # Architecture and design docs
-│   ├── backend/          # Backend-specific documentation
-│   ├── frontend/         # Frontend-specific documentation
+│   ├── api/              # API-specific documentation
+│   ├── web/              # Web-specific documentation
 │   ├── development/      # Implementation summaries
 │   └── planning/         # Project planning documents
 └── README.md             # This file
@@ -215,7 +215,7 @@ cargo run -- reset
 
 ## Environment Variables Reference
 
-### Backend Environment Variables
+### API Environment Variables
 
 See `api/.env.example` for the complete list. Key variables:
 
@@ -228,13 +228,13 @@ See `api/.env.example` for the complete list. Key variables:
 | `DB_MAX_CONNECTIONS` | Maximum database connections | `100` |
 | `DB_MIN_CONNECTIONS` | Minimum idle connections | `5` |
 
-### Frontend Environment Variables
+### Web Environment Variables
 
-See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for frontend configuration.
+See [docs/setup/WEB_SETUP.md](docs/setup/WEB_SETUP.md) for web configuration.
 
 ## Planned stack
-- **Backend:** Rust (Axum) + Postgres ✅ **Implemented**
-- **Frontend:** React (Next.js) + TypeScript ✅ **Implemented**
+- **API:** Rust (Axum) + Postgres ✅ **Implemented**
+- **Web:** React (Next.js) + TypeScript ✅ **Implemented**
 - **Agent:** OpenClaw (suggestions first, execution later with guardrails)
 
 ## MVP (first milestone)
@@ -250,8 +250,8 @@ See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for frontend co
 - Futures cap: TBD
 
 ## Security
-- ✅ **Keycloak OIDC authentication** with PKCE flow (frontend)
-- ✅ **JWT validation** on backend API
+- ✅ **Keycloak OIDC authentication** with PKCE flow (web)
+- ✅ **JWT validation** on API
 - ✅ **Bearer token authentication** for API calls
 - Start **read-only** for exchanges.
 - Never enable withdrawals.
@@ -263,27 +263,27 @@ See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for frontend co
 
 **Quick Links:**
 - [Docker Setup Guide](docs/setup/DOCKER_SETUP.md) **← Start here for quickest setup**
-- [Frontend Setup Guide](docs/setup/FRONTEND_SETUP.md)
+- [Web Setup Guide](docs/setup/WEB_SETUP.md)
 - [Keycloak Setup Guide](docs/setup/KEYCLOAK_SETUP.md)
-- [Backend Overview](docs/backend/backend-overview.md)
-- [UI Style Guide](docs/frontend/UI-STYLE-GUIDE.md)
+- [API Overview](docs/api/api-overview.md)
+- [UI Style Guide](docs/web/UI-STYLE-GUIDE.md)
 - [Technical Design](docs/architecture/TECHNICAL_DESIGN.md)
 - [Naming Convention](docs/architecture/NAMING_CONVENTION.md)
 
 ## Troubleshooting
 
-### Backend won't start
+### API won't start
 
 1. **Database connection error**: Make sure PostgreSQL is running and `DATABASE_URL` is correct
 2. **Keycloak connection error**: Verify `KEYCLOAK_SERVER` is accessible and the realm exists
 3. **Missing .env file**: Copy `.env.example` to `.env` and configure the variables
 
-### Frontend won't start
+### Web won't start
 
 1. **Authentication error**: Check Keycloak configuration in `.env.local`
-2. **Backend API error**: Make sure the backend is running on port 3000
+2. **API connection error**: Make sure the API is running on port 3000
 
-See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for more troubleshooting tips.
+See [docs/setup/WEB_SETUP.md](docs/setup/WEB_SETUP.md) for more troubleshooting tips.
 
 ## Contributing
 

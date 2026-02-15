@@ -20,7 +20,14 @@ cd crypto-pocket-butler
 cp .env.example .env
 
 # Generate a secure NextAuth secret
+# For Linux:
 sed -i "s/NEXTAUTH_SECRET=.*/NEXTAUTH_SECRET=$(openssl rand -base64 32)/" .env
+
+# For macOS:
+# sed -i '' "s/NEXTAUTH_SECRET=.*/NEXTAUTH_SECRET=$(openssl rand -base64 32)/" .env
+
+# Or manually edit .env and replace the NEXTAUTH_SECRET value with output from:
+# openssl rand -base64 32
 ```
 
 ### 2. Start All Services

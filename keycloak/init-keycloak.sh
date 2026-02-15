@@ -2,8 +2,15 @@
 set -e
 
 echo "Waiting for Keycloak to be ready..."
+MAX_RETRIES=60  # Wait up to 5 minutes (60 * 5 seconds)
+RETRY_COUNT=0
 until curl -sf http://keycloak:8080/realms/master > /dev/null; do
-  echo "Keycloak is not ready yet, waiting..."
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "Error: Keycloak failed to start after $((MAX_RETRIES * 5)) seconds"
+    exit 1
+  fi
+  echo "Keycloak is not ready yet, waiting... (attempt $RETRY_COUNT/$MAX_RETRIES)"
   sleep 5
 done
 

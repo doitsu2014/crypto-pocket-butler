@@ -7,8 +7,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: crypto_pocket_butler
-      # Create Keycloak database
-      POSTGRES_MULTIPLE_DATABASES: keycloak
     ports:
       - "5432:5432"
     volumes:
@@ -22,11 +20,11 @@ services:
     networks:
       - crypto-pocket-butler-network
 
-  # Keycloak Authentication Server
+  # Keycloak Authentication Server (Production Mode)
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     container_name: crypto-pocket-butler-keycloak
-    command: start
+    command: start  # Production mode (not start-dev) - requires database configuration
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin

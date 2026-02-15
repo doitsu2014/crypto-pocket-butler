@@ -231,6 +231,6 @@ This Docker Compose setup is designed for development. For production:
 
 ## Additional Resources
 
-- [Frontend Setup Guide](docs/FRONTEND_SETUP.md)
-- [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
-- [Backend Documentation](api/README.md)
+- [Frontend Setup Guide](FRONTEND_SETUP.md)
+- [Keycloak Setup Guide](KEYCLOAK_SETUP.md)
+- [Backend Documentation](../backend/backend-overview.md)

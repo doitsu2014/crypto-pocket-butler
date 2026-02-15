@@ -214,9 +214,9 @@ Potential improvements:
 
 ## Related Documentation
 
-- [Portfolio UI Components](../../../components/portfolio/README.md)
-- [API Documentation](../../../../api/README.md)
-- [UI Standardization](../../../../docs/UI-STANDARDIZATION.md)
+- [Portfolio Components](portfolio-components.md)
+- [API Documentation](../backend/backend-overview.md)
+- [UI Standardization](UI-STANDARDIZATION.md)
 
 ## Notes
 

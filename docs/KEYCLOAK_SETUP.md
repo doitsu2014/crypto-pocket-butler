@@ -86,7 +86,7 @@ If you want the backend to validate tokens from a different audience:
 
 ### 7. Configure Frontend Environment
 
-Update `frontend-react/.env.local`:
+Update `web/.env.local`:
 
 ```env
 NEXTAUTH_URL=http://localhost:3001
@@ -101,7 +101,7 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:3000
 
 ### 8. Configure Backend Environment
 
-Create `backend-rust/.env`:
+Create `api/.env`:
 
 ```env
 KEYCLOAK_SERVER=http://localhost:8080
@@ -123,7 +123,7 @@ If you have an existing Keycloak server:
 ### 1. Start Backend
 
 ```bash
-cd backend-rust
+cd api
 cargo run
 ```
 
@@ -132,7 +132,7 @@ Backend will be available at http://localhost:3000
 ### 2. Start Frontend
 
 ```bash
-cd frontend-react
+cd web
 npm run dev
 ```
 

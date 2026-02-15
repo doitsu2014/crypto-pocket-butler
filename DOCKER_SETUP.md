@@ -143,8 +143,8 @@ For active development, you might prefer to run services locally:
 docker-compose up -d postgres keycloak
 
 # Then run backend and frontend locally
-cd backend-rust && cargo run
-cd frontend-react && npm run dev
+cd api && cargo run
+cd web && npm run dev
 ```
 
 ### Backend Only
@@ -152,7 +152,7 @@ cd frontend-react && npm run dev
 To run only the backend with database:
 
 ```bash
-cd backend-rust
+cd api
 docker-compose up -d
 ```
 
@@ -233,4 +233,4 @@ This Docker Compose setup is designed for development. For production:
 
 - [Frontend Setup Guide](docs/FRONTEND_SETUP.md)
 - [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
-- [Backend Documentation](backend-rust/README.md)
+- [Backend Documentation](api/README.md)

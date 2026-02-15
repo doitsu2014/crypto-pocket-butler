@@ -40,27 +40,27 @@ This document summarizes the complete implementation of standardized UI componen
 ## New Files Created
 
 ### Components & Contexts
-1. `frontend-react/contexts/ToastContext.tsx` (100 lines)
+1. `web/contexts/ToastContext.tsx` (100 lines)
    - Toast state management with React Context
    - useToast hook for easy access
    - Support for success, error, info, warning types
 
-2. `frontend-react/components/Toast.tsx` (99 lines)
+2. `web/components/Toast.tsx` (99 lines)
    - Toast notification UI component
    - Slide-in animation
    - Auto-dismiss functionality
 
-3. `frontend-react/components/Loading.tsx` (143 lines)
+3. `web/components/Loading.tsx` (143 lines)
    - LoadingSkeleton (card, list, table variants)
    - LoadingSpinner (sm, md, lg sizes)
    - LoadingButton (inline loading state)
 
-4. `frontend-react/components/EmptyState.tsx` (75 lines)
+4. `web/components/EmptyState.tsx` (75 lines)
    - Empty state with preset icons
    - Optional action button
    - Cyberpunk-themed styling
 
-5. `frontend-react/components/ErrorAlert.tsx` (52 lines)
+5. `web/components/ErrorAlert.tsx` (52 lines)
    - Error display with retry/dismiss
    - Inline and banner modes
    - Consistent error styling
@@ -89,16 +89,16 @@ This document summarizes the complete implementation of standardized UI componen
 ## Modified Files
 
 ### Core Library
-1. `frontend-react/lib/api-client.ts` (+70 lines)
+1. `web/lib/api-client.ts` (+70 lines)
    - Added ApiError class with type categorization
    - Better error parsing by HTTP status
    - Network error detection
 
-2. `frontend-react/app/layout.tsx` (+6 lines)
+2. `web/app/layout.tsx` (+6 lines)
    - Wrapped app with ToastProvider
    - Added ToastContainer for global toasts
 
-3. `frontend-react/app/globals.css` (+14 lines)
+3. `web/app/globals.css` (+14 lines)
    - Added slide-in animation for toasts
 
 ### Client Components (8 files updated)

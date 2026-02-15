@@ -45,7 +45,7 @@ services:
   # Rust Backend API
   backend:
     build:
-      context: ./backend-rust
+      context: ./api
       dockerfile: Dockerfile
     container_name: crypto-pocket-butler-backend
     environment:
@@ -70,7 +70,7 @@ services:
   # Next.js Frontend
   frontend:
     build:
-      context: ./frontend-react
+      context: ./web
       dockerfile: Dockerfile
     container_name: crypto-pocket-butler-frontend
     environment:

@@ -7,38 +7,38 @@ This document describes the naming conventions used throughout the Crypto Pocket
 The project follows a clear naming convention for service directories:
 
 ### Backend Service
-- **Folder Name**: `backend-rust`
+- **Folder Name**: `api`
 - **Technology**: Rust (Axum framework)
-- **Location**: `/backend-rust`
+- **Location**: `/api`
 - **Docker Service Name**: `backend`
 
 ### Frontend Service
-- **Folder Name**: `frontend-react`
+- **Folder Name**: `web`
 - **Technology**: React (Next.js framework)
-- **Location**: `/frontend-react`
+- **Location**: `/web`
 - **Docker Service Name**: `frontend`
 
 ## Rationale
 
-The folder names explicitly include the technology stack (`rust`, `react`) to:
-1. Make the technology choice immediately clear when browsing the repository
-2. Allow for potential future additions (e.g., alternative frontend implementations)
+The folder names use simple, functional names (`api`, `web`) to:
+1. Keep naming concise and immediately understandable
+2. Focus on the service role rather than technology stack
 3. Provide clarity in monorepo structure
-4. Help new contributors quickly understand the project architecture
+4. Use industry-standard naming conventions
 
 ## Docker Compose Services
 
-In `docker-compose.yml`, services use simplified names:
-- `backend` → builds from `./backend-rust`
-- `frontend` → builds from `./frontend-react`
+In `docker-compose.yml`, services use descriptive names:
+- `backend` → builds from `./api`
+- `frontend` → builds from `./web`
 
-This is standard Docker Compose practice where service names are kept short and descriptive, while `build.context` references the actual directory paths.
+This is standard Docker Compose practice where service names are kept descriptive, while `build.context` references the actual directory paths.
 
 ## References in Documentation
 
 All documentation files (README.md, DOCKER_SETUP.md, etc.) consistently reference:
-- `backend-rust/` for backend-related content
-- `frontend-react/` for frontend-related content
+- `api/` for backend-related content
+- `web/` for frontend-related content
 
 ## Container Names
 

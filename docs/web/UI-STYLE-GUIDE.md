@@ -1,6 +1,6 @@
 # Crypto Pocket Butler - UI/UX Style Guide
 
-This document defines the visual design system for the Crypto Pocket Butler frontend application. Use this guide to maintain consistency when adding new features or making UI changes.
+This document defines the visual design system for the Crypto Pocket Butler web application. Use this guide to maintain consistency when adding new features or making UI changes.
 
 ## Design Philosophy
 
@@ -530,4 +530,4 @@ black base + glowing orbs + grid pattern overlay + high opacity
 
 ---
 
-*This style guide should be referenced for all UI/UX work on the Crypto Pocket Butler frontend to maintain visual consistency and the mysterious neon aesthetic.*
+*This style guide should be referenced for all UI/UX work on the Crypto Pocket Butler web application to maintain visual consistency and the mysterious neon aesthetic.*

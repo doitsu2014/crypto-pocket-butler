@@ -1,4 +1,4 @@
-# Backend API reference (draft)
+# API Reference (draft)
 
 This is a planning-level reference. Adjust paths and schemas to match the Rust implementation.
 

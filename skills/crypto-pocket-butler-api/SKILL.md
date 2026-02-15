@@ -1,9 +1,9 @@
 ---
-name: crypto-pocket-butler-backend
-description: Integrate an OpenClaw agent with the Crypto Pocket Butler backend API (Rust/Axum) secured by Keycloak (OIDC). Use when the agent needs to authenticate via Keycloak, call backend endpoints (portfolios, accounts, holdings, snapshots, recommendations), or write/read portfolio state.
+name: crypto-pocket-butler-api
+description: Integrate an OpenClaw agent with the Crypto Pocket Butler API (Rust/Axum) secured by Keycloak (OIDC). Use when the agent needs to authenticate via Keycloak, call API endpoints (portfolios, accounts, holdings, snapshots, recommendations), or write/read portfolio state.
 ---
 
-# Crypto Pocket Butler Backend (Keycloak + API)
+# Crypto Pocket Butler API (Keycloak + API)
 
 ## Configuration (env)
 
@@ -45,7 +45,7 @@ curl -sS "$CPB_KEYCLOAK_TOKEN_URL" \
 
 1) List portfolios for the authenticated user.
 2) Pick portfolio (by `portfolio_id`) and pull latest snapshot.
-3) Compute allocation/drift (backend may provide) and produce:
+3) Compute allocation/drift (API may provide) and produce:
    - a short Telegram summary
    - a Notion “Daily Brief” entry
 4) If user asks to rebalance: create a **recommendation** object (suggest-only) and return proposed orders.

@@ -22,7 +22,7 @@ See also: `docs/planning/10-core-split-infra-vs-portfolios.md`.
   - EVM: address + enabled chains (from supported list)
   - OKX: read-only credentials profile
 - [ ] Account ingestion stores holdings **without pricing**
-- [ ] Support list of chains exposed via API (frontend can render)
+- [ ] Support list of chains exposed via API (web can render)
 
 ## Phase B — Portfolios
 

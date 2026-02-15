@@ -106,7 +106,7 @@ The Portfolio Snapshots Chart provides a visual time series representation of po
 
 ```
 ┌─────────┐      ┌────────────┐      ┌──────────┐      ┌─────────┐
-│  User   │─────▶│  UI Filter │─────▶│   API    │─────▶│ Backend │
+│  User   │─────▶│  UI Filter │─────▶│   API    │─────▶│   API   │
 │ Action  │      │  Changes   │      │  Request │      │ Database│
 └─────────┘      └────────────┘      └──────────┘      └─────────┘
                                            │
@@ -134,7 +134,7 @@ The Portfolio Snapshots Chart provides a visual time series representation of po
    ↓
 5. API call: GET /v1/portfolios/123/snapshots?start_date=2024-01-23&end_date=2024-01-30
    ↓
-6. Backend filters and returns snapshots
+6. API filters and returns snapshots
    ↓
 7. Transform response:
    - Parse total_value_usd to number

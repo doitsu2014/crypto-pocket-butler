@@ -1,8 +1,8 @@
 # 09 — Technical Design (Rust + React)
 
-## Technical Design — Rust Backend + React Frontend
+## Technical Design — Rust API + React Web
 
-Goal: a secure, modular portfolio system. Rust handles data ingestion, normalization, storage, and scheduling; React provides dashboards + approvals. OpenClaw agent reads from the backend and writes reports to Notion/Telegram.
+Goal: a secure, modular portfolio system. Rust handles data ingestion, normalization, storage, and scheduling; React provides dashboards + approvals. OpenClaw agent reads from the API and writes reports to Notion/Telegram.
 
 Key additions:
 - **Identity & Access Management via Keycloak** (authentication + authorization)
@@ -14,10 +14,10 @@ Key additions:
 ## Architecture (high-level)
 
 - **Keycloak (OIDC)**: central login, token issuance, roles/groups.
-- **Frontend (React / Next.js)**:
+- **Web (React / Next.js)**:
   - Uses **OIDC Authorization Code + PKCE** to sign users in via Keycloak.
   - Stores access token in memory (or httpOnly session via BFF pattern if preferred).
-- **Backend (Rust / Axum)**:
+- **API (Rust / Axum)**:
   - Validates JWT access tokens using Keycloak **JWKS**.
   - Enforces **RBAC/ABAC** (role + resource ownership checks).
   - Exposes REST endpoints for: accounts, portfolios, snapshots, recommendations.
@@ -29,7 +29,7 @@ Key additions:
   - Portfolio definitions.
   - Timestamped snapshots.
 - **OpenClaw Agent**:
-  - Reads portfolio/snapshot data from backend API.
+  - Reads portfolio/snapshot data from API.
   - Generates rebalancing suggestions.
   - Writes daily briefs to Notion and Telegram.
 
@@ -38,11 +38,11 @@ Key additions:
 ## Identity & Access (Keycloak)
 
 ### Auth flow
-- **Frontend → Keycloak**: Authorization Code + PKCE.
-- **Keycloak → Frontend**: returns code; frontend exchanges for tokens.
-- **Frontend → Backend**: sends `Authorization: Bearer <access_token>`.
+- **Web → Keycloak**: Authorization Code + PKCE.
+- **Keycloak → Web**: returns code; web exchanges for tokens.
+- **Web → API**: sends `Authorization: Bearer <access_token>`.
 
-### Backend responsibilities
+### API responsibilities
 - Fetch and cache Keycloak **JWKS**.
 - Validate:
   - signature
@@ -79,7 +79,7 @@ In the UI:
 - user selects which wallets/exchanges belong to it
 - system shows portfolio allocation + drift for that portfolio
 
-### Backend requirement
+### API requirement
 - Portfolio CRUD endpoints.
 - A join table linking `portfolio_id` ↔ `account_id`.
 
@@ -104,7 +104,7 @@ In the UI:
 
 ---
 
-## Backend (Rust)
+## API (Rust)
 
 ### Suggested crates
 - `axum` (HTTP), `tower` (middleware), `serde` (JSON)
@@ -129,7 +129,7 @@ In the UI:
 
 ---
 
-## Frontend (React)
+## Web (React)
 
 Suggested stack:
 - Next.js + TypeScript
@@ -157,7 +157,7 @@ Screens:
 
 ## MVP Build Order
 
-- [ ] Keycloak integration (frontend PKCE + backend JWT validation)
+- [ ] Keycloak integration (web PKCE + API JWT validation)
 - [ ] DB schema: users (by `sub`), accounts, portfolios, portfolio_account links
 - [ ] OKX read-only connector + snapshot writer
 - [ ] EOD snapshot job (portfolio snapshots)

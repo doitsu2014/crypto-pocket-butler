@@ -39,10 +39,10 @@ The MVP proves the full end-to-end loop:
 
 ## MVP deliverables checklist
 
-- [ ] Keycloak login works in frontend; backend validates JWTs
+- [ ] Keycloak login works in web; API validates JWTs
 - [ ] Portfolio CRUD + portfolio-to-account mapping
 - [ ] OKX read-only ingestion + EVM wallet ingestion
 - [ ] Latest holdings + allocation endpoint
 - [ ] EOD snapshot job (daily)
 - [ ] Notion daily brief output (initial template)
-- [ ] OpenClaw skill can authenticate (client_credentials) and call backend API
+- [ ] OpenClaw skill can authenticate (client_credentials) and call API

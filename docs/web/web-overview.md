@@ -1,6 +1,6 @@
-# Crypto Pocket Butler - Frontend
+# Crypto Pocket Butler - Web
 
-For detailed setup and usage instructions, see [../setup/FRONTEND_SETUP.md](../setup/FRONTEND_SETUP.md).
+For detailed setup and usage instructions, see [../setup/WEB_SETUP.md](../setup/WEB_SETUP.md).
 
 For UI/UX design system documentation, see [UI-STYLE-GUIDE.md](UI-STYLE-GUIDE.md).
 
@@ -34,19 +34,19 @@ Open [http://localhost:3001](http://localhost:3001) with your browser.
 
 ## Documentation
 
-- **Setup Guide**: [../setup/FRONTEND_SETUP.md](../setup/FRONTEND_SETUP.md)
+- **Setup Guide**: [../setup/WEB_SETUP.md](../setup/WEB_SETUP.md)
 - **Design System**: [UI-STYLE-GUIDE.md](UI-STYLE-GUIDE.md)
 - **Keycloak Setup**: [../setup/KEYCLOAK_SETUP.md](../setup/KEYCLOAK_SETUP.md)
 - **API Integration**: [API_INTEGRATION.md](API_INTEGRATION.md) ⭐
 
 ## API Integration
 
-All backend API calls use a **unified, centralized approach**:
+All API calls use a **unified, centralized approach**:
 
 1. **Client-side**: Use custom TanStack Query hooks (e.g., `useAccounts`, `usePortfolios`)
 2. **API Client**: All requests go through `lib/api-client.ts`
 3. **Proxy Layer**: Single catch-all route at `/api/backend/[...path]` handles authentication
-4. **Backend**: Requests are forwarded with proper authorization headers
+4. **API**: Requests are forwarded with proper authorization headers
 
 ### Example Usage
 

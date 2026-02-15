@@ -6,17 +6,17 @@ This document describes the naming conventions used throughout the Crypto Pocket
 
 The project follows a clear naming convention for service directories:
 
-### Backend Service
+### API Service
 - **Folder Name**: `api`
 - **Technology**: Rust (Axum framework)
 - **Location**: `/api`
-- **Docker Service Name**: `backend`
+- **Docker Service Name**: `api`
 
-### Frontend Service
+### Web Service
 - **Folder Name**: `web`
 - **Technology**: React (Next.js framework)
 - **Location**: `/web`
-- **Docker Service Name**: `frontend`
+- **Docker Service Name**: `web`
 
 ## Rationale
 
@@ -28,22 +28,22 @@ The folder names use simple, functional names (`api`, `web`) to:
 
 ## Docker Compose Services
 
-In `docker-compose.yml`, services use descriptive names:
-- `backend` → builds from `./api`
-- `frontend` → builds from `./web`
+In `docker-compose.yml`, services use the same descriptive names:
+- `api` → builds from `./api`
+- `web` → builds from `./web`
 
-This is standard Docker Compose practice where service names are kept descriptive, while `build.context` references the actual directory paths.
+This provides consistency across all references to these services.
 
 ## References in Documentation
 
 All documentation files (README.md, DOCKER_SETUP.md, etc.) consistently reference:
-- `api/` for backend-related content
-- `web/` for frontend-related content
+- `api/` for API-related content
+- `web/` for web interface-related content
 
 ## Container Names
 
 Docker containers follow the pattern: `crypto-pocket-butler-{service}`
-- `crypto-pocket-butler-backend`
-- `crypto-pocket-butler-frontend`
+- `crypto-pocket-butler-api`
+- `crypto-pocket-butler-web`
 - `crypto-pocket-butler-db`
 - `crypto-pocket-butler-keycloak`

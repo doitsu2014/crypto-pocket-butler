@@ -1,6 +1,6 @@
-# Crypto Pocket Butler - Frontend
+# Crypto Pocket Butler - Web
 
-Next.js frontend with Keycloak authentication using OAuth 2.0 + PKCE flow.
+Next.js web service with Keycloak authentication using OAuth 2.0 + PKCE flow.
 
 ## Features
 
@@ -8,13 +8,13 @@ Next.js frontend with Keycloak authentication using OAuth 2.0 + PKCE flow.
 - 🎨 **Modern UI**: Built with Next.js 16, React 19, and TailwindCSS 4
 - 🛡️ **Token Management**: Secure token storage and automatic inclusion in API calls
 - 📱 **Responsive Design**: Mobile-first design with TailwindCSS
-- 🔄 **API Integration**: Seamless integration with Rust backend using Bearer tokens
+- 🔄 **API Integration**: Seamless integration with Rust API using Bearer tokens
 
 ## Prerequisites
 
 - Node.js 20+ and npm
 - Keycloak server (running and configured)
-- Backend API (running on port 3000 by default)
+- API service (running on port 3000 by default)
 
 ## Setup
 
@@ -44,7 +44,7 @@ KEYCLOAK_CLIENT_ID=your-client-id
 KEYCLOAK_CLIENT_SECRET=your-client-secret
 KEYCLOAK_ISSUER=https://keycloak.example.com/realms/myrealm
 
-# Backend API Configuration
+# API Configuration
 NEXT_PUBLIC_BACKEND_URL=http://localhost:3000
 ```
 
@@ -74,7 +74,7 @@ In your Keycloak admin console, configure the client with:
 npm run dev
 ```
 
-The frontend will be available at http://localhost:3001
+The web service will be available at http://localhost:3001
 
 ## Project Structure
 
@@ -83,7 +83,7 @@ web/
 ├── app/
 │   ├── api/
 │   │   ├── auth/[...nextauth]/   # NextAuth.js API routes
-│   │   └── backend/              # Backend API proxy routes
+│   │   └── backend/              # API proxy routes
 │   ├── auth/
 │   │   └── signin/               # Custom sign-in page
 │   ├── dashboard/                # Protected dashboard page
@@ -180,11 +180,11 @@ npm run lint
 - Generate a secret: `openssl rand -base64 32`
 - Add it to `.env.local` as `NEXTAUTH_SECRET`
 
-### Backend API calls fail with 401
+### API calls fail with 401
 
-- Check that backend is running and accessible
+- Check that API service is running and accessible
 - Verify `NEXT_PUBLIC_BACKEND_URL` is correct
-- Ensure Keycloak configuration matches between frontend and backend
+- Ensure Keycloak configuration matches between web and API
 
 ## License
 

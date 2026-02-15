@@ -22,7 +22,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:300
  * 
  * Example: apiClient<Account[]>("/v1/accounts") → /api/backend/v1/accounts → backend
  * 
- * See lib/API_INTEGRATION.md for complete documentation.
+ * See docs/frontend/API_INTEGRATION.md for complete documentation.
  */
 async function handleRequest(
   request: NextRequest,

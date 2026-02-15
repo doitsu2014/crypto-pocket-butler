@@ -409,7 +409,7 @@ A read-only connector for OKX exchange that:
 - Fetches spot balances from trading accounts
 - Returns balance data including available and frozen amounts
 
-See [connectors/README.md](src/connectors/README.md) for detailed documentation.
+See [connectors.md](connectors.md) for detailed documentation.
 
 ### Sync Jobs
 

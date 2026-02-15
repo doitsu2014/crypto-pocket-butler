@@ -1,10 +1,10 @@
 # Crypto Pocket Butler - Frontend
 
-For detailed setup and usage instructions, see [../docs/FRONTEND_SETUP.md](../docs/FRONTEND_SETUP.md).
+For detailed setup and usage instructions, see [../setup/FRONTEND_SETUP.md](../setup/FRONTEND_SETUP.md).
 
-For UI/UX design system documentation, see [../docs/UI-STYLE-GUIDE.md](../docs/UI-STYLE-GUIDE.md).
+For UI/UX design system documentation, see [UI-STYLE-GUIDE.md](UI-STYLE-GUIDE.md).
 
-**For API integration guidelines, see [lib/API_INTEGRATION.md](lib/API_INTEGRATION.md).**
+**For API integration guidelines, see [API_INTEGRATION.md](API_INTEGRATION.md).**
 
 ## Quick Start
 
@@ -34,10 +34,10 @@ Open [http://localhost:3001](http://localhost:3001) with your browser.
 
 ## Documentation
 
-- **Setup Guide**: [../docs/FRONTEND_SETUP.md](../docs/FRONTEND_SETUP.md)
-- **Design System**: [../docs/UI-STYLE-GUIDE.md](../docs/UI-STYLE-GUIDE.md)
-- **Keycloak Setup**: [../docs/KEYCLOAK_SETUP.md](../docs/KEYCLOAK_SETUP.md)
-- **API Integration**: [lib/API_INTEGRATION.md](lib/API_INTEGRATION.md) ⭐
+- **Setup Guide**: [../setup/FRONTEND_SETUP.md](../setup/FRONTEND_SETUP.md)
+- **Design System**: [UI-STYLE-GUIDE.md](UI-STYLE-GUIDE.md)
+- **Keycloak Setup**: [../setup/KEYCLOAK_SETUP.md](../setup/KEYCLOAK_SETUP.md)
+- **API Integration**: [API_INTEGRATION.md](API_INTEGRATION.md) ⭐
 
 ## API Integration
 
@@ -71,4 +71,4 @@ function MyForm() {
 }
 ```
 
-**See [lib/API_INTEGRATION.md](lib/API_INTEGRATION.md) for complete documentation.**
+**See [API_INTEGRATION.md](API_INTEGRATION.md) for complete documentation.**

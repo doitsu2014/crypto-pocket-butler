@@ -18,7 +18,7 @@ A small (but serious) pet project: **crypto portfolio management** across wallet
 - **Language**: TypeScript
 - **Location**: `web/`
 
-See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for detailed setup instructions and [docs/UI-STYLE-GUIDE.md](docs/UI-STYLE-GUIDE.md) for the design system documentation.
+See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for detailed setup instructions and [docs/frontend/UI-STYLE-GUIDE.md](docs/frontend/UI-STYLE-GUIDE.md) for the design system documentation.
 
 ## Quick Start
 
@@ -35,7 +35,7 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-See [DOCKER_SETUP.md](DOCKER_SETUP.md) for detailed Docker instructions.
+See [docs/setup/DOCKER_SETUP.md](docs/setup/DOCKER_SETUP.md) for detailed Docker instructions.
 
 ### Option 2: Local Development Setup
 
@@ -69,7 +69,7 @@ cargo run
 
 ### 2. Keycloak Setup
 
-Follow the [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md) to set up authentication.
+Follow the [Keycloak Setup Guide](docs/setup/KEYCLOAK_SETUP.md) to set up authentication.
 
 **Quick setup for local development:**
 
@@ -89,7 +89,7 @@ Then configure:
 3. Configure redirect URIs and client settings
 4. Create a test user
 
-See [docs/KEYCLOAK_SETUP.md](docs/KEYCLOAK_SETUP.md) for detailed instructions.
+See [docs/setup/KEYCLOAK_SETUP.md](docs/setup/KEYCLOAK_SETUP.md) for detailed instructions.
 
 ### 3. Backend Setup
 
@@ -126,7 +126,7 @@ Configure environment variables:
 ```bash
 cd web
 npm install
-# Create .env.local with your Keycloak settings (see docs/FRONTEND_SETUP.md)
+# Create .env.local with your Keycloak settings (see docs/setup/FRONTEND_SETUP.md)
 ```
 
 Start the frontend development server:
@@ -138,7 +138,7 @@ npm run dev
 
 The frontend will be available at http://localhost:3001
 
-See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for detailed frontend setup and configuration.
+See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for detailed frontend setup and configuration.
 
 ## Development Workflow
 
@@ -203,10 +203,13 @@ cargo run -- reset
 │   ├── app/              # App Router pages
 │   ├── components/       # React components
 │   └── lib/              # Utilities and helpers
-├── docs/                  # Documentation
-│   ├── FRONTEND_SETUP.md
-│   ├── KEYCLOAK_SETUP.md
-│   └── UI-STYLE-GUIDE.md
+├── docs/                  # Documentation (see docs/README.md)
+│   ├── setup/            # Setup and configuration guides
+│   ├── architecture/     # Architecture and design docs
+│   ├── backend/          # Backend-specific documentation
+│   ├── frontend/         # Frontend-specific documentation
+│   ├── development/      # Implementation summaries
+│   └── planning/         # Project planning documents
 └── README.md             # This file
 ```
 
@@ -227,7 +230,7 @@ See `api/.env.example` for the complete list. Key variables:
 
 ### Frontend Environment Variables
 
-See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for frontend configuration.
+See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for frontend configuration.
 
 ## Planned stack
 - **Backend:** Rust (Axum) + Postgres ✅ **Implemented**
@@ -256,14 +259,16 @@ See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for frontend configuration.
 
 ## Documentation
 
-- [Docker Setup Guide](DOCKER_SETUP.md) **← Start here for quickest setup**
-- [Frontend Setup Guide](docs/FRONTEND_SETUP.md)
-- [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
-- [Swagger UI Guide](docs/SWAGGER_UI_GUIDE.md)
-- [UI Style Guide](docs/UI-STYLE-GUIDE.md)
-- [Backend README](api/README.md)
-- [Technical Design](docs/TECHNICAL_DESIGN.md)
-- [Naming Convention](NAMING_CONVENTION.md)
+**📚 [Browse all documentation](docs/README.md)**
+
+**Quick Links:**
+- [Docker Setup Guide](docs/setup/DOCKER_SETUP.md) **← Start here for quickest setup**
+- [Frontend Setup Guide](docs/setup/FRONTEND_SETUP.md)
+- [Keycloak Setup Guide](docs/setup/KEYCLOAK_SETUP.md)
+- [Backend Overview](docs/backend/backend-overview.md)
+- [UI Style Guide](docs/frontend/UI-STYLE-GUIDE.md)
+- [Technical Design](docs/architecture/TECHNICAL_DESIGN.md)
+- [Naming Convention](docs/architecture/NAMING_CONVENTION.md)
 
 ## Troubleshooting
 
@@ -278,7 +283,7 @@ See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for frontend configuration.
 1. **Authentication error**: Check Keycloak configuration in `.env.local`
 2. **Backend API error**: Make sure the backend is running on port 3000
 
-See [docs/FRONTEND_SETUP.md](docs/FRONTEND_SETUP.md) for more troubleshooting tips.
+See [docs/setup/FRONTEND_SETUP.md](docs/setup/FRONTEND_SETUP.md) for more troubleshooting tips.
 
 ## Contributing
 

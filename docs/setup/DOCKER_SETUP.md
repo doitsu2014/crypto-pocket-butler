@@ -53,7 +53,7 @@ After the services are up, configure Keycloak:
    - Web origins: `http://localhost:3001`
 6. Create a test user
 
-See [docs/KEYCLOAK_SETUP.md](docs/KEYCLOAK_SETUP.md) for detailed instructions.
+See [KEYCLOAK_SETUP.md](KEYCLOAK_SETUP.md) for detailed instructions.
 
 ### 4. Access the Application
 
@@ -231,6 +231,6 @@ This Docker Compose setup is designed for development. For production:
 
 ## Additional Resources
 
-- [Frontend Setup Guide](docs/FRONTEND_SETUP.md)
-- [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
-- [Backend Documentation](api/README.md)
+- [Frontend Setup Guide](FRONTEND_SETUP.md)
+- [Keycloak Setup Guide](KEYCLOAK_SETUP.md)
+- [Backend Documentation](../backend/backend-overview.md)

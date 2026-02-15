@@ -225,8 +225,8 @@ Each layer handles specific errors:
 
 ## Documentation
 
-- **Connector Documentation**: `api/src/connectors/README.md`
-- **Main README**: `api/README.md` (updated with sync feature)
+- **Connector Documentation**: [connectors.md](connectors.md)
+- **Main README**: [backend-overview.md](backend-overview.md)
 - **API Documentation**: Available via Swagger UI at `/swagger-ui`
 - **Code Comments**: Inline documentation throughout codebase
 

@@ -4,15 +4,25 @@ import { NextRequest, NextResponse } from "next/server";
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
 
 /**
- * Catch-all route handler for proxying requests to the Rust backend.
- * Automatically attaches the access token from NextAuth session.
+ * Unified backend API proxy route.
  * 
- * Supports all HTTP methods: GET, POST, PUT, DELETE, PATCH, etc.
- * Forwards query parameters, headers, and request body to the backend.
+ * This is the SINGLE entry point for all frontend-to-backend API communication.
+ * It automatically attaches the access token from NextAuth session for authentication.
  * 
- * Note: More specific routes (e.g., /api/backend/me/route.ts) take precedence
- * over this catch-all. This acts as a fallback for any endpoint that doesn't
- * have a dedicated route handler.
+ * ## Features
+ * - Supports all HTTP methods: GET, POST, PUT, DELETE, PATCH
+ * - Forwards query parameters, headers, and request body
+ * - Handles JSON and non-JSON responses
+ * - Proper error handling with status codes
+ * - Secure token management (never exposed to browser)
+ * 
+ * ## Usage
+ * Client code should use the apiClient() function from lib/api-client.ts,
+ * which automatically routes requests through this proxy.
+ * 
+ * Example: apiClient<Account[]>("/v1/accounts") → /api/backend/v1/accounts → backend
+ * 
+ * See lib/API_INTEGRATION.md for complete documentation.
  */
 async function handleRequest(
   request: NextRequest,

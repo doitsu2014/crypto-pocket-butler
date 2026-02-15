@@ -1,5 +1,82 @@
 /**
- * Utility functions for making authenticated API calls to the backend
+ * Unified API Client for Backend Communication
+ * 
+ * This module provides a centralized, type-safe way to communicate with the backend API.
+ * It handles authentication, error handling, and request/response formatting consistently.
+ * 
+ * @module lib/api-client
+ * 
+ * ## Architecture
+ * 
+ * Frontend → apiClient() → Next.js API Proxy → Backend
+ * 
+ * The Next.js API proxy (/app/api/backend/[...path]/route.ts) automatically:
+ * - Extracts the access token from the NextAuth session
+ * - Forwards requests to the backend with proper Authorization header
+ * - Returns responses to the client
+ * 
+ * ## Usage Examples
+ * 
+ * ### GET Request (Authenticated)
+ * ```typescript
+ * const accounts = await apiClient<Account[]>("/v1/accounts");
+ * ```
+ * 
+ * ### POST Request (Authenticated)
+ * ```typescript
+ * const newAccount = await apiClient<Account>("/v1/accounts", {
+ *   method: "POST",
+ *   body: { name: "My Wallet", type: "wallet", address: "0x..." }
+ * });
+ * ```
+ * 
+ * ### PUT Request (Authenticated)
+ * ```typescript
+ * const updated = await apiClient<Account>("/v1/accounts/123", {
+ *   method: "PUT",
+ *   body: { name: "Updated Name" }
+ * });
+ * ```
+ * 
+ * ### DELETE Request (Authenticated)
+ * ```typescript
+ * await apiClient<void>("/v1/accounts/123", {
+ *   method: "DELETE"
+ * });
+ * ```
+ * 
+ * ## Error Handling
+ * 
+ * All errors are thrown as ApiError instances with:
+ * - type: "auth" | "validation" | "server" | "network" | "unknown"
+ * - statusCode: HTTP status code (if applicable)
+ * - message: Human-readable error message
+ * - details: Additional error information
+ * 
+ * Example:
+ * ```typescript
+ * try {
+ *   await apiClient("/v1/accounts");
+ * } catch (error) {
+ *   if (error instanceof ApiError) {
+ *     if (error.type === "auth") {
+ *       // Redirect to login
+ *     } else if (error.type === "validation") {
+ *       // Show validation errors
+ *     }
+ *   }
+ * }
+ * ```
+ * 
+ * ## Direct Backend Client (Server-Side Only)
+ * 
+ * For server-side API routes or server components, use directBackendClient:
+ * ```typescript
+ * const data = await directBackendClient<Account[]>(
+ *   "/v1/accounts",
+ *   session.accessToken
+ * );
+ * ```
  */
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3000";
@@ -26,21 +103,32 @@ export class ApiError extends Error {
   }
 }
 
-function parseErrorResponse(response: Response, errorData: any): ApiError {
+function parseErrorResponse(response: Response, errorData: unknown): ApiError {
   const status = response.status;
-  let message = errorData?.error || errorData?.message || response.statusText || "An error occurred";
+  
+  // Safely extract error message from unknown errorData
+  const getErrorMessage = (): string => {
+    if (errorData && typeof errorData === 'object') {
+      const data = errorData as Record<string, unknown>;
+      if (typeof data.error === 'string') return data.error;
+      if (typeof data.message === 'string') return data.message;
+    }
+    return response.statusText || "An error occurred";
+  };
+
+  let message = getErrorMessage();
   let type: ApiErrorType = "unknown";
 
   // Categorize errors by status code
   if (status === 401 || status === 403) {
     type = "auth";
-    message = errorData?.error || "Authentication failed. Please sign in again.";
+    message = getErrorMessage() || "Authentication failed. Please sign in again.";
   } else if (status === 400 || status === 422) {
     type = "validation";
-    message = errorData?.error || "Invalid input. Please check your data.";
+    message = getErrorMessage() || "Invalid input. Please check your data.";
   } else if (status >= 500) {
     type = "server";
-    message = errorData?.error || "Server error. Please try again later.";
+    message = getErrorMessage() || "Server error. Please try again later.";
   } else if (status >= 400) {
     type = "unknown";
   }
@@ -77,7 +165,7 @@ export async function apiClient<T>(
     if (!response.ok) {
       // Error responses often include JSON, but do not assume a body.
       const errorText = await response.text().catch(() => "");
-      let errorData: any;
+      let errorData: unknown;
       try {
         errorData = errorText ? JSON.parse(errorText) : { error: response.statusText };
       } catch {
@@ -142,7 +230,7 @@ export async function directBackendClient<T>(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
-      let errorData: any;
+      let errorData: unknown;
       try {
         errorData = errorText ? JSON.parse(errorText) : { error: response.statusText };
       } catch {

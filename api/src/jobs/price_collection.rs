@@ -453,7 +453,7 @@ async fn store_prices(
             });
         
         // Convert new fields to Decimal
-        let rank = data.rank.map(|r| r as i32);
+        let rank = data.rank.map(|rank_value| rank_value as i32);
         
         let circulating_supply = data.circulating_supply
             .and_then(|v| Decimal::from_str(&v.to_string()).ok());

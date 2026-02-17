@@ -172,7 +172,7 @@ Fetches smart contract addresses for assets across multiple chains.
 **Metrics**:
 - `assets_processed`: Number of assets processed
 - `contracts_created`: Number of contract records upserted
-- `assets_skipped`: Number of assets skipped (errors, no coingecko_id)
+- `assets_skipped`: Number of assets skipped (errors, no coinpaprika_id)
 
 ## Testing
 

@@ -506,7 +506,7 @@ The backend includes an automated job system for collecting and tracking the top
 
 ### Features
 
-- **Automated Collection**: Scheduled job that fetches top coins from CoinGecko API
+- **Automated Collection**: Scheduled job that fetches top coins from CoinPaprika API
 - **Asset Management**: Automatically creates or updates asset metadata in the `assets` table
 - **Ranking Snapshots**: Stores daily ranking data in the `asset_rankings` table
 - **Configurable Schedule**: Fully configurable via environment variables
@@ -565,7 +565,7 @@ The backend uses `tokio-cron-scheduler` for robust job scheduling:
 
 The job stores data in two tables:
 
-1. **assets**: Asset metadata (symbol, name, logo, CoinGecko ID, etc.)
+1. **assets**: Asset metadata (symbol, name, CoinPaprika ID, etc.)
 2. **asset_rankings**: Daily ranking snapshots with market data (rank, price, market cap, volume, etc.)
 
 ### Use Cases
@@ -581,13 +581,13 @@ The backend includes an automated job system for collecting and maintaining cont
 
 ### Features
 
-- **Automated Collection**: Scheduled job that fetches contract addresses from CoinGecko API
+- **Automated Collection**: Scheduled job that fetches contract addresses from CoinPaprika API
 - **Multi-Chain Support**: Supports Ethereum, BSC, Polygon, Arbitrum, Optimism, Avalanche, Base, Solana, and more
 - **Address Mapping**: Maps wallet token balances to canonical assets using contract addresses
 - **Smart Deduplication**: Prevents duplicate contract addresses with unique constraints
 - **Configurable Schedule**: Fully configurable via environment variables
 - **Manual Trigger**: REST API endpoint for on-demand collection
-- **Rate Limiting**: Respects CoinGecko API rate limits (40 calls/minute)
+- **Rate Limiting**: Respects CoinPaprika API rate limits
 
 ### Configuration
 
@@ -608,21 +608,25 @@ CONTRACT_ADDRESSES_COLLECTION_SCHEDULE=0 0 1 * * *
 
 ### How It Works
 
-1. **Fetch Assets**: Retrieves all active assets that have a `coingecko_id`
-2. **Get Details**: For each asset, fetches detailed coin information from CoinGecko's `/coins/{id}` endpoint
-3. **Extract Addresses**: Parses the `platforms` field to extract contract addresses for each blockchain
-4. **Normalize**: Converts CoinGecko platform names to standard chain identifiers (e.g., `binance-smart-chain` → `bsc`)
+1. **Fetch Assets**: Retrieves all active assets that have a `coinpaprika_id` (stored in coingecko_id field for legacy reasons)
+2. **Get Details**: For each asset, fetches detailed coin information from CoinPaprika's `/coins/{id}` endpoint
+3. **Extract Addresses**: Parses the `contracts` field to extract contract addresses for each blockchain
+4. **Normalize**: Converts CoinPaprika platform types to standard chain identifiers (e.g., `BEP20` → `bsc`)
 5. **Store**: Upserts contract addresses into the `asset_contracts` table with metadata (token standard, decimals, verification status)
 
 ### Chain Mappings
 
-CoinGecko platform names are normalized to standard identifiers:
+CoinPaprika provides platform types in their contracts API that are normalized to standard chain identifiers used throughout the application:
 
-- `ethereum` → `ethereum`
-- `binance-smart-chain` → `bsc`
-- `polygon-pos` → `polygon`
-- `arbitrum-one` → `arbitrum`
-- `optimistic-ethereum` → `optimism`
+| CoinPaprika Type | First Normalization | Final Chain ID |
+|------------------|---------------------|----------------|
+| `ERC20`          | `ethereum`          | `ethereum`     |
+| `BEP20`          | `binance-smart-chain` | `bsc`        |
+| `polygon`        | `polygon-pos`       | `polygon`      |
+
+The normalization happens in two steps:
+1. Connector normalizes CoinPaprika types → intermediate platform names
+2. Job processing normalizes platform names → final chain identifiers
 - `avalanche` → `avalanche`
 - `base` → `base`
 - `solana` → `solana`
@@ -660,7 +664,7 @@ The job stores contract addresses in the `asset_contracts` table:
 - `contract_address`: Token contract address on the chain
 - `token_standard`: Token standard (e.g., "ERC20", "BEP20", "SPL")
 - `decimals`: Token decimals (can override asset default)
-- `is_verified`: Whether the contract is verified (always `true` for CoinGecko data)
+- `is_verified`: Whether the contract is verified (always `true` for CoinPaprika data)
 
 ### Use Cases
 

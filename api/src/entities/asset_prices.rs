@@ -12,7 +12,7 @@ pub struct Model {
     pub volume_24h_usd: Option<Decimal>,
     pub market_cap_usd: Option<Decimal>,
     pub change_percent_24h: Option<Decimal>,
-    pub source: String, // e.g., "coingecko", "coinmarketcap"
+    pub source: String, // e.g., "coinpaprika", "coinmarketcap"
     pub created_at: DateTimeWithTimeZone,
 }
 

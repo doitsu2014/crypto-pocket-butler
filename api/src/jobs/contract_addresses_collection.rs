@@ -1,4 +1,4 @@
-use crate::connectors::coingecko::CoinGeckoConnector;
+use crate::connectors::coinpaprika::CoinPaprikaConnector;
 use crate::entities::{assets, asset_contracts};
 use crate::jobs::runner::{JobRunner, JobMetrics};
 use chrono::Utc;
@@ -21,12 +21,12 @@ pub struct CollectionResult {
     pub error: Option<String>,
 }
 
-/// Collect contract addresses for assets from CoinGecko and store in database
+/// Collect contract addresses for assets from CoinPaprika and store in database
 /// 
 /// This function:
-/// 1. Fetches all active assets that have a coingecko_id
-/// 2. For each asset, fetches detailed coin info from CoinGecko
-/// 3. Extracts contract addresses from platforms field
+/// 1. Fetches all active assets that have a coinpaprika_id (stored in coingecko_id field)
+/// 2. For each asset, fetches detailed coin info from CoinPaprika
+/// 3. Extracts contract addresses from contracts field
 /// 4. Upserts contract addresses into asset_contracts table (idempotent via DB constraints)
 /// 
 /// # Arguments
@@ -42,10 +42,10 @@ pub async fn collect_contract_addresses(
     let runner = JobRunner::new(format!("contract_addresses_collection(limit={:?})", limit));
 
     let result = runner.execute(|| async {
-        // Create CoinGecko connector
-        let connector = CoinGeckoConnector::new();
+        // Create CoinPaprika connector
+        let connector = CoinPaprikaConnector::new();
 
-        // Fetch all active assets with coingecko_id
+        // Fetch all active assets with coinpaprika_id (stored in coingecko_id field for legacy reasons)
         let mut query = assets::Entity::find()
             .filter(assets::Column::IsActive.eq(true))
             .filter(assets::Column::CoingeckoId.is_not_null());
@@ -57,10 +57,10 @@ pub async fn collect_contract_addresses(
         let assets_list = query.all(db).await
             .map_err(|e| format!("Failed to query assets: {}", e))?;
         
-        tracing::info!("Found {} assets with coingecko_id to process for contract addresses", assets_list.len());
+        tracing::info!("Found {} assets with coinpaprika_id to process for contract addresses", assets_list.len());
         
         if assets_list.is_empty() {
-            tracing::warn!("No assets found with coingecko_id. Make sure to run top coins collection first.");
+            tracing::warn!("No assets found with coinpaprika_id. Make sure to run top coins collection first.");
             return Ok(JobMetrics {
                 items_processed: 0,
                 items_created: 0,
@@ -83,7 +83,7 @@ pub async fn collect_contract_addresses(
         let mut all_contracts = Vec::new();
 
         for asset in assets_list {
-            let coingecko_id = match &asset.coingecko_id {
+            let coinpaprika_id = match &asset.coingecko_id {
                 Some(id) => id,
                 None => {
                     assets_skipped += 1;
@@ -91,14 +91,14 @@ pub async fn collect_contract_addresses(
                 }
             };
 
-            // Fetch coin detail from CoinGecko (rate limited)
-            let coin_detail = match connector.fetch_coin_detail(coingecko_id).await {
+            // Fetch coin detail from CoinPaprika (rate limited)
+            let coin_detail = match connector.fetch_coin_detail(coinpaprika_id).await {
                 Ok(detail) => detail,
                 Err(e) => {
                     tracing::warn!(
                         "Failed to fetch coin detail for asset {} ({}): {}",
                         asset.symbol,
-                        coingecko_id,
+                        coinpaprika_id,
                         e
                     );
                     assets_skipped += 1;
@@ -106,8 +106,11 @@ pub async fn collect_contract_addresses(
                 }
             };
 
+            // Convert contracts to platform map for compatibility
+            let platforms = CoinPaprikaConnector::contracts_to_platform_map(&coin_detail.contracts);
+
             // Collect contracts for this asset
-            for (platform, contract_address) in coin_detail.platforms {
+            for (platform, contract_address) in platforms {
                 // Skip empty contract addresses
                 if contract_address.is_empty() {
                     continue;
@@ -234,7 +237,9 @@ pub async fn collect_contract_addresses(
     })
 }
 
-/// Normalize CoinGecko platform names to our chain identifiers
+/// Normalize CoinPaprika platform names to our chain identifiers
+/// This function provides a secondary normalization after contracts_to_platform_map
+/// for any additional platform names that might come from CoinPaprika's API
 fn normalize_platform_name(platform: &str) -> String {
     match platform {
         "ethereum" => "ethereum".to_string(),

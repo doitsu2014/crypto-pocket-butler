@@ -38,7 +38,7 @@ pub struct CollectTopCoinsResponse {
 
 /// Manually trigger top coins collection
 ///
-/// Fetches top N coins from CoinGecko and stores them in the database.
+/// Fetches top N coins from CoinPaprika and stores them in the database.
 /// This endpoint allows manual triggering of the scheduled job.
 #[utoipa::path(
     post,
@@ -133,7 +133,7 @@ pub struct CollectContractAddressesResponse {
 
 /// Manually trigger contract addresses collection
 ///
-/// Fetches contract addresses for assets from CoinGecko and stores them in the database.
+/// Fetches contract addresses for assets from CoinPaprika and stores them in the database.
 /// This endpoint allows manual triggering of the scheduled job.
 #[utoipa::path(
     post,

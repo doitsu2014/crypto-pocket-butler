@@ -1,4 +1,4 @@
-use crate::connectors::coingecko::CoinGeckoConnector;
+use crate::connectors::coinpaprika::CoinPaprikaConnector;
 use crate::entities::{assets, asset_rankings};
 use crate::jobs::runner::{JobRunner, JobMetrics};
 use chrono::Utc;
@@ -23,10 +23,10 @@ pub struct CollectionResult {
     pub error: Option<String>,
 }
 
-/// Collect top N coins from CoinGecko and store in database
+/// Collect top N coins from CoinPaprika and store in database
 /// 
 /// This function:
-/// 1. Fetches top N coins by market cap from CoinGecko
+/// 1. Fetches top N coins by market cap from CoinPaprika
 /// 2. Upserts asset metadata (creates new or updates existing)
 /// 3. Creates ranking snapshots for the current date (idempotent via DB constraints)
 /// 
@@ -43,8 +43,8 @@ pub async fn collect_top_coins(
     let runner = JobRunner::new(format!("top_coins_collection(limit={})", limit));
 
     let result = runner.execute(|| async {
-        // Create CoinGecko connector
-        let connector = CoinGeckoConnector::new();
+        // Create CoinPaprika connector
+        let connector = CoinPaprikaConnector::new();
 
         // Fetch top coins
         let coins = connector.fetch_top_coins(limit).await
@@ -56,21 +56,15 @@ pub async fn collect_top_coins(
         let mut rankings_created = 0;
 
         let snapshot_date = Utc::now().date_naive();
-        let source = "coingecko";
+        let source = "coinpaprika";
         
         let mut rankings_to_insert = Vec::new();
 
         for coin in coins {
-            // Skip if no market cap rank
-            let rank = match coin.market_cap_rank {
-                Some(r) => r as i32,
-                None => {
-                    tracing::warn!("Skipping coin {} - no market cap rank", coin.id);
-                    continue;
-                }
-            };
+            // Use the rank from CoinPaprika directly
+            let rank = coin.rank as i32;
 
-            // Check if asset already exists by symbol or coingecko_id
+            // Check if asset already exists by symbol or coingecko_id (field name is legacy, stores coinpaprika_id)
             let existing_asset = assets::Entity::find()
                 .filter(
                     assets::Column::Symbol.eq(&coin.symbol.to_uppercase())
@@ -87,7 +81,6 @@ pub async fn collect_top_coins(
                     asset_update.name = ActiveValue::Set(coin.name.clone());
                     asset_update.symbol = ActiveValue::Set(coin.symbol.to_uppercase());
                     asset_update.coingecko_id = ActiveValue::Set(Some(coin.id.clone()));
-                    asset_update.logo_url = ActiveValue::Set(Some(coin.image.clone()));
                     asset_update.is_active = ActiveValue::Set(true);
                     asset_update.updated_at = ActiveValue::Set(Utc::now().into());
                     
@@ -106,7 +99,7 @@ pub async fn collect_top_coins(
                         asset_type: ActiveValue::Set("cryptocurrency".to_string()),
                         coingecko_id: ActiveValue::Set(Some(coin.id.clone())),
                         coinmarketcap_id: ActiveValue::NotSet,
-                        logo_url: ActiveValue::Set(Some(coin.image.clone())),
+                        logo_url: ActiveValue::NotSet,
                         description: ActiveValue::NotSet,
                         decimals: ActiveValue::NotSet,
                         is_active: ActiveValue::Set(true),
@@ -123,13 +116,13 @@ pub async fn collect_top_coins(
             };
 
             // Prepare ranking for batch insert
-            let market_cap_usd = Decimal::from_str(&coin.market_cap.to_string())
+            let market_cap_usd = Decimal::from_str(&coin.quotes.usd.market_cap.to_string())
                 .unwrap_or_else(|_| Decimal::ZERO);
-            let price_usd = Decimal::from_str(&coin.current_price.to_string())
+            let price_usd = Decimal::from_str(&coin.quotes.usd.price.to_string())
                 .unwrap_or_else(|_| Decimal::ZERO);
-            let volume_24h_usd = coin.total_volume
+            let volume_24h_usd = coin.quotes.usd.volume_24h
                 .and_then(|v| Decimal::from_str(&v.to_string()).ok());
-            let change_percent_24h = coin.price_change_percentage_24h
+            let change_percent_24h = coin.quotes.usd.percent_change_24h
                 .and_then(|v| Decimal::from_str(&v.to_string()).ok());
             let dominance = None;
 

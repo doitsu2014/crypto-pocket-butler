@@ -11,6 +11,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./keycloak/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -19,28 +20,54 @@ services:
     networks:
       - crypto-pocket-butler-network
 
-  # Keycloak Authentication Server
+  # Keycloak Authentication Server (Production Mode)
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     container_name: crypto-pocket-butler-keycloak
-    command: start-dev
+    command: start  # Production mode (not start-dev) - requires database configuration
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
       KC_HTTP_PORT: 8080
       KC_HOSTNAME_STRICT: false
       KC_HOSTNAME_STRICT_HTTPS: false
       KC_HTTP_ENABLED: true
+      KC_HEALTH_ENABLED: true
+      KC_METRICS_ENABLED: true
     ports:
       - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - crypto-pocket-butler-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/realms/master || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 60s
+
+  # Keycloak Initialization
+  keycloak-init:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile
+    container_name: crypto-pocket-butler-keycloak-init
+    environment:
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-myrealm}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-crypto-pocket-butler}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
+      WEB_ROOT_URL: ${WEB_ROOT_URL:-http://localhost:3001}
+    depends_on:
+      - keycloak
+    networks:
+      - crypto-pocket-butler-network
+    restart: "no"
 
   # Rust API
   api:

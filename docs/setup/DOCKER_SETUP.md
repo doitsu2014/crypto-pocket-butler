@@ -17,11 +17,14 @@ Copy the example environment file and customize it:
 cp .env.example .env
 ```
 
-Required configuration in `.env`:
-- `KEYCLOAK_REALM`: Your Keycloak realm name (default: `myrealm`)
-- `KEYCLOAK_CLIENT_ID`: Your Keycloak client ID (default: `crypto-pocket-butler`)
-- `KEYCLOAK_CLIENT_SECRET`: Your Keycloak client secret (leave empty for public client)
+Edit `.env` and set at minimum:
 - `NEXTAUTH_SECRET`: Generate a secure secret with `openssl rand -base64 32`
+
+Optional configuration:
+- `KEYCLOAK_REALM`: Keycloak realm name (default: `myrealm`)
+- `KEYCLOAK_CLIENT_ID`: Keycloak client ID (default: `crypto-pocket-butler`)
+- `KEYCLOAK_CLIENT_SECRET`: Client secret (auto-generated if empty)
+- `WEB_ROOT_URL`: Web application URL (default: `http://localhost:3001`)
 
 **Note**: The default configuration uses internal Docker network names for service-to-service communication (e.g., `http://keycloak:8080`), while external access uses `localhost`. This is the recommended setup for Docker Compose.
 
@@ -35,25 +38,30 @@ docker-compose up -d
 
 This will:
 1. Start PostgreSQL database on port 5432
-2. Start Keycloak authentication server on port 8080
-3. Build and start the Rust API on port 3000
-4. Build and start the Next.js web service on port 3001
+2. Create Keycloak database in PostgreSQL
+3. Start Keycloak authentication server on port 8080 (using PostgreSQL)
+4. **Automatically configure Keycloak** with realm, OAuth 2.0 client, and test user
+5. Build and start the Rust API on port 3000
+6. Build and start the Next.js web service on port 3001
 
-### 3. Configure Keycloak
+### 3. Keycloak Configuration (Automatic)
 
-After the services are up, configure Keycloak:
+The stack includes an automatic Keycloak initialization service that:
 
-1. Access Keycloak admin console at http://localhost:8080
-2. Login with admin/admin
-3. Create a realm named `myrealm` (or use the name you set in `.env`)
-4. Create a client named `crypto-pocket-butler`
-5. Configure the client:
-   - Client authentication: OFF (for public client) or ON (for confidential client)
-   - Valid redirect URIs: `http://localhost:3001/*`
-   - Web origins: `http://localhost:3001`
-6. Create a test user
+✅ Creates the realm (default: `myrealm`)
+✅ Creates an OAuth 2.0 client with Authorization Code flow and PKCE
+✅ Configures redirect URIs for the web application
+✅ Creates a test user (`testuser` / `testpass123`)
 
-See [KEYCLOAK_SETUP.md](KEYCLOAK_SETUP.md) for detailed instructions.
+**No manual Keycloak configuration needed!**
+
+To view the initialization logs:
+
+```bash
+docker-compose logs keycloak-init
+```
+
+If a client secret was auto-generated, it will be displayed in the logs. Copy it to your `.env` file as `KEYCLOAK_CLIENT_SECRET`.
 
 ### 4. Access the Application
 
@@ -111,26 +119,66 @@ docker-compose up -d --build
 The Docker Compose setup includes:
 
 1. **PostgreSQL** (postgres:16-alpine)
-   - Database for the application
+   - Database for both the application and Keycloak
+   - Two databases: `crypto_pocket_butler` and `keycloak`
    - Data persisted in Docker volume `postgres_data`
    - Port: 5432
 
 2. **Keycloak** (quay.io/keycloak/keycloak:26.0)
    - Authentication and authorization server
+   - **Uses PostgreSQL** for persistent storage (not dev mode)
+   - Configured with OAuth 2.0 Authorization Code flow with PKCE
    - Admin console: http://localhost:8080
    - Port: 8080
 
-3. **API** (Rust/Axum)
+3. **Keycloak Init** (Alpine with curl, bash, jq)
+   - One-time initialization service
+   - Automatically configures Keycloak realm and OAuth 2.0 client
+   - Runs after Keycloak is healthy and exits
+   - See [keycloak/README.md](../../keycloak/README.md) for details
+
+4. **API** (Rust/Axum)
    - RESTful API
    - Automatic database migrations on startup
+   - JWT validation with Keycloak
    - Port: 3000
 
-4. **Web** (Next.js)
+5. **Web** (Next.js)
    - React-based web interface
    - Server-side rendering
    - Port: 3001
 
 All services are connected via a bridge network `crypto-pocket-butler-network`.
+
+## OAuth 2.0 Configuration
+
+The Keycloak initialization automatically configures:
+
+### Authorization Code Flow with PKCE
+
+- **Flow Type**: OAuth 2.0 Authorization Code Grant
+- **PKCE**: Enabled with S256 code challenge method
+- **Client Type**: Confidential (requires client secret)
+- **Standard Flow**: Enabled
+- **Implicit Flow**: Disabled (deprecated)
+- **Direct Access Grants**: Enabled (for testing)
+
+### Client Configuration
+
+- **Client ID**: `crypto-pocket-butler` (configurable via `KEYCLOAK_CLIENT_ID`)
+- **Redirect URIs**:
+  - `http://localhost:3001/*`
+  - `http://localhost:3001/api/auth/callback/keycloak`
+- **Web Origins**: `http://localhost:3001`
+- **Root URL**: `http://localhost:3001`
+
+### Test Credentials
+
+- **Username**: `testuser`
+- **Password**: `testpass123`
+- **Email**: `test@example.com`
+
+See [keycloak/README.md](../../keycloak/README.md) for more details on the OAuth 2.0 setup.
 
 ## Development Workflow
 
@@ -140,7 +188,7 @@ For active development, you might prefer to run services locally:
 
 ```bash
 # Run only infrastructure services (database + Keycloak)
-docker-compose up -d postgres keycloak
+docker-compose up -d postgres keycloak keycloak-init
 
 # Then run api and web locally
 cd api && cargo run

@@ -57,7 +57,10 @@ pub async fn collect_contract_addresses(
         let assets_list = query.all(db).await
             .map_err(|e| format!("Failed to query assets: {}", e))?;
         
+        tracing::info!("Found {} assets with coingecko_id to process for contract addresses", assets_list.len());
+        
         if assets_list.is_empty() {
+            tracing::warn!("No assets found with coingecko_id. Make sure to run top coins collection first.");
             return Ok(JobMetrics {
                 items_processed: 0,
                 items_created: 0,
@@ -201,6 +204,11 @@ pub async fn collect_contract_addresses(
                 }
             }
         }
+
+        tracing::info!(
+            "Contract addresses collection complete: {} assets processed, {} contracts created, {} assets skipped", 
+            assets_processed, contracts_created, assets_skipped
+        );
 
         Ok(JobMetrics {
             items_processed: assets_processed,

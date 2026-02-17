@@ -5,11 +5,25 @@ use std::collections::HashMap;
 use std::error::Error;
 use tracing;
 
+/// Helper function to log detailed error messages for CoinGecko API failures
+fn log_coingecko_error(status: reqwest::StatusCode, error_text: &str) {
+    if status.as_u16() == 403 {
+        tracing::error!(
+            "CoinGecko API 403 Forbidden - Rate limit exceeded. Consider setting COINGECKO_API_KEY environment variable for Pro API access. Error: {}",
+            error_text
+        );
+    } else {
+        tracing::error!("CoinGecko API error: {} - {}", status, error_text);
+    }
+}
+
+
 /// CoinGecko API client for fetching market data
 pub struct CoinGeckoConnector {
     client: Client,
     base_url: String,
     rate_limiter: RateLimiter,
+    api_key: Option<String>,
 }
 
 /// Coin data from CoinGecko API
@@ -41,11 +55,28 @@ pub struct CoinDetailData {
 
 impl CoinGeckoConnector {
     /// Create a new CoinGecko connector
+    /// 
+    /// Checks for COINGECKO_API_KEY environment variable. If set, uses Pro API.
+    /// Otherwise, uses the free public API.
     pub fn new() -> Self {
+        let api_key = std::env::var("COINGECKO_API_KEY").ok();
+        let has_api_key = api_key.is_some();
+        
+        let base_url = if has_api_key {
+            // Use Pro API endpoint
+            tracing::info!("CoinGecko Pro API enabled with API key");
+            "https://pro-api.coingecko.com/api/v3".to_string()
+        } else {
+            // Use free public API endpoint
+            tracing::info!("CoinGecko using free public API (rate limited)");
+            "https://api.coingecko.com/api/v3".to_string()
+        };
+        
         Self {
             client: Client::new(),
-            base_url: "https://api.coingecko.com/api/v3".to_string(),
+            base_url,
             rate_limiter: RateLimiter::coingecko(),
+            api_key,
         }
     }
 
@@ -72,16 +103,21 @@ impl CoinGeckoConnector {
             limit
         );
 
-        let response = self.client
+        let mut request = self.client
             .get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await?;
+            .header("accept", "application/json");
+        
+        // Add API key header if available (for Pro API)
+        if let Some(key) = &self.api_key {
+            request = request.header("x-cg-pro-api-key", key);
+        }
+        
+        let response = request.send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            tracing::error!("CoinGecko API error: {} - {}", status, error_text);
+            log_coingecko_error(status, &error_text);
             return Err(format!("CoinGecko API error: {} - {}", status, error_text).into());
         }
 
@@ -130,16 +166,21 @@ impl CoinGeckoConnector {
             ids_param
         );
 
-        let response = self.client
+        let mut request = self.client
             .get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await?;
+            .header("accept", "application/json");
+        
+        // Add API key header if available (for Pro API)
+        if let Some(key) = &self.api_key {
+            request = request.header("x-cg-pro-api-key", key);
+        }
+        
+        let response = request.send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            tracing::error!("CoinGecko API error: {} - {}", status, error_text);
+            log_coingecko_error(status, &error_text);
             return Err(format!("CoinGecko API error: {} - {}", status, error_text).into());
         }
 
@@ -169,15 +210,21 @@ impl CoinGeckoConnector {
             coin_id
         );
 
-        let response = self.client
+        let mut request = self.client
             .get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await?;
+            .header("accept", "application/json");
+        
+        // Add API key header if available (for Pro API)
+        if let Some(key) = &self.api_key {
+            request = request.header("x-cg-pro-api-key", key);
+        }
+        
+        let response = request.send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            log_coingecko_error(status, &error_text);
             tracing::warn!("CoinGecko API error for {}: {} - {}", coin_id, status, error_text);
             return Err(format!("CoinGecko API error: {} - {}", status, error_text).into());
         }

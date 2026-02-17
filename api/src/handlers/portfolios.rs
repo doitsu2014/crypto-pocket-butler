@@ -776,8 +776,8 @@ pub async fn get_portfolio_holdings(
 
                 // Add to totals using Decimal for precision
                 let qty = parse_decimal_or_zero(&holding.quantity);
-                let avail = parse_decimal_or_zero(&holding.available);
-                let frz = parse_decimal_or_zero(&holding.frozen);
+                let avail = parse_decimal_or_zero(holding.available_quantity());
+                let frz = parse_decimal_or_zero(holding.frozen_quantity());
                 let curr_qty = parse_decimal_or_zero(&entry.total_quantity);
                 let curr_avail = parse_decimal_or_zero(&entry.total_available);
                 let curr_frz = parse_decimal_or_zero(&entry.total_frozen);
@@ -790,9 +790,9 @@ pub async fn get_portfolio_holdings(
                 entry.accounts.push(AccountHoldingDetail {
                     account_id: account.id,
                     account_name: account.name.clone(),
-                    quantity: holding.quantity,
-                    available: holding.available,
-                    frozen: holding.frozen,
+                    quantity: holding.quantity.clone(),
+                    available: holding.available_quantity().to_string(),
+                    frozen: holding.frozen_quantity().to_string(),
                 });
             }
         }

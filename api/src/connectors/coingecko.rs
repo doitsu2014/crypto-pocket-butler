@@ -10,6 +10,7 @@ pub struct CoinGeckoConnector {
     client: Client,
     base_url: String,
     rate_limiter: RateLimiter,
+    api_key: Option<String>,
 }
 
 /// Coin data from CoinGecko API
@@ -41,11 +42,30 @@ pub struct CoinDetailData {
 
 impl CoinGeckoConnector {
     /// Create a new CoinGecko connector
+    /// 
+    /// Checks for COINGECKO_API_KEY environment variable. If set, uses Pro API.
+    /// Otherwise, uses the free public API.
     pub fn new() -> Self {
+        let api_key = std::env::var("COINGECKO_API_KEY").ok();
+        let base_url = if api_key.is_some() {
+            // Use Pro API endpoint
+            "https://pro-api.coingecko.com/api/v3".to_string()
+        } else {
+            // Use free public API endpoint
+            "https://api.coingecko.com/api/v3".to_string()
+        };
+        
+        if api_key.is_some() {
+            tracing::info!("CoinGecko Pro API enabled with API key");
+        } else {
+            tracing::info!("CoinGecko using free public API (rate limited)");
+        }
+        
         Self {
             client: Client::new(),
-            base_url: "https://api.coingecko.com/api/v3".to_string(),
+            base_url,
             rate_limiter: RateLimiter::coingecko(),
+            api_key,
         }
     }
 
@@ -72,11 +92,16 @@ impl CoinGeckoConnector {
             limit
         );
 
-        let response = self.client
+        let mut request = self.client
             .get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await?;
+            .header("accept", "application/json");
+        
+        // Add API key header if available (for Pro API)
+        if let Some(key) = &self.api_key {
+            request = request.header("x-cg-pro-api-key", key);
+        }
+        
+        let response = request.send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -130,11 +155,16 @@ impl CoinGeckoConnector {
             ids_param
         );
 
-        let response = self.client
+        let mut request = self.client
             .get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await?;
+            .header("accept", "application/json");
+        
+        // Add API key header if available (for Pro API)
+        if let Some(key) = &self.api_key {
+            request = request.header("x-cg-pro-api-key", key);
+        }
+        
+        let response = request.send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -169,11 +199,16 @@ impl CoinGeckoConnector {
             coin_id
         );
 
-        let response = self.client
+        let mut request = self.client
             .get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await?;
+            .header("accept", "application/json");
+        
+        // Add API key header if available (for Pro API)
+        if let Some(key) = &self.api_key {
+            request = request.header("x-cg-pro-api-key", key);
+        }
+        
+        let response = request.send().await?;
 
         if !response.status().is_success() {
             let status = response.status();

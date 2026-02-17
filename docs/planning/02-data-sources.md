@@ -9,7 +9,7 @@
 - BTC: UTXO balance.
 - Solana: SPL token balances.
 ## Price & metadata
-- Prices: exchange tickers first; fallback to CoinGecko.
+- Prices: exchange tickers first; fallback to CoinPaprika.
 - Token metadata: symbol mapping, decimals, chain, sector tags.
 ## Integration requirements
 - [ ] API key storage + rotation

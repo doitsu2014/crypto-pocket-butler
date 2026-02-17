@@ -267,8 +267,8 @@ Rate limiters are implemented using Tokio semaphores in `src/concurrency/mod.rs`
 ```rust
 use crate::concurrency::RateLimiter;
 
-// Create a rate limiter for CoinGecko API
-let rate_limiter = RateLimiter::coingecko();
+// Create a rate limiter for CoinPaprika API
+let rate_limiter = RateLimiter::coinpaprika();
 
 // Acquire permit before making API call
 let _permit = rate_limiter.acquire().await?;
@@ -277,14 +277,14 @@ let _permit = rate_limiter.acquire().await?;
 
 ### Available Rate Limiters
 
-#### CoinGecko API
+#### CoinPaprika API
 - **Max concurrent**: 5 requests
-- **Min delay**: 2 seconds between requests
-- **Rate limit**: ~30 requests/minute (demo plan)
-- **Usage**: Automatically applied in `CoinGeckoConnector`
+- **Min delay**: 100ms between requests
+- **Rate limit**: Free tier allows 1000 calls/day
+- **Usage**: Automatically applied in `CoinPaprikaConnector`
 
 ```rust
-let connector = CoinGeckoConnector::new();
+let connector = CoinPaprikaConnector::new();
 // Rate limiting is built-in, no need to manually acquire permits
 let coins = connector.fetch_top_coins(100).await?;
 ```

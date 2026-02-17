@@ -401,7 +401,7 @@ Metadata for crypto assets (coins, tokens, stablecoins).
 | symbol              | VARCHAR     | UNIQUE, NOT NULL      | Asset symbol (e.g., "BTC", "ETH")      |
 | name                | VARCHAR     | NOT NULL              | Full asset name (e.g., "Bitcoin")      |
 | asset_type          | VARCHAR     | NOT NULL              | "cryptocurrency", "token", "stablecoin"|
-| coingecko_id        | VARCHAR     | NULL                  | CoinGecko API identifier               |
+| coingecko_id        | VARCHAR     | NULL                  | CoinPaprika API identifier (legacy field name) |
 | coinmarketcap_id    | VARCHAR     | NULL                  | CoinMarketCap identifier               |
 | logo_url            | VARCHAR     | NULL                  | URL to asset logo/icon                 |
 | description         | TEXT        | NULL                  | Asset description                      |
@@ -413,7 +413,7 @@ Metadata for crypto assets (coins, tokens, stablecoins).
 **Indexes:**
 - `idx_assets_symbol` on `symbol` (UNIQUE) - Fast lookups and prevent duplicates
 - `idx_assets_asset_type` on `asset_type` - Filter by asset type
-- `idx_assets_coingecko_id` on `coingecko_id` - API integrations
+- `idx_assets_coingecko_id` on `coingecko_id` - API integrations (stores CoinPaprika IDs)
 
 ### asset_contracts
 
@@ -452,7 +452,7 @@ Time-series price data for assets.
 | volume_24h_usd    | DECIMAL     | NULL                  | 24-hour trading volume in USD          |
 | market_cap_usd    | DECIMAL     | NULL                  | Market capitalization in USD           |
 | change_percent_24h| DECIMAL     | NULL                  | 24-hour price change percentage        |
-| source            | VARCHAR     | NOT NULL              | Data source (e.g., "coingecko")        |
+| source            | VARCHAR     | NOT NULL              | Data source (e.g., "coinpaprika")      |
 | created_at        | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp              |
 
 **Foreign Keys:**
@@ -479,7 +479,7 @@ Historical top-100 ranking snapshots.
 | volume_24h_usd    | DECIMAL     | NULL                  | 24-hour volume at snapshot time        |
 | change_percent_24h| DECIMAL     | NULL                  | 24-hour change at snapshot time        |
 | dominance         | DECIMAL     | NULL                  | Market dominance percentage            |
-| source            | VARCHAR     | NOT NULL              | Data source (e.g., "coingecko")        |
+| source            | VARCHAR     | NOT NULL              | Data source (e.g., "coinpaprika")      |
 | created_at        | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp              |
 
 **Foreign Keys:**

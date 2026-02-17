@@ -616,13 +616,17 @@ CONTRACT_ADDRESSES_COLLECTION_SCHEDULE=0 0 1 * * *
 
 ### Chain Mappings
 
-CoinPaprika platform types are normalized to standard identifiers:
+CoinPaprika provides platform types in their contracts API that are normalized to standard chain identifiers used throughout the application:
 
-- `ERC20` → `ethereum` (then `ethereum` → `ethereum`)
-- `BEP20` → `binance-smart-chain` (then `binance-smart-chain` → `bsc`)
-- `polygon` → `polygon-pos` (then `polygon-pos` → `polygon`)
+| CoinPaprika Type | First Normalization | Final Chain ID |
+|------------------|---------------------|----------------|
+| `ERC20`          | `ethereum`          | `ethereum`     |
+| `BEP20`          | `binance-smart-chain` | `bsc`        |
+| `polygon`        | `polygon-pos`       | `polygon`      |
 
-Note: First normalization happens in connector, second in job processing.
+The normalization happens in two steps:
+1. Connector normalizes CoinPaprika types → intermediate platform names
+2. Job processing normalizes platform names → final chain identifiers
 - `avalanche` → `avalanche`
 - `base` → `base`
 - `solana` → `solana`

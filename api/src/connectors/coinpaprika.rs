@@ -276,7 +276,10 @@ impl CoinPaprikaConnector {
                 platform_name => {
                     // Log unrecognized platform types for monitoring
                     if !platform_name.is_empty() {
-                        tracing::debug!("Unrecognized platform type from CoinPaprika: {}", platform_name);
+                        tracing::warn!(
+                            "Unrecognized platform type from CoinPaprika: '{}'. Consider adding mapping.",
+                            platform_name
+                        );
                     }
                     platform_name
                 }

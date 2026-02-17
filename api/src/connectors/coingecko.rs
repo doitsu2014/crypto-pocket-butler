@@ -60,19 +60,17 @@ impl CoinGeckoConnector {
     /// Otherwise, uses the free public API.
     pub fn new() -> Self {
         let api_key = std::env::var("COINGECKO_API_KEY").ok();
-        let base_url = if api_key.is_some() {
+        let has_api_key = api_key.is_some();
+        
+        let base_url = if has_api_key {
             // Use Pro API endpoint
+            tracing::info!("CoinGecko Pro API enabled with API key");
             "https://pro-api.coingecko.com/api/v3".to_string()
         } else {
             // Use free public API endpoint
+            tracing::info!("CoinGecko using free public API (rate limited)");
             "https://api.coingecko.com/api/v3".to_string()
         };
-        
-        if api_key.is_some() {
-            tracing::info!("CoinGecko Pro API enabled with API key");
-        } else {
-            tracing::info!("CoinGecko using free public API (rate limited)");
-        }
         
         Self {
             client: Client::new(),

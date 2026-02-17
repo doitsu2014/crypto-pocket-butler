@@ -238,8 +238,8 @@ pub async fn collect_contract_addresses(
 }
 
 /// Normalize CoinPaprika platform names to our chain identifiers
-/// Note: CoinPaprika uses platform types like "ERC20", "BEP20" in their contracts
-/// This function is kept for compatibility but may need adjustments
+/// This function provides a secondary normalization after contracts_to_platform_map
+/// for any additional platform names that might come from CoinPaprika's API
 fn normalize_platform_name(platform: &str) -> String {
     match platform {
         "ethereum" => "ethereum".to_string(),

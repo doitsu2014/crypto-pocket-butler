@@ -273,7 +273,13 @@ impl CoinPaprikaConnector {
                 "erc20" => "ethereum",
                 "bep20" => "binance-smart-chain",
                 "polygon" => "polygon-pos",
-                platform_name => platform_name,
+                platform_name => {
+                    // Log unrecognized platform types for monitoring
+                    if !platform_name.is_empty() {
+                        tracing::debug!("Unrecognized platform type from CoinPaprika: {}", platform_name);
+                    }
+                    platform_name
+                }
             };
             
             platforms.insert(platform.to_string(), contract.contract.clone());

@@ -618,9 +618,11 @@ CONTRACT_ADDRESSES_COLLECTION_SCHEDULE=0 0 1 * * *
 
 CoinPaprika platform types are normalized to standard identifiers:
 
-- `ERC20` → `ethereum`
-- `BEP20` → `binance-smart-chain`
-- `polygon` → `polygon-pos`
+- `ERC20` → `ethereum` (then `ethereum` → `ethereum`)
+- `BEP20` → `binance-smart-chain` (then `binance-smart-chain` → `bsc`)
+- `polygon` → `polygon-pos` (then `polygon-pos` → `polygon`)
+
+Note: First normalization happens in connector, second in job processing.
 - `avalanche` → `avalanche`
 - `base` → `base`
 - `solana` → `solana`

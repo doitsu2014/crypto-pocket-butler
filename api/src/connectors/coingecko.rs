@@ -5,6 +5,19 @@ use std::collections::HashMap;
 use std::error::Error;
 use tracing;
 
+/// Helper function to log detailed error messages for CoinGecko API failures
+fn log_coingecko_error(status: reqwest::StatusCode, error_text: &str) {
+    if status.as_u16() == 403 {
+        tracing::error!(
+            "CoinGecko API 403 Forbidden - Rate limit exceeded. Consider setting COINGECKO_API_KEY environment variable for Pro API access. Error: {}",
+            error_text
+        );
+    } else {
+        tracing::error!("CoinGecko API error: {} - {}", status, error_text);
+    }
+}
+
+
 /// CoinGecko API client for fetching market data
 pub struct CoinGeckoConnector {
     client: Client,
@@ -106,7 +119,7 @@ impl CoinGeckoConnector {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            tracing::error!("CoinGecko API error: {} - {}", status, error_text);
+            log_coingecko_error(status, &error_text);
             return Err(format!("CoinGecko API error: {} - {}", status, error_text).into());
         }
 
@@ -169,7 +182,7 @@ impl CoinGeckoConnector {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            tracing::error!("CoinGecko API error: {} - {}", status, error_text);
+            log_coingecko_error(status, &error_text);
             return Err(format!("CoinGecko API error: {} - {}", status, error_text).into());
         }
 
@@ -213,6 +226,7 @@ impl CoinGeckoConnector {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            log_coingecko_error(status, &error_text);
             tracing::warn!("CoinGecko API error for {}: {} - {}", coin_id, status, error_text);
             return Err(format!("CoinGecko API error: {} - {}", status, error_text).into());
         }

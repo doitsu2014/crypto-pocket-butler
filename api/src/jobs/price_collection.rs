@@ -1,4 +1,4 @@
-use crate::connectors::coingecko::CoinGeckoConnector;
+use crate::connectors::coinpaprika::CoinPaprikaConnector;
 use crate::entities::{asset_prices, assets, accounts};
 use crate::jobs::runner::{JobRunner, JobMetrics};
 use chrono::{Timelike, Utc};
@@ -35,7 +35,7 @@ struct Holding {
 /// 
 /// This function:
 /// 1. Identifies tracked assets (Top 100 by market cap + portfolio assets)
-/// 2. Fetches current prices from CoinGecko
+/// 2. Fetches current prices from CoinPaprika
 /// 3. Stores prices in asset_prices table (idempotent via DB constraints)
 /// 
 /// # Arguments
@@ -73,13 +73,13 @@ pub async fn collect_prices(
 
         tracing::info!("Found {} unique assets to collect prices for", assets_tracked);
 
-        // Step 2: Fetch prices from CoinGecko
-        let connector = CoinGeckoConnector::new();
+        // Step 2: Fetch prices from CoinPaprika
+        let connector = CoinPaprikaConnector::new();
         let price_data = fetch_prices_for_assets(&connector, &tracked_assets, top_n_limit).await
             .map_err(|e| format!("Failed to fetch prices: {}", e))?;
 
         let prices_collected = price_data.len();
-        tracing::info!("Fetched {} prices from CoinGecko", prices_collected);
+        tracing::info!("Fetched {} prices from CoinPaprika", prices_collected);
 
         // Step 3: Store prices in database using upserts
         let prices_stored = store_prices(db, &price_data).await
@@ -115,10 +115,11 @@ async fn get_tracked_assets(
 ) -> Result<Vec<assets::Model>, Box<dyn Error + Send + Sync>> {
     let mut tracked_asset_ids: HashSet<Uuid> = HashSet::new();
 
-    // Get up to N active assets with CoinGecko IDs from database
-    // Note: The actual "top N by market cap" is determined by CoinGecko API in fetch_prices_for_assets().
+    // Get up to N active assets with CoinPaprika IDs from database
+    // Note: The actual "top N by market cap" is determined by CoinPaprika API in fetch_prices_for_assets().
     // This query just ensures we have asset records in our DB to match against.
     // The limit here helps reduce unnecessary lookups when we have many assets in the DB.
+    // Note: The field is named CoingeckoId for historical reasons but now stores CoinPaprika IDs
     let top_assets = assets::Entity::find()
         .filter(assets::Column::IsActive.eq(true))
         .filter(assets::Column::CoingeckoId.is_not_null())
@@ -170,36 +171,36 @@ async fn get_tracked_assets(
     // Fetch full asset models for all tracked asset IDs
     let tracked_assets = assets::Entity::find()
         .filter(assets::Column::Id.is_in(tracked_asset_ids))
-        .filter(assets::Column::CoingeckoId.is_not_null()) // Only assets with CoinGecko ID
+        .filter(assets::Column::CoingeckoId.is_not_null()) // Only assets with CoinPaprika ID (field name is legacy)
         .all(db)
         .await?;
 
     Ok(tracked_assets)
 }
 
-/// Fetch prices from CoinGecko for tracked assets
+/// Fetch prices from CoinPaprika for tracked assets
 /// 
 /// This function ensures we get prices for:
-/// 1. Top N coins by market cap (from CoinGecko's markets API, sorted by market cap)
+/// 1. Top N coins by market cap (from CoinPaprika's tickers API, sorted by market cap)
 /// 2. All portfolio assets (even if not in top N)
 async fn fetch_prices_for_assets(
-    connector: &CoinGeckoConnector,
+    connector: &CoinPaprikaConnector,
     tracked_assets: &[assets::Model],
     top_n_limit: usize,
 ) -> Result<Vec<PriceData>, Box<dyn Error + Send + Sync>> {
-    // Fetch top N coins by market cap from CoinGecko
-    // CoinGecko returns these pre-sorted by market cap rank, so this IS the true top N
+    // Fetch top N coins by market cap from CoinPaprika
+    // CoinPaprika returns these pre-sorted by market cap rank, so this IS the true top N
     let mut all_coins = connector.fetch_top_coins(top_n_limit).await?;
     
-    // Build a set of coingecko_ids we already have
+    // Build a set of coinpaprika_ids we already have
     let fetched_ids: HashSet<String> = all_coins.iter().map(|c| c.id.clone()).collect();
     
     // Identify assets not in the top N that we still need prices for
     let mut missing_coin_ids: Vec<String> = Vec::new();
     for asset in tracked_assets {
-        if let Some(coingecko_id) = &asset.coingecko_id {
-            if !fetched_ids.contains(coingecko_id) {
-                missing_coin_ids.push(coingecko_id.clone());
+        if let Some(coinpaprika_id) = &asset.coingecko_id {
+            if !fetched_ids.contains(coinpaprika_id) {
+                missing_coin_ids.push(coinpaprika_id.clone());
             }
         }
     }
@@ -218,29 +219,29 @@ async fn fetch_prices_for_assets(
         all_coins.append(&mut additional_coins);
     }
     
-    // Build a map of coingecko_id to coin data for quick lookup
-    let coins_map: HashMap<String, &crate::connectors::coingecko::CoinMarketData> = 
+    // Build a map of coinpaprika_id to coin data for quick lookup
+    let coins_map: HashMap<String, &crate::connectors::coinpaprika::CoinMarketData> = 
         all_coins.iter().map(|c| (c.id.clone(), c)).collect();
     
-    // Map CoinGecko coin data to our tracked assets
+    // Map CoinPaprika coin data to our tracked assets
     let mut price_data = Vec::new();
     
     for asset in tracked_assets {
-        if let Some(coingecko_id) = &asset.coingecko_id {
+        if let Some(coinpaprika_id) = &asset.coingecko_id {
             // Find matching coin data
-            if let Some(coin) = coins_map.get(coingecko_id) {
+            if let Some(coin) = coins_map.get(coinpaprika_id) {
                 price_data.push(PriceData {
                     asset_id: asset.id,
-                    price_usd: coin.current_price,
-                    volume_24h_usd: coin.total_volume,
-                    market_cap_usd: Some(coin.market_cap),
-                    change_percent_24h: coin.price_change_percentage_24h,
+                    price_usd: coin.quotes.usd.price,
+                    volume_24h_usd: coin.quotes.usd.volume_24h,
+                    market_cap_usd: Some(coin.quotes.usd.market_cap),
+                    change_percent_24h: coin.quotes.usd.percent_change_24h,
                 });
             } else {
                 tracing::warn!(
                     "No price data found for asset {} ({})",
                     asset.symbol,
-                    coingecko_id
+                    coinpaprika_id
                 );
             }
         }
@@ -266,7 +267,7 @@ async fn store_prices(
     price_data: &[PriceData],
 ) -> Result<usize, Box<dyn Error + Send + Sync>> {
     let timestamp = Utc::now();
-    let source = "coingecko";
+    let source = "coinpaprika";
     
     // Prepare all price records in a batch
     let mut price_models = Vec::new();

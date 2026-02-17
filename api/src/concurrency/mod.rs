@@ -52,6 +52,14 @@ impl RateLimiter {
         )
     }
 
+    /// Create a rate limiter for CoinPaprika API (free tier: 1000 calls/day)
+    pub fn coinpaprika() -> Self {
+        Self::new(
+            5,                           // Max 5 concurrent requests
+            Duration::from_millis(100),  // 100ms delay = ~600 requests/minute (well under daily limit)
+        )
+    }
+
     /// Create a rate limiter for OKX API
     pub fn okx() -> Self {
         Self::new(

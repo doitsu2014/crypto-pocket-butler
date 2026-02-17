@@ -236,6 +236,18 @@ async fn fetch_prices_for_assets(
                     volume_24h_usd: coin.quotes.usd.volume_24h,
                     market_cap_usd: Some(coin.quotes.usd.market_cap),
                     change_percent_24h: coin.quotes.usd.percent_change_24h,
+                    // New fields from CoinPaprika
+                    rank: Some(coin.rank),
+                    circulating_supply: coin.circulating_supply,
+                    total_supply: coin.total_supply,
+                    max_supply: coin.max_supply,
+                    beta_value: coin.beta_value,
+                    percent_change_1h: coin.quotes.usd.percent_change_1h,
+                    percent_change_7d: coin.quotes.usd.percent_change_7d,
+                    percent_change_30d: coin.quotes.usd.percent_change_30d,
+                    ath_price: coin.quotes.usd.ath_price,
+                    ath_date: coin.quotes.usd.ath_date.clone(),
+                    percent_from_price_ath: coin.quotes.usd.percent_from_price_ath,
                 });
             } else {
                 tracing::warn!(
@@ -258,6 +270,18 @@ struct PriceData {
     volume_24h_usd: Option<f64>,
     market_cap_usd: Option<f64>,
     change_percent_24h: Option<f64>,
+    // New fields from CoinPaprika
+    rank: Option<u32>,
+    circulating_supply: Option<f64>,
+    total_supply: Option<f64>,
+    max_supply: Option<f64>,
+    beta_value: Option<f64>,
+    percent_change_1h: Option<f64>,
+    percent_change_7d: Option<f64>,
+    percent_change_30d: Option<f64>,
+    ath_price: Option<f64>,
+    ath_date: Option<String>,
+    percent_from_price_ath: Option<f64>,
 }
 
 /// Store prices in the database using ON CONFLICT for idempotency
@@ -332,6 +356,43 @@ async fn store_prices(
                     })
                     .ok()
             });
+        
+        // Convert new fields to Decimal
+        let rank = data.rank.map(|r| r as i32);
+        
+        let circulating_supply = data.circulating_supply
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let total_supply = data.total_supply
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let max_supply = data.max_supply
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let beta_value = data.beta_value
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let percent_change_1h = data.percent_change_1h
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let percent_change_7d = data.percent_change_7d
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let percent_change_30d = data.percent_change_30d
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let ath_price = data.ath_price
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let percent_from_price_ath = data.percent_from_price_ath
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        // Parse ATH date string to DateTimeWithTimeZone
+        let ath_date = data.ath_date.as_ref().and_then(|date_str| {
+            chrono::DateTime::parse_from_rfc3339(date_str)
+                .ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc).into())
+        });
 
         let new_price = asset_prices::ActiveModel {
             id: ActiveValue::Set(Uuid::new_v4()),
@@ -343,6 +404,18 @@ async fn store_prices(
             change_percent_24h: ActiveValue::Set(change_percent_24h),
             source: ActiveValue::Set(source.to_string()),
             created_at: ActiveValue::Set(timestamp.into()),
+            // New fields
+            rank: ActiveValue::Set(rank),
+            circulating_supply: ActiveValue::Set(circulating_supply),
+            total_supply: ActiveValue::Set(total_supply),
+            max_supply: ActiveValue::Set(max_supply),
+            beta_value: ActiveValue::Set(beta_value),
+            percent_change_1h: ActiveValue::Set(percent_change_1h),
+            percent_change_7d: ActiveValue::Set(percent_change_7d),
+            percent_change_30d: ActiveValue::Set(percent_change_30d),
+            ath_price: ActiveValue::Set(ath_price),
+            ath_date: ActiveValue::Set(ath_date),
+            percent_from_price_ath: ActiveValue::Set(percent_from_price_ath),
         };
 
         price_models.push(new_price);
@@ -366,6 +439,18 @@ async fn store_prices(
                 asset_prices::Column::Volume24hUsd,
                 asset_prices::Column::MarketCapUsd,
                 asset_prices::Column::ChangePercent24h,
+                // Update new fields on conflict
+                asset_prices::Column::Rank,
+                asset_prices::Column::CirculatingSupply,
+                asset_prices::Column::TotalSupply,
+                asset_prices::Column::MaxSupply,
+                asset_prices::Column::BetaValue,
+                asset_prices::Column::PercentChange1h,
+                asset_prices::Column::PercentChange7d,
+                asset_prices::Column::PercentChange30d,
+                asset_prices::Column::AthPrice,
+                asset_prices::Column::AthDate,
+                asset_prices::Column::PercentFromPriceAth,
             ])
             .to_owned(),
         )

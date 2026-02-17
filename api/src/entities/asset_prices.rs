@@ -14,6 +14,18 @@ pub struct Model {
     pub change_percent_24h: Option<Decimal>,
     pub source: String, // e.g., "coinpaprika", "coinmarketcap"
     pub created_at: DateTimeWithTimeZone,
+    // New fields from CoinPaprika consolidation
+    pub rank: Option<i32>, // Market cap rank
+    pub circulating_supply: Option<Decimal>,
+    pub total_supply: Option<Decimal>,
+    pub max_supply: Option<Decimal>,
+    pub beta_value: Option<Decimal>,
+    pub percent_change_1h: Option<Decimal>,
+    pub percent_change_7d: Option<Decimal>,
+    pub percent_change_30d: Option<Decimal>,
+    pub ath_price: Option<Decimal>, // All-time high price
+    pub ath_date: Option<DateTimeWithTimeZone>,
+    pub percent_from_price_ath: Option<Decimal>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

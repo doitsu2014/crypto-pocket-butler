@@ -79,8 +79,7 @@ struct HealthResponse {
         handlers::recommendations::create_recommendation,
         handlers::recommendations::generate_mock_recommendations,
         handlers::migrations::migrate_handler,
-        handlers::jobs::collect_top_coins_handler,
-        handlers::jobs::collect_contract_addresses_handler,
+        handlers::jobs::fetch_all_coins_handler,
     ),
     components(
         schemas(
@@ -114,10 +113,7 @@ struct HealthResponse {
             handlers::recommendations::ListRecommendationsQuery,
             handlers::recommendations::CreateRecommendationRequest,
             handlers::migrations::MigrationResponse,
-            handlers::jobs::CollectTopCoinsRequest,
-            handlers::jobs::CollectTopCoinsResponse,
-            handlers::jobs::CollectContractAddressesRequest,
-            handlers::jobs::CollectContractAddressesResponse,
+            handlers::jobs::FetchAllCoinsResponse,
             handlers::error::ErrorResponse,
         )
     ),
@@ -257,61 +253,55 @@ async fn main() {
     tracing::info!("Initializing job scheduler...");
     let scheduler = JobScheduler::new().await.expect("Failed to create job scheduler");
     
-    // Configure top coins collection job
-    let top_coins_enabled = std::env::var("TOP_COINS_COLLECTION_ENABLED")
+    // Configure fetch all coins job (replaces top_coins_collection and contract_addresses_collection)
+    let fetch_all_coins_enabled = std::env::var("FETCH_ALL_COINS_ENABLED")
         .unwrap_or_else(|_| "true".to_string())
         .parse::<bool>()
         .unwrap_or(true);
     
-    if top_coins_enabled {
-        let top_coins_schedule = std::env::var("TOP_COINS_COLLECTION_SCHEDULE")
+    if fetch_all_coins_enabled {
+        let fetch_all_coins_schedule = std::env::var("FETCH_ALL_COINS_SCHEDULE")
             .unwrap_or_else(|_| "0 0 0 * * *".to_string()); // Default: daily at midnight UTC
-        let top_coins_limit = std::env::var("TOP_COINS_COLLECTION_LIMIT")
-            .unwrap_or_else(|_| "100".to_string())
-            .parse::<usize>()
-            .unwrap_or(100);
         
         tracing::info!(
-            "Scheduling top coins collection job: schedule='{}', limit={}",
-            top_coins_schedule,
-            top_coins_limit
+            "Scheduling fetch all coins job: schedule='{}'",
+            fetch_all_coins_schedule
         );
 
         let db_clone = db.clone();
-        let job = Job::new_async(top_coins_schedule.as_str(), move |_job_id, _scheduler| {
+        let job = Job::new_async(fetch_all_coins_schedule.as_str(), move |_job_id, _scheduler| {
             let db = db_clone.clone();
-            let limit = top_coins_limit;
             Box::pin(async move {
-                tracing::info!("Running scheduled top coins collection job");
-                match jobs::top_coins_collection::collect_top_coins(&db, limit).await {
+                tracing::info!("Running scheduled fetch all coins job");
+                match jobs::fetch_all_coins::fetch_all_coins(&db).await {
                     Ok(result) => {
                         if result.success {
                             tracing::info!(
-                                "Top coins collection job completed successfully: {} coins collected, {} assets created, {} updated, {} rankings created",
-                                result.coins_collected,
+                                "Fetch all coins job completed successfully: {} coins fetched, {} assets created, {} updated, {} prices stored",
+                                result.coins_fetched,
                                 result.assets_created,
                                 result.assets_updated,
-                                result.rankings_created
+                                result.prices_stored
                             );
                         } else {
                             tracing::error!(
-                                "Top coins collection job failed: {}",
+                                "Fetch all coins job failed: {}",
                                 result.error.unwrap_or_else(|| "Unknown error".to_string())
                             );
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Top coins collection job failed with error: {}", e);
+                        tracing::error!("Fetch all coins job failed with error: {}", e);
                     }
                 }
             })
         })
-        .expect("Failed to create top coins collection job");
+        .expect("Failed to create fetch all coins job");
 
-        scheduler.add(job).await.expect("Failed to add top coins collection job to scheduler");
-        tracing::info!("Top coins collection job scheduled successfully");
+        scheduler.add(job).await.expect("Failed to add fetch all coins job to scheduler");
+        tracing::info!("Fetch all coins job scheduled successfully");
     } else {
-        tracing::info!("Top coins collection job is disabled");
+        tracing::info!("Fetch all coins job is disabled");
     }
 
     // Configure price collection job
@@ -368,63 +358,6 @@ async fn main() {
         tracing::info!("Price collection job scheduled successfully");
     } else {
         tracing::info!("Price collection job is disabled");
-    }
-
-    // Configure contract addresses collection job
-    let contract_addresses_enabled = std::env::var("CONTRACT_ADDRESSES_COLLECTION_ENABLED")
-        .unwrap_or_else(|_| "true".to_string())
-        .parse::<bool>()
-        .unwrap_or(true);
-    
-    if contract_addresses_enabled {
-        let contract_addresses_schedule = std::env::var("CONTRACT_ADDRESSES_COLLECTION_SCHEDULE")
-            .unwrap_or_else(|_| "0 0 1 * * *".to_string()); // Default: daily at 1:00 AM UTC
-        let contract_addresses_limit = std::env::var("CONTRACT_ADDRESSES_COLLECTION_LIMIT")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .filter(|&l| l > 0);
-        
-        tracing::info!(
-            "Scheduling contract addresses collection job: schedule='{}', limit={:?}",
-            contract_addresses_schedule,
-            contract_addresses_limit
-        );
-
-        let db_clone = db.clone();
-        let job = Job::new_async(contract_addresses_schedule.as_str(), move |_job_id, _scheduler| {
-            let db = db_clone.clone();
-            let limit = contract_addresses_limit;
-            Box::pin(async move {
-                tracing::info!("Running scheduled contract addresses collection job");
-                match jobs::contract_addresses_collection::collect_contract_addresses(&db, limit).await {
-                    Ok(result) => {
-                        if result.success {
-                            tracing::info!(
-                                "Contract addresses collection job completed successfully: {} assets processed, {} contracts created, {} updated, {} skipped",
-                                result.assets_processed,
-                                result.contracts_created,
-                                result.contracts_updated,
-                                result.assets_skipped
-                            );
-                        } else {
-                            tracing::error!(
-                                "Contract addresses collection job failed: {}",
-                                result.error.unwrap_or_else(|| "Unknown error".to_string())
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Contract addresses collection job failed with error: {}", e);
-                    }
-                }
-            })
-        })
-        .expect("Failed to create contract addresses collection job");
-
-        scheduler.add(job).await.expect("Failed to add contract addresses collection job to scheduler");
-        tracing::info!("Contract addresses collection job scheduled successfully");
-    } else {
-        tracing::info!("Contract addresses collection job is disabled");
     }
 
     // Configure EOD snapshot job

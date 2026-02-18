@@ -25,8 +25,6 @@ pub enum Relation {
     AssetContracts,
     #[sea_orm(has_many = "super::asset_prices::Entity")]
     AssetPrices,
-    #[sea_orm(has_many = "super::asset_rankings::Entity")]
-    AssetRankings,
 }
 
 impl Related<super::asset_contracts::Entity> for Entity {
@@ -38,12 +36,6 @@ impl Related<super::asset_contracts::Entity> for Entity {
 impl Related<super::asset_prices::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AssetPrices.def()
-    }
-}
-
-impl Related<super::asset_rankings::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::AssetRankings.def()
     }
 }
 

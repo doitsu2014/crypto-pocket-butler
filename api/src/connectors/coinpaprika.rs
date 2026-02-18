@@ -170,6 +170,44 @@ impl CoinPaprikaConnector {
         Ok(coins)
     }
 
+    /// Fetch all active coins from CoinPaprika
+    /// 
+    /// # Returns
+    /// Vector of all active coin market data sorted by market cap rank
+    pub async fn fetch_all_coins(&self) -> Result<Vec<CoinMarketData>, Box<dyn Error + Send + Sync>> {
+        // Acquire rate limit permit
+        let _permit = self.rate_limiter.acquire().await?;
+        
+        tracing::info!("Fetching all coins from CoinPaprika");
+
+        // Without limit parameter, CoinPaprika returns all active coins
+        let url = format!("{}/tickers", self.base_url);
+
+        let mut request = self.client
+            .get(&url)
+            .header("accept", "application/json");
+        
+        // Add API key header if available (for Pro API)
+        if let Some(key) = &self.api_key {
+            request = request.header("Authorization", format!("Bearer {}", key));
+        }
+        
+        let response = request.send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            log_coinpaprika_error(status, &error_text);
+            return Err(format!("CoinPaprika API error: {} - {}", status, error_text).into());
+        }
+
+        let coins: Vec<CoinMarketData> = response.json().await?;
+        
+        tracing::info!("Successfully fetched {} coins from CoinPaprika", coins.len());
+        
+        Ok(coins)
+    }
+
     /// Ping CoinPaprika API to check connectivity
     pub async fn ping(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {
         let url = format!("{}/tickers?limit=1", self.base_url);

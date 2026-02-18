@@ -1,7 +1,7 @@
+use crate::connectors::coinpaprika::CoinPaprikaConnector;
 use crate::entities::{assets, asset_prices};
 use crate::jobs::runner::{JobRunner, JobMetrics};
 use chrono::Utc;
-use coinpaprika_api::client::Client as CoinPaprikaClient;
 use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
@@ -23,25 +23,14 @@ pub struct CollectionResult {
     pub error: Option<String>,
 }
 
-/// Helper function to parse decimal from JSON value
-fn parse_decimal_from_quote(quote: &serde_json::Value, key: &str) -> Option<Decimal> {
-    quote.get(key)
-        .and_then(|v| v.as_f64())
-        .and_then(|v| Decimal::from_str(&v.to_string()).ok())
-}
-
-/// Helper function to convert supply value to optional decimal
-fn optional_supply(value: i64) -> Option<Decimal> {
-    if value > 0 {
-        Decimal::from_str(&value.to_string()).ok()
-    } else {
-        None
-    }
+/// Helper function to parse decimal from f64 option
+fn parse_decimal_from_f64(value: Option<f64>) -> Option<Decimal> {
+    value.and_then(|v| Decimal::from_str(&v.to_string()).ok())
 }
 
 /// Fetch all active coins from CoinPaprika in one request and store in database
 /// 
-/// This function uses the CoinPaprika SDK to:
+/// This function uses the CoinPaprika connector to:
 /// 1. Fetch all active coins via /tickers endpoint in one request
 /// 2. Upsert asset metadata (creates new or updates existing)
 /// 3. Store comprehensive price data with rank, supply, and market info
@@ -60,25 +49,16 @@ pub async fn fetch_all_coins(
     let runner = JobRunner::new("fetch_all_coins".to_string());
 
     let result = runner.execute(|| async {
-        // Create CoinPaprika SDK client
-        let api_key = std::env::var("COINPAPRIKA_API_KEY").ok();
-        let client = if let Some(key) = api_key {
-            tracing::info!("Using CoinPaprika Pro API with API key");
-            CoinPaprikaClient::with_key(&key)
-        } else {
-            tracing::info!("Using CoinPaprika free API (rate limited)");
-            CoinPaprikaClient::new()
-        };
+        // Create CoinPaprika connector
+        let connector = CoinPaprikaConnector::new();
 
-        // Fetch all tickers in one request (with USD quote)
-        tracing::info!("Fetching all coins from CoinPaprika via SDK");
-        let tickers = client.tickers()
-            .quotes(vec!["USD"])
-            .send()
+        // Fetch all coins in one request
+        tracing::info!("Fetching all coins from CoinPaprika");
+        let coins = connector.fetch_all_coins()
             .await
-            .map_err(|e| format!("Failed to fetch tickers from CoinPaprika: {}", e))?;
+            .map_err(|e| format!("Failed to fetch coins from CoinPaprika: {}", e))?;
 
-        let coins_fetched = tickers.len();
+        let coins_fetched = coins.len();
         tracing::info!("Successfully fetched {} coins from CoinPaprika", coins_fetched);
 
         let mut assets_created = 0;
@@ -88,21 +68,27 @@ pub async fn fetch_all_coins(
         let source = "coinpaprika";
         let current_timestamp = Utc::now();
 
-        for ticker in tickers {
-            // Get the USD quote (price data)
-            let quote_usd = match ticker.quotes.get("USD") {
-                Some(q) => q,
-                None => {
-                    tracing::warn!("No USD quote for {}, skipping", ticker.symbol);
-                    continue;
+        for coin in coins {
+            // Parse price from USD quote
+            let price_usd = match Decimal::from_str(&coin.quotes.usd.price.to_string()) {
+                Ok(price) => price,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse price for {} ({}): {}. Using ZERO.",
+                        coin.symbol, coin.id, e
+                    );
+                    Decimal::ZERO
                 }
             };
+            let market_cap_usd = Decimal::from_str(&coin.quotes.usd.market_cap.to_string()).ok();
+            let volume_24h_usd = parse_decimal_from_f64(coin.quotes.usd.volume_24h);
+            let change_percent_24h = parse_decimal_from_f64(coin.quotes.usd.percent_change_24h);
 
             // Check if asset already exists by symbol or coinpaprika_id
             let existing_asset = assets::Entity::find()
                 .filter(
-                    assets::Column::Symbol.eq(&ticker.symbol.to_uppercase())
-                        .or(assets::Column::CoingeckoId.eq(&ticker.id))
+                    assets::Column::Symbol.eq(&coin.symbol.to_uppercase())
+                        .or(assets::Column::CoingeckoId.eq(&coin.id))
                 )
                 .one(db)
                 .await
@@ -112,9 +98,9 @@ pub async fn fetch_all_coins(
                 Some(existing) => {
                     // Update existing asset
                     let mut asset_update: assets::ActiveModel = existing.into();
-                    asset_update.name = ActiveValue::Set(ticker.name.clone());
-                    asset_update.symbol = ActiveValue::Set(ticker.symbol.to_uppercase());
-                    asset_update.coingecko_id = ActiveValue::Set(Some(ticker.id.clone()));
+                    asset_update.name = ActiveValue::Set(coin.name.clone());
+                    asset_update.symbol = ActiveValue::Set(coin.symbol.to_uppercase());
+                    asset_update.coingecko_id = ActiveValue::Set(Some(coin.id.clone()));
                     asset_update.is_active = ActiveValue::Set(true);
                     asset_update.updated_at = ActiveValue::Set(current_timestamp.into());
                     
@@ -128,10 +114,10 @@ pub async fn fetch_all_coins(
                     // Create new asset
                     let new_asset = assets::ActiveModel {
                         id: ActiveValue::Set(Uuid::new_v4()),
-                        symbol: ActiveValue::Set(ticker.symbol.to_uppercase()),
-                        name: ActiveValue::Set(ticker.name.clone()),
+                        symbol: ActiveValue::Set(coin.symbol.to_uppercase()),
+                        name: ActiveValue::Set(coin.name.clone()),
                         asset_type: ActiveValue::Set("cryptocurrency".to_string()),
-                        coingecko_id: ActiveValue::Set(Some(ticker.id.clone())),
+                        coingecko_id: ActiveValue::Set(Some(coin.id.clone())),
                         coinmarketcap_id: ActiveValue::NotSet,
                         logo_url: ActiveValue::NotSet,
                         description: ActiveValue::NotSet,
@@ -149,36 +135,23 @@ pub async fn fetch_all_coins(
                 }
             };
 
-            // Parse price from USD quote
-            let price_usd = parse_decimal_from_quote(&quote_usd, "price")
-                .unwrap_or_else(|| Decimal::ZERO);
-            let market_cap_usd = parse_decimal_from_quote(&quote_usd, "market_cap");
-            let volume_24h_usd = parse_decimal_from_quote(&quote_usd, "volume_24h");
-            let change_percent_24h = parse_decimal_from_quote(&quote_usd, "percent_change_24h");
-
             // Extended fields from CoinPaprika
-            let rank = Some(ticker.rank as i32);
-            let circulating_supply = optional_supply(ticker.circulating_supply);
-            let total_supply = optional_supply(ticker.total_supply);
-            let max_supply = optional_supply(ticker.max_supply);
+            let rank = Some(coin.rank as i32);
+            let circulating_supply = coin.circulating_supply.and_then(|v| Decimal::from_str(&v.to_string()).ok());
+            let total_supply = coin.total_supply.and_then(|v| Decimal::from_str(&v.to_string()).ok());
+            let max_supply = coin.max_supply.and_then(|v| Decimal::from_str(&v.to_string()).ok());
+            let beta_value = parse_decimal_from_f64(coin.beta_value);
             
-            let beta_value = if ticker.beta_value != 0.0 {
-                Decimal::from_str(&ticker.beta_value.to_string()).ok()
-            } else {
-                None
-            };
+            let percent_change_1h = parse_decimal_from_f64(coin.quotes.usd.percent_change_1h);
+            let percent_change_7d = parse_decimal_from_f64(coin.quotes.usd.percent_change_7d);
+            let percent_change_30d = parse_decimal_from_f64(coin.quotes.usd.percent_change_30d);
+            let ath_price = parse_decimal_from_f64(coin.quotes.usd.ath_price);
             
-            let percent_change_1h = parse_decimal_from_quote(&quote_usd, "percent_change_1h");
-            let percent_change_7d = parse_decimal_from_quote(&quote_usd, "percent_change_7d");
-            let percent_change_30d = parse_decimal_from_quote(&quote_usd, "percent_change_30d");
-            let ath_price = parse_decimal_from_quote(&quote_usd, "ath_price");
-            
-            let ath_date = quote_usd.get("ath_date")
-                .and_then(|v| v.as_str())
-                .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+            let ath_date = coin.quotes.usd.ath_date
+                .and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc));
             
-            let percent_from_price_ath = parse_decimal_from_quote(&quote_usd, "percent_from_price_ath");
+            let percent_from_price_ath = parse_decimal_from_f64(coin.quotes.usd.percent_from_price_ath);
 
             let new_price = asset_prices::ActiveModel {
                 id: ActiveValue::Set(Uuid::new_v4()),

@@ -33,6 +33,18 @@ pub struct CoinMarketData {
     pub name: String,
     pub symbol: String,
     pub rank: u32,
+    #[serde(default)]
+    pub circulating_supply: Option<f64>,
+    #[serde(default)]
+    pub total_supply: Option<f64>,
+    #[serde(default)]
+    pub max_supply: Option<f64>,
+    #[serde(default)]
+    pub beta_value: Option<f64>,
+    #[serde(default)]
+    pub first_data_at: Option<String>,
+    #[serde(default)]
+    pub last_updated: Option<String>,
     pub quotes: Quotes,
 }
 
@@ -50,6 +62,18 @@ pub struct UsdQuote {
     pub volume_24h: Option<f64>,
     pub market_cap: f64,
     pub percent_change_24h: Option<f64>,
+    #[serde(default)]
+    pub percent_change_1h: Option<f64>,
+    #[serde(default)]
+    pub percent_change_7d: Option<f64>,
+    #[serde(default)]
+    pub percent_change_30d: Option<f64>,
+    #[serde(default)]
+    pub ath_price: Option<f64>,
+    #[serde(default)]
+    pub ath_date: Option<String>,
+    #[serde(default)]
+    pub percent_from_price_ath: Option<f64>,
 }
 
 /// Detailed coin data from CoinPaprika /coins/{id} API

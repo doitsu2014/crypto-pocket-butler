@@ -441,19 +441,32 @@ Chain-specific contract addresses for assets.
 
 ### asset_prices
 
-Time-series price data for assets.
+Comprehensive time-series market data for assets. Consolidated table storing price, volume, market cap, rank, supply metrics, and ATH information.
 
-| Column            | Type        | Constraints           | Description                            |
-|-------------------|-------------|-----------------------|----------------------------------------|
-| id                | UUID        | PRIMARY KEY           | Auto-generated UUID                    |
-| asset_id          | UUID        | NOT NULL, FK          | References assets.id                   |
-| timestamp         | TIMESTAMPTZ | NOT NULL              | Time of price snapshot                 |
-| price_usd         | DECIMAL     | NOT NULL              | Spot price in USD                      |
-| volume_24h_usd    | DECIMAL     | NULL                  | 24-hour trading volume in USD          |
-| market_cap_usd    | DECIMAL     | NULL                  | Market capitalization in USD           |
-| change_percent_24h| DECIMAL     | NULL                  | 24-hour price change percentage        |
-| source            | VARCHAR     | NOT NULL              | Data source (e.g., "coinpaprika")      |
-| created_at        | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp              |
+**Note**: As of Feb 2024, this table has been enhanced to include ranking and supply data, consolidating functionality previously split between `asset_prices` and `asset_rankings`. See [COINPAPRIKA_REFACTORING.md](./COINPAPRIKA_REFACTORING.md) for details.
+
+| Column                | Type        | Constraints           | Description                                |
+|-----------------------|-------------|-----------------------|--------------------------------------------|
+| id                    | UUID        | PRIMARY KEY           | Auto-generated UUID                        |
+| asset_id              | UUID        | NOT NULL, FK          | References assets.id                       |
+| timestamp             | TIMESTAMPTZ | NOT NULL              | Time of price snapshot                     |
+| price_usd             | DECIMAL     | NOT NULL              | Spot price in USD                          |
+| volume_24h_usd        | DECIMAL     | NULL                  | 24-hour trading volume in USD              |
+| market_cap_usd        | DECIMAL     | NULL                  | Market capitalization in USD               |
+| change_percent_24h    | DECIMAL     | NULL                  | 24-hour price change percentage            |
+| source                | VARCHAR     | NOT NULL              | Data source (e.g., "coinpaprika")          |
+| created_at            | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Record creation timestamp                  |
+| **rank**              | INTEGER     | NULL                  | Market cap rank (e.g., 1 for Bitcoin)      |
+| **circulating_supply**| DECIMAL     | NULL                  | Circulating supply                         |
+| **total_supply**      | DECIMAL     | NULL                  | Total supply                               |
+| **max_supply**        | DECIMAL     | NULL                  | Maximum supply                             |
+| **beta_value**        | DECIMAL     | NULL                  | Beta value (volatility metric)             |
+| **percent_change_1h** | DECIMAL     | NULL                  | 1-hour price change percentage             |
+| **percent_change_7d** | DECIMAL     | NULL                  | 7-day price change percentage              |
+| **percent_change_30d**| DECIMAL     | NULL                  | 30-day price change percentage             |
+| **ath_price**         | DECIMAL     | NULL                  | All-time high price                        |
+| **ath_date**          | TIMESTAMPTZ | NULL                  | Date of all-time high                      |
+| **percent_from_price_ath** | DECIMAL | NULL                  | Percentage from ATH                        |
 
 **Foreign Keys:**
 - `fk_asset_prices_asset_id`: `asset_id` → `assets.id` (CASCADE on DELETE/UPDATE)
@@ -463,10 +476,14 @@ Time-series price data for assets.
 - `idx_asset_prices_timestamp` on `timestamp` - Time-series queries
 - `idx_asset_prices_asset_timestamp` on `(asset_id, timestamp)` - Efficient per-asset queries
 - `idx_asset_prices_unique` on `(asset_id, timestamp, source)` (UNIQUE) - Prevent duplicates
+- `idx_asset_prices_rank` on `rank` - Top-N ranking queries **(New)**
+- `idx_asset_prices_timestamp_rank` on `(timestamp, rank)` - Date-based ranking queries **(New)**
 
 ### asset_rankings
 
-Historical top-100 ranking snapshots.
+**Note**: As of Feb 2024, this table's functionality has been consolidated into `asset_prices`. It remains for backward compatibility but is no longer actively populated by the unified price collection job. See [COINPAPRIKA_REFACTORING.md](./COINPAPRIKA_REFACTORING.md) for migration details.
+
+Historical top-100 ranking snapshots (**Deprecated** - use `asset_prices.rank` instead).
 
 | Column            | Type        | Constraints           | Description                            |
 |-------------------|-------------|-----------------------|----------------------------------------|
@@ -518,8 +535,20 @@ if let Some(asset) = btc_asset {
 ### Query Top-100 Assets by Market Cap
 
 ```rust
-// Get top 100 assets for a specific date
-let top_100 = asset_rankings::Entity::find()
+// Get top 100 assets from latest prices (NEW - Recommended)
+let latest_time = chrono::Utc::now();
+let top_100 = asset_prices::Entity::find()
+    .filter(asset_prices::Column::Timestamp.gte(latest_time - chrono::Duration::hours(1)))
+    .filter(asset_prices::Column::Rank.is_not_null())
+    .filter(asset_prices::Column::Rank.lte(100))
+    .order_by_asc(asset_prices::Column::Rank)
+    .find_also_related(assets::Entity)
+    .all(&db)
+    .await?;
+
+// Alternative: Get top 100 from rankings table (DEPRECATED)
+// Use only if you need historical daily snapshots
+let top_100_legacy = asset_rankings::Entity::find()
     .filter(asset_rankings::Column::SnapshotDate.eq(date))
     .filter(asset_rankings::Column::Rank.lte(100))
     .order_by_asc(asset_rankings::Column::Rank)

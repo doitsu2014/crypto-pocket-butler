@@ -19,6 +19,8 @@ use uuid::Uuid;
 pub struct CollectionResult {
     pub success: bool,
     pub assets_tracked: usize,
+    pub assets_created: usize,
+    pub assets_updated: usize,
     pub prices_collected: usize,
     pub prices_stored: usize,
     pub error: Option<String>,
@@ -33,10 +35,13 @@ struct Holding {
 
 /// Collect prices for tracked assets and store in database
 /// 
-/// This function:
-/// 1. Identifies tracked assets (Top 100 by market cap + portfolio assets)
-/// 2. Fetches current prices from CoinPaprika
-/// 3. Stores prices in asset_prices table (idempotent via DB constraints)
+/// This function is the unified job that:
+/// 1. Fetches top N coins from CoinPaprika (by market cap)
+/// 2. Creates/updates asset records for these coins
+/// 3. Fetches prices for tracked assets (including portfolio holdings)
+/// 4. Stores all price data with rank and market info in asset_prices table
+/// 
+/// This replaces the need for separate top_coins_collection and price_collection jobs.
 /// 
 /// # Arguments
 /// * `db` - Database connection
@@ -51,7 +56,36 @@ pub async fn collect_prices(
     let runner = JobRunner::new(format!("price_collection(top_n={})", top_n_limit));
 
     let result = runner.execute(|| async {
-        // Step 1: Get list of tracked assets
+        // Step 1: Fetch top N coins from CoinPaprika to discover/update assets
+        let connector = CoinPaprikaConnector::new();
+        let top_coins = connector.fetch_top_coins(top_n_limit).await
+            .map_err(|e| format!("Failed to fetch top coins: {}", e))?;
+        
+        let mut assets_created = 0;
+        let mut assets_updated = 0;
+        
+        // Step 2: Upsert asset records for top coins
+        for coin in &top_coins {
+            match upsert_asset(db, coin).await {
+                Ok((created, _asset_id)) => {
+                    if created {
+                        assets_created += 1;
+                    } else {
+                        assets_updated += 1;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to upsert asset {}: {}", coin.symbol, e);
+                }
+            }
+        }
+        
+        tracing::info!(
+            "Asset upserts completed: {} created, {} updated",
+            assets_created, assets_updated
+        );
+        
+        // Step 3: Get list of all tracked assets (including portfolio holdings)
         let tracked_assets = get_tracked_assets(db, top_n_limit).await
             .map_err(|e| format!("Failed to get tracked assets: {}", e))?;
         
@@ -65,6 +99,8 @@ pub async fn collect_prices(
                 items_skipped: 0,
                 custom: serde_json::json!({
                     "assets_tracked": 0,
+                    "assets_created": assets_created,
+                    "assets_updated": assets_updated,
                     "prices_collected": 0,
                     "prices_stored": 0,
                 }),
@@ -73,15 +109,14 @@ pub async fn collect_prices(
 
         tracing::info!("Found {} unique assets to collect prices for", assets_tracked);
 
-        // Step 2: Fetch prices from CoinPaprika
-        let connector = CoinPaprikaConnector::new();
+        // Step 4: Fetch prices from CoinPaprika (reuses top_coins data + fetches additional)
         let price_data = fetch_prices_for_assets(&connector, &tracked_assets, top_n_limit).await
             .map_err(|e| format!("Failed to fetch prices: {}", e))?;
 
         let prices_collected = price_data.len();
         tracing::info!("Fetched {} prices from CoinPaprika", prices_collected);
 
-        // Step 3: Store prices in database using upserts
+        // Step 5: Store prices in database using upserts
         let prices_stored = store_prices(db, &price_data).await
             .map_err(|e| format!("Failed to store prices: {}", e))?;
 
@@ -92,6 +127,8 @@ pub async fn collect_prices(
             items_skipped: 0, // All prices are upserted (inserted or updated)
             custom: serde_json::json!({
                 "assets_tracked": assets_tracked,
+                "assets_created": assets_created,
+                "assets_updated": assets_updated,
                 "prices_collected": prices_collected,
                 "prices_stored": prices_stored,
             }),
@@ -102,10 +139,68 @@ pub async fn collect_prices(
     Ok(CollectionResult {
         success: result.success,
         assets_tracked: result.metrics.items_processed,
+        assets_created: result.metrics.custom["assets_created"].as_u64().unwrap_or(0) as usize,
+        assets_updated: result.metrics.custom["assets_updated"].as_u64().unwrap_or(0) as usize,
         prices_collected: result.metrics.custom["prices_collected"].as_u64().unwrap_or(0) as usize,
         prices_stored: result.metrics.items_created,
         error: result.error,
     })
+}
+
+/// Upsert an asset record from CoinPaprika data
+/// Returns (created: bool, asset_id: Uuid)
+async fn upsert_asset(
+    db: &DatabaseConnection,
+    coin: &crate::connectors::coinpaprika::CoinMarketData,
+) -> Result<(bool, Uuid), Box<dyn Error + Send + Sync>> {
+    use crate::entities::assets;
+    use sea_orm::ActiveModelTrait;
+    
+    // Check if asset already exists by symbol or coingecko_id (legacy field name, stores coinpaprika_id)
+    let existing_asset = assets::Entity::find()
+        .filter(
+            assets::Column::Symbol.eq(&coin.symbol.to_uppercase())
+                .or(assets::Column::CoingeckoId.eq(&coin.id))
+        )
+        .one(db)
+        .await?;
+    
+    match existing_asset {
+        Some(existing) => {
+            // Update existing asset
+            let mut asset_update: assets::ActiveModel = existing.into();
+            asset_update.name = ActiveValue::Set(coin.name.clone());
+            asset_update.symbol = ActiveValue::Set(coin.symbol.to_uppercase());
+            asset_update.coingecko_id = ActiveValue::Set(Some(coin.id.clone()));
+            asset_update.is_active = ActiveValue::Set(true);
+            asset_update.updated_at = ActiveValue::Set(Utc::now().into());
+            
+            let updated = asset_update.update(db).await?;
+            tracing::debug!("Updated asset: {} ({})", updated.symbol, updated.id);
+            Ok((false, updated.id))
+        }
+        None => {
+            // Create new asset
+            let new_asset = assets::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                symbol: ActiveValue::Set(coin.symbol.to_uppercase()),
+                name: ActiveValue::Set(coin.name.clone()),
+                asset_type: ActiveValue::Set("cryptocurrency".to_string()),
+                coingecko_id: ActiveValue::Set(Some(coin.id.clone())),
+                coinmarketcap_id: ActiveValue::NotSet,
+                logo_url: ActiveValue::NotSet,
+                description: ActiveValue::NotSet,
+                decimals: ActiveValue::NotSet,
+                is_active: ActiveValue::Set(true),
+                created_at: ActiveValue::Set(Utc::now().into()),
+                updated_at: ActiveValue::Set(Utc::now().into()),
+            };
+            
+            let inserted = new_asset.insert(db).await?;
+            tracing::debug!("Created asset: {} ({})", inserted.symbol, inserted.id);
+            Ok((true, inserted.id))
+        }
+    }
 }
 
 /// Get list of tracked assets (Top N + portfolio assets)
@@ -236,6 +331,18 @@ async fn fetch_prices_for_assets(
                     volume_24h_usd: coin.quotes.usd.volume_24h,
                     market_cap_usd: Some(coin.quotes.usd.market_cap),
                     change_percent_24h: coin.quotes.usd.percent_change_24h,
+                    // New fields from CoinPaprika
+                    rank: Some(coin.rank),
+                    circulating_supply: coin.circulating_supply,
+                    total_supply: coin.total_supply,
+                    max_supply: coin.max_supply,
+                    beta_value: coin.beta_value,
+                    percent_change_1h: coin.quotes.usd.percent_change_1h,
+                    percent_change_7d: coin.quotes.usd.percent_change_7d,
+                    percent_change_30d: coin.quotes.usd.percent_change_30d,
+                    ath_price: coin.quotes.usd.ath_price,
+                    ath_date: coin.quotes.usd.ath_date.clone(),
+                    percent_from_price_ath: coin.quotes.usd.percent_from_price_ath,
                 });
             } else {
                 tracing::warn!(
@@ -258,6 +365,18 @@ struct PriceData {
     volume_24h_usd: Option<f64>,
     market_cap_usd: Option<f64>,
     change_percent_24h: Option<f64>,
+    // New fields from CoinPaprika
+    rank: Option<u32>,
+    circulating_supply: Option<f64>,
+    total_supply: Option<f64>,
+    max_supply: Option<f64>,
+    beta_value: Option<f64>,
+    percent_change_1h: Option<f64>,
+    percent_change_7d: Option<f64>,
+    percent_change_30d: Option<f64>,
+    ath_price: Option<f64>,
+    ath_date: Option<String>,
+    percent_from_price_ath: Option<f64>,
 }
 
 /// Store prices in the database using ON CONFLICT for idempotency
@@ -332,6 +451,43 @@ async fn store_prices(
                     })
                     .ok()
             });
+        
+        // Convert new fields to Decimal
+        let rank = data.rank.map(|rank_value| rank_value as i32);
+        
+        let circulating_supply = data.circulating_supply
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let total_supply = data.total_supply
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let max_supply = data.max_supply
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let beta_value = data.beta_value
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let percent_change_1h = data.percent_change_1h
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let percent_change_7d = data.percent_change_7d
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let percent_change_30d = data.percent_change_30d
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let ath_price = data.ath_price
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        let percent_from_price_ath = data.percent_from_price_ath
+            .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+        
+        // Parse ATH date string to DateTimeWithTimeZone
+        let ath_date = data.ath_date.as_ref().and_then(|date_str| {
+            chrono::DateTime::parse_from_rfc3339(date_str)
+                .ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc).into())
+        });
 
         let new_price = asset_prices::ActiveModel {
             id: ActiveValue::Set(Uuid::new_v4()),
@@ -343,6 +499,18 @@ async fn store_prices(
             change_percent_24h: ActiveValue::Set(change_percent_24h),
             source: ActiveValue::Set(source.to_string()),
             created_at: ActiveValue::Set(timestamp.into()),
+            // New fields
+            rank: ActiveValue::Set(rank),
+            circulating_supply: ActiveValue::Set(circulating_supply),
+            total_supply: ActiveValue::Set(total_supply),
+            max_supply: ActiveValue::Set(max_supply),
+            beta_value: ActiveValue::Set(beta_value),
+            percent_change_1h: ActiveValue::Set(percent_change_1h),
+            percent_change_7d: ActiveValue::Set(percent_change_7d),
+            percent_change_30d: ActiveValue::Set(percent_change_30d),
+            ath_price: ActiveValue::Set(ath_price),
+            ath_date: ActiveValue::Set(ath_date),
+            percent_from_price_ath: ActiveValue::Set(percent_from_price_ath),
         };
 
         price_models.push(new_price);
@@ -366,6 +534,18 @@ async fn store_prices(
                 asset_prices::Column::Volume24hUsd,
                 asset_prices::Column::MarketCapUsd,
                 asset_prices::Column::ChangePercent24h,
+                // Update new fields on conflict
+                asset_prices::Column::Rank,
+                asset_prices::Column::CirculatingSupply,
+                asset_prices::Column::TotalSupply,
+                asset_prices::Column::MaxSupply,
+                asset_prices::Column::BetaValue,
+                asset_prices::Column::PercentChange1h,
+                asset_prices::Column::PercentChange7d,
+                asset_prices::Column::PercentChange30d,
+                asset_prices::Column::AthPrice,
+                asset_prices::Column::AthDate,
+                asset_prices::Column::PercentFromPriceAth,
             ])
             .to_owned(),
         )

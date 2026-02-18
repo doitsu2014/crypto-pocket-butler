@@ -70,8 +70,16 @@ pub async fn fetch_all_coins(
 
         for coin in coins {
             // Parse price from USD quote
-            let price_usd = Decimal::from_str(&coin.quotes.usd.price.to_string())
-                .unwrap_or_else(|_| Decimal::ZERO);
+            let price_usd = match Decimal::from_str(&coin.quotes.usd.price.to_string()) {
+                Ok(price) => price,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse price for {} ({}): {}. Using ZERO.",
+                        coin.symbol, coin.id, e
+                    );
+                    Decimal::ZERO
+                }
+            };
             let market_cap_usd = Decimal::from_str(&coin.quotes.usd.market_cap.to_string()).ok();
             let volume_24h_usd = parse_decimal_from_f64(coin.quotes.usd.volume_24h);
             let change_percent_24h = parse_decimal_from_f64(coin.quotes.usd.percent_change_24h);

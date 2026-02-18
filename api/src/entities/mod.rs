@@ -1,7 +1,6 @@
 pub mod accounts;
 pub mod asset_contracts;
 pub mod asset_prices;
-pub mod asset_rankings;
 pub mod assets;
 pub mod portfolio_accounts;
 pub mod portfolio_allocations;
@@ -13,7 +12,6 @@ pub mod users;
 pub use accounts::Entity as Accounts;
 pub use asset_contracts::Entity as AssetContracts;
 pub use asset_prices::Entity as AssetPrices;
-pub use asset_rankings::Entity as AssetRankings;
 pub use assets::Entity as Assets;
 pub use portfolio_accounts::Entity as PortfolioAccounts;
 pub use portfolio_allocations::Entity as PortfolioAllocations;

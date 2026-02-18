@@ -23,6 +23,22 @@ pub struct CollectionResult {
     pub error: Option<String>,
 }
 
+/// Helper function to parse decimal from JSON value
+fn parse_decimal_from_quote(quote: &serde_json::Value, key: &str) -> Option<Decimal> {
+    quote.get(key)
+        .and_then(|v| v.as_f64())
+        .and_then(|v| Decimal::from_str(&v.to_string()).ok())
+}
+
+/// Helper function to convert supply value to optional decimal
+fn optional_supply(value: i64) -> Option<Decimal> {
+    if value > 0 {
+        Decimal::from_str(&value.to_string()).ok()
+    } else {
+        None
+    }
+}
+
 /// Fetch all active coins from CoinPaprika in one request and store in database
 /// 
 /// This function uses the CoinPaprika SDK to:
@@ -134,43 +150,17 @@ pub async fn fetch_all_coins(
             };
 
             // Parse price from USD quote
-            let price_usd = quote_usd.get("price")
-                .and_then(|v| v.as_f64())
-                .and_then(|v| Decimal::from_str(&v.to_string()).ok())
+            let price_usd = parse_decimal_from_quote(&quote_usd, "price")
                 .unwrap_or_else(|| Decimal::ZERO);
-            
-            let market_cap_usd = quote_usd.get("market_cap")
-                .and_then(|v| v.as_f64())
-                .and_then(|v| Decimal::from_str(&v.to_string()).ok());
-            
-            let volume_24h_usd = quote_usd.get("volume_24h")
-                .and_then(|v| v.as_f64())
-                .and_then(|v| Decimal::from_str(&v.to_string()).ok());
-            
-            let change_percent_24h = quote_usd.get("percent_change_24h")
-                .and_then(|v| v.as_f64())
-                .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+            let market_cap_usd = parse_decimal_from_quote(&quote_usd, "market_cap");
+            let volume_24h_usd = parse_decimal_from_quote(&quote_usd, "volume_24h");
+            let change_percent_24h = parse_decimal_from_quote(&quote_usd, "percent_change_24h");
 
             // Extended fields from CoinPaprika
             let rank = Some(ticker.rank as i32);
-            
-            let circulating_supply = if ticker.circulating_supply > 0 {
-                Decimal::from_str(&ticker.circulating_supply.to_string()).ok()
-            } else {
-                None
-            };
-            
-            let total_supply = if ticker.total_supply > 0 {
-                Decimal::from_str(&ticker.total_supply.to_string()).ok()
-            } else {
-                None
-            };
-            
-            let max_supply = if ticker.max_supply > 0 {
-                Decimal::from_str(&ticker.max_supply.to_string()).ok()
-            } else {
-                None
-            };
+            let circulating_supply = optional_supply(ticker.circulating_supply);
+            let total_supply = optional_supply(ticker.total_supply);
+            let max_supply = optional_supply(ticker.max_supply);
             
             let beta_value = if ticker.beta_value != 0.0 {
                 Decimal::from_str(&ticker.beta_value.to_string()).ok()
@@ -178,30 +168,17 @@ pub async fn fetch_all_coins(
                 None
             };
             
-            let percent_change_1h = quote_usd.get("percent_change_1h")
-                .and_then(|v| v.as_f64())
-                .and_then(|v| Decimal::from_str(&v.to_string()).ok());
-            
-            let percent_change_7d = quote_usd.get("percent_change_7d")
-                .and_then(|v| v.as_f64())
-                .and_then(|v| Decimal::from_str(&v.to_string()).ok());
-            
-            let percent_change_30d = quote_usd.get("percent_change_30d")
-                .and_then(|v| v.as_f64())
-                .and_then(|v| Decimal::from_str(&v.to_string()).ok());
-            
-            let ath_price = quote_usd.get("ath_price")
-                .and_then(|v| v.as_f64())
-                .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+            let percent_change_1h = parse_decimal_from_quote(&quote_usd, "percent_change_1h");
+            let percent_change_7d = parse_decimal_from_quote(&quote_usd, "percent_change_7d");
+            let percent_change_30d = parse_decimal_from_quote(&quote_usd, "percent_change_30d");
+            let ath_price = parse_decimal_from_quote(&quote_usd, "ath_price");
             
             let ath_date = quote_usd.get("ath_date")
                 .and_then(|v| v.as_str())
                 .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
                 .map(|dt| dt.with_timezone(&chrono::Utc));
             
-            let percent_from_price_ath = quote_usd.get("percent_from_price_ath")
-                .and_then(|v| v.as_f64())
-                .and_then(|v| Decimal::from_str(&v.to_string()).ok());
+            let percent_from_price_ath = parse_decimal_from_quote(&quote_usd, "percent_from_price_ath");
 
             let new_price = asset_prices::ActiveModel {
                 id: ActiveValue::Set(Uuid::new_v4()),

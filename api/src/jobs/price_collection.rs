@@ -572,6 +572,8 @@ mod tests {
         let result = CollectionResult {
             success: true,
             assets_tracked: 150,
+            assets_created: 10,
+            assets_updated: 140,
             prices_collected: 150,
             prices_stored: 150,
             error: None,

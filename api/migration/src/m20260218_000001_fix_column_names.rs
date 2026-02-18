@@ -4,27 +4,43 @@ use sea_orm_migration::prelude::*;
 pub struct Migration;
 
 /// Helper to execute ALTER TABLE RENAME COLUMN statements, ignoring only "column does not exist" errors
+/// 
+/// This function uses PostgreSQL identifier quoting to prevent SQL injection, even though
+/// all current calls use hardcoded strings.
 async fn rename_column_if_exists(
     manager: &SchemaManager<'_>,
     from_name: &str,
     to_name: &str,
 ) -> Result<(), DbErr> {
+    // Validate column names contain only safe characters
+    let is_valid_identifier = |name: &str| {
+        !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+    };
+    
+    if !is_valid_identifier(from_name) || !is_valid_identifier(to_name) {
+        return Err(DbErr::Custom(format!(
+            "Invalid column name: must contain only alphanumeric characters and underscores"
+        )));
+    }
+    
+    // Use double quotes to properly escape PostgreSQL identifiers
     let sql = format!(
-        "ALTER TABLE asset_prices RENAME COLUMN {} TO {};",
+        r#"ALTER TABLE "asset_prices" RENAME COLUMN "{}" TO "{}";"#,
         from_name, to_name
     );
     
     match manager.get_connection().execute_unprepared(&sql).await {
         Ok(_) => Ok(()),
         Err(e) => {
-            // Check if error is "column does not exist" (PostgreSQL error code 42703)
+            // PostgreSQL error code 42703 = "undefined_column"
+            // Check if this is the expected "column does not exist" error
             let err_str = e.to_string();
-            if err_str.contains("column") && 
-               (err_str.contains("does not exist") || err_str.contains("42703")) {
-                // This is expected if column was already renamed or never had the wrong name
+            if err_str.contains("42703") || 
+               (err_str.contains("column") && err_str.contains("does not exist")) {
+                // Expected: column was already renamed or never had the wrong name
                 Ok(())
             } else {
-                // Unexpected error - propagate it
+                // Unexpected error (permissions, connection, etc.) - propagate it
                 Err(e)
             }
         }

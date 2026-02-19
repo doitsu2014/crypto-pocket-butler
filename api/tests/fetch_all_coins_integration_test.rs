@@ -11,6 +11,9 @@ use uuid::Uuid;
 
 /// Helper to create a test database connection
 /// This requires DATABASE_URL environment variable or will use a default test database
+/// 
+/// NOTE: The default connection string uses test credentials (postgres:postgres) which are
+/// ONLY suitable for local testing. Never use these credentials in production environments.
 async fn setup_test_db() -> Result<DatabaseConnection, Box<dyn std::error::Error>> {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres:postgres@localhost/crypto_pocket_butler_test".to_string());

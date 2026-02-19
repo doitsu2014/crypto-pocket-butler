@@ -68,8 +68,9 @@ The database uses a normalized schema with the following main entities:
 │   Assets         │     Market Reference Data
 │──────────────────│     (Powers valuation & allocation)
 │ id (PK)          │
-│ symbol (UNIQUE)  │
+│ symbol           │
 │ name             │
+│ (symbol,name)UK  │     UK = Unique Key
 │ asset_type       │
 │ coingecko_id     │
 └────────┬─────────┘
@@ -398,7 +399,7 @@ Metadata for crypto assets (coins, tokens, stablecoins).
 | Column              | Type        | Constraints           | Description                            |
 |---------------------|-------------|-----------------------|----------------------------------------|
 | id                  | UUID        | PRIMARY KEY           | Auto-generated UUID                    |
-| symbol              | VARCHAR     | UNIQUE, NOT NULL      | Asset symbol (e.g., "BTC", "ETH")      |
+| symbol              | VARCHAR     | NOT NULL              | Asset symbol (e.g., "BTC", "ETH")      |
 | name                | VARCHAR     | NOT NULL              | Full asset name (e.g., "Bitcoin")      |
 | asset_type          | VARCHAR     | NOT NULL              | "cryptocurrency", "token", "stablecoin"|
 | coingecko_id        | VARCHAR     | NULL                  | CoinPaprika API identifier (legacy field name) |
@@ -411,9 +412,11 @@ Metadata for crypto assets (coins, tokens, stablecoins).
 | updated_at          | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | Last update timestamp                  |
 
 **Indexes:**
-- `idx_assets_symbol` on `symbol` (UNIQUE) - Fast lookups and prevent duplicates
+- `idx_assets_symbol_name_unique` on `(symbol, name)` (UNIQUE) - Uniqueness constraint on symbol+name combination
 - `idx_assets_asset_type` on `asset_type` - Filter by asset type
 - `idx_assets_coingecko_id` on `coingecko_id` - API integrations (stores CoinPaprika IDs)
+
+**Note**: As of Feb 2026, the uniqueness constraint was updated from `symbol` only to `(symbol, name)` combination. This allows multiple assets with the same symbol but different names (e.g., Bitcoin vs Wrapped Bitcoin). See [ASSET_UNIQUENESS_UPDATE.md](./ASSET_UNIQUENESS_UPDATE.md) for details.
 
 ### asset_contracts
 

@@ -30,6 +30,9 @@ fn parse_decimal_from_f64(value: Option<f64>) -> Option<Decimal> {
 
 /// Deduplicate prices by keeping only the last occurrence of each unique (asset_id, timestamp, source) combination
 /// This prevents the "ON CONFLICT DO UPDATE command cannot affect row a second time" error
+/// 
+/// When duplicates exist, the last occurrence in the input vector is kept, ensuring the most recent
+/// data for each unique key is retained.
 pub fn deduplicate_prices(prices: Vec<asset_prices::ActiveModel>) -> Vec<asset_prices::ActiveModel> {
     use std::collections::HashMap;
     

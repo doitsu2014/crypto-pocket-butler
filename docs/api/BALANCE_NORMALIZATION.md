@@ -17,13 +17,23 @@ normalized_balance = raw_balance / 10^decimals
 - **BTC**: 8 decimals (satoshis)
 - **WBTC**: 8 decimals
 
+## Canonical Storage Rule
+
+> **All `quantity` values stored in account holdings in the database are normalized (human-readable) decimal strings.**
+
+The EVM connector converts raw on-chain integers to human-readable decimals using `normalize_token_balance` _before_ returning the `Balance` struct. OKX already returns human-readable values. This means:
+
+- `"1.5"` is stored for 1.5 ETH — **not** `"1500000000000000000"`.
+- All downstream calculations (portfolio construction, value estimation) operate on normalized quantities and must **not** apply `normalize_token_balance` again.
+- The optional `decimals` field in holdings is retained as metadata only and should **not** be used to re-normalize the `quantity`.
+
 ## Helper Functions
 
 The balance normalization helper is located at `api/src/helpers/balance_normalization.rs`.
 
 ### `normalize_token_balance(raw_balance: &str, decimals: u8)`
 
-Converts a raw integer balance to a human-readable decimal string.
+Converts a raw integer balance to a human-readable decimal string. Called once in the EVM connector before storing; **do not call again on already-normalized quantities**.
 
 **Example:**
 ```rust
@@ -44,7 +54,8 @@ assert_eq!(tiny_eth, "0.000000291725391649"); // 0.000000291... ETH
 
 ### `normalize_and_format_balance(raw_balance: &str, decimals: u8, display_decimals: u32)`
 
-Normalizes and formats balance for display with a specified number of decimal places.
+Normalizes and formats a raw balance for display with a specified number of decimal places.
+Use this only for display formatting of raw values fetched directly from the chain, not for values already stored in the database.
 
 **Example:**
 ```rust
@@ -63,39 +74,41 @@ assert_eq!(usdc, "1.23");
 
 ### Balance Struct
 
-The `Balance` struct (in `api/src/connectors/mod.rs`) now includes an optional `decimals` field:
+The `Balance` struct (in `api/src/connectors/mod.rs`) stores the **normalized** quantity:
 
 ```rust
 pub struct Balance {
     pub asset: String,
-    pub quantity: String,      // Raw balance (e.g., "291725391649")
+    /// Normalized (human-readable) decimal quantity, e.g. "1.5" for 1.5 ETH
+    pub quantity: String,
     pub available: String,
     pub frozen: String,
-    pub decimals: Option<u8>,  // Number of decimals (e.g., Some(18))
+    /// Kept as metadata; the quantity field is already normalized.
+    pub decimals: Option<u8>,
 }
 ```
 
 ### Portfolio Holdings Response
 
-The portfolio holdings API endpoint (`GET /api/v1/portfolios/{id}/holdings`) returns normalized balances:
+The portfolio holdings API endpoint (`GET /api/v1/portfolios/{id}/holdings`) returns normalized balances. `total_quantity` and `normalized_quantity` are identical — both represent the human-readable value:
 
 ```json
 {
   "portfolio_id": "...",
-  "total_value_usd": 1234.56,
+  "total_value_usd": 3000.0,
   "holdings": [
     {
       "asset": "ETH",
-      "total_quantity": "1500000000000000000",  // Raw balance
+      "total_quantity": "1.50",
       "decimals": 18,
-      "normalized_quantity": "1.50",             // Human-readable balance
+      "normalized_quantity": "1.50",
       "price_usd": 2000.0,
       "value_usd": 3000.0,
       "accounts": [
         {
           "account_id": "...",
           "account_name": "My Wallet",
-          "quantity": "1500000000000000000",
+          "quantity": "1.50",
           "decimals": 18,
           "normalized_quantity": "1.50"
         }
@@ -107,16 +120,23 @@ The portfolio holdings API endpoint (`GET /api/v1/portfolios/{id}/holdings`) ret
 
 ### EVM Connector
 
-The EVM connector (`api/src/connectors/evm.rs`) automatically fetches decimals for tokens:
+The EVM connector (`api/src/connectors/evm.rs`) normalizes balances immediately after fetching:
 
-1. **Native tokens** (ETH, BNB) are hardcoded to 18 decimals
-2. **ERC-20 tokens** fetch decimals by calling the `decimals()` method on the contract
+1. **Native tokens** (ETH, BNB) use 18 decimals
+2. **ERC-20 tokens** fetch decimals by calling the `decimals()` method on the contract, then normalize
 
 ```rust
-// Fetching decimals from ERC20 contract
-let contract = ERC20::new(contract_address, provider.clone());
-let decimals = contract.decimals().call().await?;
+// After fetching raw balance from chain, normalize before returning:
+let normalized = normalize_token_balance(&raw_balance_str, token_decimals)
+    .unwrap_or_else(|_| raw_balance_str.clone());
 ```
+
+## Data Migration
+
+Migration `m20260219_000002_normalize_holdings` converts any existing raw on-chain integers
+in account holdings to normalized decimal strings. It only touches holdings where:
+- `decimals` is set in the holding JSON, **and**
+- `quantity` has no decimal point (i.e., is still a raw integer)
 
 ## Determining Decimals for Tokens
 
@@ -132,12 +152,9 @@ This is the most reliable method and is what the EVM connector uses.
 
 ### Off-Chain Method (API/Database)
 
-For centralized exchanges (like OKX), decimals information may need to be:
-- Looked up in a reference database
-- Hardcoded for common tokens
-- Retrieved from external APIs (CoinGecko, CoinMarketCap)
+For centralized exchanges (like OKX), decimals information is not required because the exchange already returns human-readable values.
 
-**Note:** The OKX connector currently does not provide decimals as this information is not available from their API.
+**Note:** The OKX connector does not set `decimals` since the balances it returns are already in human-readable form.
 
 ## Wallet Token Discovery
 
@@ -169,15 +186,6 @@ To implement full token discovery, consider:
 1. **Indexing Services**: Use services like The Graph, Alchemy, or Moralis that index blockchain data
 2. **Token Lists**: Use community-maintained token lists (e.g., Uniswap token list)
 3. **Hybrid Approach**: Combine common token checks with event log scanning for recent transactions
-
-Example using event logs (not implemented):
-```solidity
-// ERC-20 Transfer event
-event Transfer(address indexed from, address indexed to, uint256 value);
-
-// Query all Transfer events where `to` or `from` is the wallet address
-// Then check balance for each unique token contract found
-```
 
 ## Error Handling
 
@@ -225,67 +233,42 @@ Test coverage includes:
 
 ## Best Practices
 
-1. **Always store raw balances**: Store the original raw balance string from the blockchain
-2. **Display normalized values**: Show normalized values to users but keep raw values for calculations
-3. **Handle missing decimals gracefully**: Not all connectors can provide decimals (e.g., OKX)
-4. **Use Decimal for arithmetic**: Use `rust_decimal::Decimal` for precise calculations, not `f64`
-5. **Validate input**: Check that balance strings are valid integers before normalization
+1. **Store normalized quantities**: The DB canonical value is the human-readable decimal, not the raw integer.
+2. **Normalize at ingestion**: Call `normalize_token_balance` once in the connector, never in downstream calculation code.
+3. **Do not double-normalize**: Reading a `quantity` from holdings and calling `normalize_token_balance` again will produce incorrect results.
+4. **Handle missing decimals gracefully**: Not all connectors provide decimals (e.g., OKX). For OKX the quantity is already human-readable.
+5. **Use Decimal for arithmetic**: Use `rust_decimal::Decimal` for precise calculations, not `f64`.
 
 ## Examples
 
-### Example 1: Display ETH Balance from Issue
+### Example 1: Normalized ETH Balance Stored in DB
 
 ```rust
-// From the issue: ETH = 291725391649 wei
-let raw_balance = "291725391649";
-let decimals = 18;
-
-let normalized = normalize_token_balance(raw_balance, decimals).unwrap();
-// Result: "0.000000291725391649"
-
-// For display with 6 decimals
-let display = normalize_and_format_balance(raw_balance, decimals, 6).unwrap();
-// Result: "0.000000"
+// EVM connector normalizes before returning:
+let raw_wei = "291725391649";  // from on-chain
+let normalized = normalize_token_balance(raw_wei, 18).unwrap();
+// normalized == "0.000000291725391649"
+// This is what gets stored in account holdings and used for all calculations.
 ```
 
-### Example 2: Display USDC Balance from Issue
+### Example 2: USDC Balance
 
 ```rust
-// From the issue: USDC = 706000
-let raw_balance = "706000";
-let decimals = 6;
-
-let normalized = normalize_token_balance(raw_balance, decimals).unwrap();
-// Result: "0.706"
-
-// For display with 2 decimals
-let display = normalize_and_format_balance(raw_balance, decimals, 2).unwrap();
-// Result: "0.71"
+// EVM connector normalizes before returning:
+let raw = "706000";  // from on-chain
+let normalized = normalize_token_balance(raw, 6).unwrap();
+// normalized == "0.706"
+// Stored as "0.706" in holdings, used directly for value calculation.
 ```
 
-### Example 3: Fetching and Normalizing EVM Token Balance
+### Example 3: Value Calculation (Correct)
 
 ```rust
-use alloy::primitives::Address;
-use alloy::providers::ProviderBuilder;
-
-// Connect to Ethereum
-let provider = ProviderBuilder::new()
-    .connect_http("https://eth.llamarpc.com".parse()?);
-
-let wallet: Address = "0xYourWalletAddress".parse()?;
-let token: Address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".parse()?; // USDC
-
-// Get token contract
-let contract = ERC20::new(token, provider.clone());
-
-// Fetch balance and decimals
-let balance = contract.balanceOf(wallet).call().await?;
-let decimals = contract.decimals().call().await?;
-
-// Normalize
-let normalized = normalize_token_balance(&balance.to_string(), decimals)?;
-println!("USDC Balance: {}", normalized);
+// quantity from DB holdings is already normalized:
+let quantity: Decimal = "1.5".parse().unwrap();  // 1.5 ETH
+let price_usd: f64 = 2000.0;
+let value_usd = quantity.to_f64().unwrap() * price_usd;
+// value_usd == 3000.0  ✓
 ```
 
 ## See Also
@@ -293,3 +276,4 @@ println!("USDC Balance: {}", normalized);
 - [EVM Connector Documentation](../../api/src/connectors/evm.rs)
 - [Balance Normalization Helper](../../api/src/helpers/balance_normalization.rs)
 - [Portfolio Handlers](../../api/src/handlers/portfolios.rs)
+

@@ -161,16 +161,16 @@ impl From<accounts::Model> for AccountInPortfolioResponse {
 pub struct AssetHolding {
     /// Asset symbol (e.g., BTC, ETH, USDT)
     pub asset: String,
-    /// Total quantity across all accounts (raw balance string)
+    /// Total normalized (human-readable) quantity across all accounts
     pub total_quantity: String,
-    /// Total available quantity (raw balance string)
+    /// Total available normalized quantity
     pub total_available: String,
-    /// Total frozen quantity (raw balance string)
+    /// Total frozen normalized quantity
     pub total_frozen: String,
     /// Number of decimal places for this token (e.g., 18 for ETH, 6 for USDC)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u8>,
-    /// Human-readable normalized total quantity (e.g., "1.5" ETH instead of "1500000000000000000")
+    /// Normalized total quantity — same as `total_quantity` (kept for backwards compatibility)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub normalized_quantity: Option<String>,
     /// Price per unit in USD
@@ -185,16 +185,16 @@ pub struct AssetHolding {
 pub struct AccountHoldingDetail {
     pub account_id: Uuid,
     pub account_name: String,
-    /// Raw balance quantity string
+    /// Normalized (human-readable) quantity string
     pub quantity: String,
-    /// Raw available balance string
+    /// Normalized available quantity string
     pub available: String,
-    /// Raw frozen balance string
+    /// Normalized frozen quantity string
     pub frozen: String,
     /// Number of decimal places for this token
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u8>,
-    /// Human-readable normalized quantity
+    /// Normalized quantity — same as `quantity` (kept for backwards compatibility)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub normalized_quantity: Option<String>,
 }
@@ -810,13 +810,8 @@ pub async fn get_portfolio_holdings(
                 if entry.decimals.is_none() && holding.decimals.is_some() {
                     entry.decimals = holding.decimals;
                 }
-                
-                // Calculate normalized quantity for this account
-                use crate::helpers::balance_normalization::normalize_token_balance;
-                let normalized_quantity = holding.decimals.and_then(|decimals| {
-                    normalize_token_balance(&holding.quantity, decimals).ok()
-                });
 
+                // quantity is already normalized (human-readable); no further normalization needed
                 entry.account_details.push(AccountHoldingDetail {
                     account_id: account.id,
                     account_name: account.name.clone(),
@@ -824,7 +819,8 @@ pub async fn get_portfolio_holdings(
                     available: holding.available_quantity().to_string(),
                     frozen: holding.frozen_quantity().to_string(),
                     decimals: holding.decimals,
-                    normalized_quantity,
+                    // normalized_quantity mirrors quantity since it is already normalized
+                    normalized_quantity: Some(holding.quantity.clone()),
                 });
             }
         }
@@ -874,23 +870,19 @@ pub async fn get_portfolio_holdings(
             }
         };
 
-        // Calculate value_usd = quantity * price
+        // quantity is already normalized; calculate value_usd = normalized_quantity * price
         let qty_f64 = aggregate.total_quantity.to_f64().unwrap_or(0.0);
         let value_usd = qty_f64 * price_usd;
-        
-        // Calculate normalized total quantity if decimals are available
-        use crate::helpers::balance_normalization::normalize_token_balance;
-        let normalized_quantity = aggregate.decimals.and_then(|decimals| {
-            normalize_token_balance(&aggregate.total_quantity.to_string(), decimals).ok()
-        });
+        let total_quantity_str = aggregate.total_quantity.to_string();
 
         holdings.push(AssetHolding {
             asset: canonical_symbol,
-            total_quantity: aggregate.total_quantity.to_string(),
+            total_quantity: total_quantity_str.clone(),
             total_available: aggregate.total_available.to_string(),
             total_frozen: aggregate.total_frozen.to_string(),
             decimals: aggregate.decimals,
-            normalized_quantity,
+            // normalized_quantity mirrors total_quantity since it is already normalized
+            normalized_quantity: Some(total_quantity_str),
             price_usd,
             value_usd,
             accounts: aggregate.account_details,

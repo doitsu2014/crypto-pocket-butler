@@ -120,6 +120,7 @@ pub async fn fetch_all_coins(
             // Check if asset already exists by coinpaprika_id first (primary key)
             // Only fall back to symbol matching if CoinPaprika ID is not found
             // This prevents duplicate mappings when multiple coins share the same symbol
+            // Note: CoingeckoId column is a legacy name that now stores CoinPaprika IDs
             let existing_asset = assets::Entity::find()
                 .filter(assets::Column::CoingeckoId.eq(&coin.id))
                 .one(db)

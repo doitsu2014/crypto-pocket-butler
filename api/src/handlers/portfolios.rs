@@ -821,7 +821,7 @@ pub async fn get_portfolio_holdings(
                     .await?;
 
                 if let Some(price) = latest_price {
-                    let price_f64 = price.price_usd.to_string().parse::<f64>().unwrap_or(0.0);
+                    let price_f64 = price.price_usd.to_f64().unwrap_or(0.0);
                     (asset_identity.symbol, price_f64)
                 } else {
                     // Asset found but no price available
@@ -845,7 +845,7 @@ pub async fn get_portfolio_holdings(
         };
 
         // Calculate value_usd = quantity * price
-        let qty_f64 = aggregate.total_quantity.to_string().parse::<f64>().unwrap_or(0.0);
+        let qty_f64 = aggregate.total_quantity.to_f64().unwrap_or(0.0);
         let value_usd = qty_f64 * price_usd;
 
         holdings.push(AssetHolding {

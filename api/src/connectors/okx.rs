@@ -138,6 +138,7 @@ impl ExchangeConnector for OkxConnector {
                                     quantity: balance_data.bal,
                                     available: balance_data.avail_bal,
                                     frozen: balance_data.frozen_bal,
+                                    decimals: None, // OKX doesn't provide decimal information
                                 });
                             }
                         }

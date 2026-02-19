@@ -21,6 +21,10 @@ pub struct Balance {
     pub quantity: String,
     pub available: String,
     pub frozen: String,
+    /// Number of decimal places for this token (e.g., 18 for ETH, 6 for USDC)
+    /// Optional because not all connectors can provide this information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u8>,
 }
 
 /// Trait for exchange connectors

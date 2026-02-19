@@ -66,7 +66,36 @@ impl EvmChain {
 }
 
 /// Common ERC-20 token addresses by chain
-/// These are well-known stablecoins and tokens to check
+/// 
+/// This function returns a predefined list of well-known tokens to check for balances.
+/// 
+/// # Current Limitations
+/// 
+/// This approach only checks a limited set of common tokens. It does **not** discover
+/// all tokens in a wallet. Full token discovery would require:
+/// 
+/// 1. **Event Log Scanning**: Query all `Transfer` events to/from the wallet
+/// 2. **Indexing Service**: Use The Graph, Alchemy, or Moralis APIs
+/// 3. **Token Lists**: Reference community-maintained token lists
+/// 
+/// # Why Not Full Discovery?
+/// 
+/// - No complete on-chain registry of all ERC-20 tokens
+/// - Event log queries are slow and expensive on public RPC nodes
+/// - Public RPC endpoints have strict rate limits
+/// - Would significantly increase sync time
+/// 
+/// # Extending Token Support
+/// 
+/// To add more tokens, simply add them to the appropriate chain's vector:
+/// 
+/// ```rust
+/// EvmChain::Ethereum => vec![
+///     ("USDT", "0xdAC17F958D2ee523a2206206994597C13D831ec7"),
+///     ("USDC", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
+///     // Add more tokens here
+/// ],
+/// ```
 pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> {
     match chain {
         EvmChain::Ethereum => vec![
@@ -211,6 +240,8 @@ async fn fetch_native_balance_for_chain(
         quantity: balance_str.clone(),
         available: balance_str.clone(),
         frozen: "0".to_string(),
+        // Native tokens typically have 18 decimals
+        decimals: Some(18),
     }))
 }
 
@@ -242,19 +273,35 @@ async fn fetch_token_balances_for_chain(
                 if balance > U256::ZERO {
                     let balance_str = balance.to_string();
                     
+                    // Fetch decimals from the contract
+                    let decimals = match contract.decimals().call().await {
+                        Ok(d) => Some(d),
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to fetch decimals for {} on {}: {}, defaulting to None",
+                                symbol,
+                                chain.name(),
+                                e
+                            );
+                            None
+                        }
+                    };
+                    
                     balances.push(Balance {
                         asset: format!("{}-{}", symbol, chain.name()),
                         quantity: balance_str.clone(),
                         available: balance_str.clone(),
                         frozen: "0".to_string(),
+                        decimals,
                     });
                     
                     tracing::debug!(
-                        "Found {} {} on {} ({})",
+                        "Found {} {} on {} ({}) with {} decimals",
                         balance_str,
                         symbol,
                         chain.name(),
-                        token_address
+                        token_address,
+                        decimals.map_or("unknown".to_string(), |d| d.to_string())
                     );
                 }
             }

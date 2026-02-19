@@ -31,6 +31,7 @@ dotenvy = "0.15"
 tokio-cron-scheduler = "0.13"
 moka = { version = "0.12", features = ["future"] }
 futures = "0.3"
+thiserror = "2.0"
 # Solana support temporarily disabled due to dependency conflicts with existing stack
 # Will be enabled in a future update after dependency version alignment
 # solana-client = "1.18"

@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 ///   "asset": "BTC",
 ///   "quantity": "1.5",
 ///   "available": "1.5",   // Optional, defaults to quantity if not present
-///   "frozen": "0"         // Optional, defaults to "0" if not present
+///   "frozen": "0",        // Optional, defaults to "0" if not present
+///   "decimals": 8         // Optional, number of decimal places for normalization
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -35,6 +36,11 @@ pub struct AccountHolding {
     /// Defaults to "0" if not specified (for legacy data compatibility)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frozen: Option<String>,
+    
+    /// Number of decimal places for this token (e.g., 18 for ETH, 6 for USDC)
+    /// Used for normalizing raw balances to human-readable values
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u8>,
     
     /// Optional price from account data (usually not present)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -125,6 +131,7 @@ mod tests {
             quantity: "1.5".to_string(),
             available: None,
             frozen: None,
+            decimals: None,
             price_usd: None,
             value_usd: None,
         };
@@ -140,6 +147,7 @@ mod tests {
             quantity: "1.5".to_string(),
             available: None,
             frozen: None,
+            decimals: None,
             price_usd: None,
             value_usd: None,
         };

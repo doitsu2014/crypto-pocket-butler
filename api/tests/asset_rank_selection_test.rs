@@ -76,7 +76,7 @@ async fn test_normalize_from_symbol_prefers_better_rank() {
         percent_from_price_ath: ActiveValue::NotSet,
     };
     
-    let _ = price1.insert(&db).await.expect("Should insert first price");
+    price1.insert(&db).await.expect("Should insert first price");
     
     // Create second asset: ETH (Ethereum) with low rank (good)
     let asset2_id = Uuid::new_v4();
@@ -122,7 +122,7 @@ async fn test_normalize_from_symbol_prefers_better_rank() {
         percent_from_price_ath: ActiveValue::NotSet,
     };
     
-    let _ = price2.insert(&db).await.expect("Should insert second price");
+    price2.insert(&db).await.expect("Should insert second price");
     
     // Test the normalizer - should return Ethereum (rank 2), not Ethereum Carbon (rank 950)
     let normalizer = AssetIdentityNormalizer::new(db.clone());
@@ -177,7 +177,7 @@ async fn test_normalize_from_okx_prefers_better_rank() {
         created_at: ActiveValue::Set(timestamp.into()),
         updated_at: ActiveValue::Set(timestamp.into()),
     };
-    let _ = asset1.insert(&db).await.expect("Should insert first test asset");
+    asset1.insert(&db).await.expect("Should insert first test asset");
     
     let price1_id = Uuid::new_v4();
     let price1 = asset_prices::ActiveModel {
@@ -202,7 +202,7 @@ async fn test_normalize_from_okx_prefers_better_rank() {
         ath_date: ActiveValue::NotSet,
         percent_from_price_ath: ActiveValue::NotSet,
     };
-    let _ = price1.insert(&db).await.expect("Should insert first test price");
+    price1.insert(&db).await.expect("Should insert first test price");
     
     let asset2_id = Uuid::new_v4();
     let asset2 = assets::ActiveModel {
@@ -219,7 +219,7 @@ async fn test_normalize_from_okx_prefers_better_rank() {
         created_at: ActiveValue::Set(timestamp.into()),
         updated_at: ActiveValue::Set(timestamp.into()),
     };
-    let _ = asset2.insert(&db).await.expect("Should insert second test asset");
+    asset2.insert(&db).await.expect("Should insert second test asset");
     
     let price2_id = Uuid::new_v4();
     let price2 = asset_prices::ActiveModel {
@@ -244,7 +244,7 @@ async fn test_normalize_from_okx_prefers_better_rank() {
         ath_date: ActiveValue::NotSet,
         percent_from_price_ath: ActiveValue::NotSet,
     };
-    let _ = price2.insert(&db).await.expect("Should insert second test price");
+    price2.insert(&db).await.expect("Should insert second test price");
     
     // Test normalize_from_okx
     let normalizer = AssetIdentityNormalizer::new(db.clone());
@@ -297,7 +297,7 @@ async fn test_normalize_fallback_without_rank_data() {
         created_at: ActiveValue::Set(timestamp.into()),
         updated_at: ActiveValue::Set(timestamp.into()),
     };
-    let _ = asset.insert(&db).await.expect("Should insert test asset without rank");
+    asset.insert(&db).await.expect("Should insert test asset without rank");
     
     // Test the normalizer - should still find the asset even without price data
     let normalizer = AssetIdentityNormalizer::new(db.clone());

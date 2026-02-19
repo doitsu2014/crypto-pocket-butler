@@ -143,7 +143,8 @@ mod tests {
     fn test_normalize_eth_balance() {
         // 1.5 ETH in wei
         let result = normalize_token_balance("1500000000000000000", 18).unwrap();
-        // Decimal preserves some precision in to_string()
+        // Note: Decimal's to_string() removes insignificant trailing zeros
+        // So 1.500000000000000000 becomes "1.50" (keeps 2 significant decimal places)
         assert_eq!(result, "1.50");
     }
 
@@ -212,7 +213,8 @@ mod tests {
     fn test_normalize_and_format() {
         // ETH with 4 decimal places for display
         let result = normalize_and_format_balance("1234567890123456789", 18, 4).unwrap();
-        // Note: format! truncates decimal precision
+        // Note: format! with {:.prec$} truncates, not rounds in this context
+        // because Decimal already represents the exact value
         assert_eq!(result, "1.2345");
         
         // USDC with 2 decimal places for display
@@ -222,12 +224,15 @@ mod tests {
 
     #[test]
     fn test_format_truncates() {
-        // Test formatting behavior - it truncates not rounds
+        // Test formatting behavior with Decimal
+        // Note: When formatting a Decimal with {:.prec$}, Rust's Display trait
+        // truncates insignificant digits rather than rounding in typical cases
         let result = normalize_and_format_balance("1999999999999999999", 18, 2).unwrap();
-        // 1.999999... truncated to 2 decimals becomes "1.99"  
+        // 1.999999... formatted to 2 decimals shows "1.99" (truncated)
         assert_eq!(result, "1.99");
         
         let result = normalize_and_format_balance("1449999999999999999", 18, 2).unwrap();
+        // 1.449999... formatted to 2 decimals shows "1.44" (truncated)
         assert_eq!(result, "1.44");
     }
 
@@ -235,5 +240,30 @@ mod tests {
     fn test_format_zero_decimals() {
         let result = normalize_and_format_balance("1234567890123456789", 18, 0).unwrap();
         assert_eq!(result, "1");
+    }
+    
+    #[test]
+    fn test_trailing_zero_behavior() {
+        // Explicitly test how Decimal's to_string() handles trailing zeros
+        
+        // Case 1: Exact decimal value with trailing zeros
+        let result = normalize_token_balance("1000000000000000000", 18).unwrap();
+        // 1.000... ETH becomes "1" (all trailing zeros removed)
+        assert_eq!(result, "1");
+        
+        // Case 2: Value with some significant trailing zeros
+        let result = normalize_token_balance("1500000000000000000", 18).unwrap();
+        // 1.5000... becomes "1.50" (keeps some precision but removes insignificant zeros)
+        assert_eq!(result, "1.50");
+        
+        // Case 3: Value with many significant decimal places
+        let result = normalize_token_balance("1234567890123456789", 18).unwrap();
+        // Preserves all significant digits
+        assert_eq!(result, "1.234567890123456789");
+        
+        // Case 4: Very small value
+        let result = normalize_token_balance("100", 18).unwrap();
+        // 0.0000000000000001 preserves all necessary precision
+        assert_eq!(result, "0.0000000000000001");
     }
 }

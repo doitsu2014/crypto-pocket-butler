@@ -296,12 +296,12 @@ async fn fetch_token_balances_for_chain(
                     });
                     
                     tracing::debug!(
-                        "Found {} {} (decimals: {:?}) on {} ({})",
+                        "Found {} {} on {} ({}) with {} decimals",
                         balance_str,
                         symbol,
-                        decimals,
                         chain.name(),
-                        token_address
+                        token_address,
+                        decimals.map_or("unknown".to_string(), |d| d.to_string())
                     );
                 }
             }

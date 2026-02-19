@@ -10,7 +10,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, ModelTrait,
-    QueryFilter, TransactionTrait,
+    QueryFilter, QueryOrder, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -175,7 +175,7 @@ pub struct AssetHolding {
     pub accounts: Vec<AccountHoldingDetail>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AccountHoldingDetail {
     pub account_id: Uuid,
     pub account_name: String,
@@ -735,8 +735,17 @@ pub async fn get_portfolio_holdings(
         .all(&db)
         .await?;
 
-    // Aggregate holdings by asset
-    let mut holdings_map: HashMap<String, AssetHolding> = HashMap::new();
+    // Step 1: Aggregate holdings by asset symbol, collecting account details
+    // Use a temporary structure that stores per-account details
+    #[derive(Debug, Clone)]
+    struct HoldingAggregate {
+        total_quantity: Decimal,
+        total_available: Decimal,
+        total_frozen: Decimal,
+        account_details: Vec<AccountHoldingDetail>,
+    }
+
+    let mut holdings_by_symbol: HashMap<String, HoldingAggregate> = HashMap::new();
 
     for account in accounts {
         if let Some(holdings_json) = account.holdings {
@@ -762,15 +771,12 @@ pub async fn get_portfolio_holdings(
                     continue;
                 }
 
-                let entry = holdings_map.entry(holding.asset.clone()).or_insert_with(|| {
-                    AssetHolding {
-                        asset: holding.asset.clone(),
-                        total_quantity: "0".to_string(),
-                        total_available: "0".to_string(),
-                        total_frozen: "0".to_string(),
-                        price_usd: holding.price_usd.unwrap_or(0.0),
-                        value_usd: 0.0,
-                        accounts: Vec::new(),
+                let entry = holdings_by_symbol.entry(holding.asset.clone()).or_insert_with(|| {
+                    HoldingAggregate {
+                        total_quantity: Decimal::ZERO,
+                        total_available: Decimal::ZERO,
+                        total_frozen: Decimal::ZERO,
+                        account_details: Vec::new(),
                     }
                 });
 
@@ -778,16 +784,12 @@ pub async fn get_portfolio_holdings(
                 let qty = parse_decimal_or_zero(&holding.quantity);
                 let avail = parse_decimal_or_zero(holding.available_quantity());
                 let frz = parse_decimal_or_zero(holding.frozen_quantity());
-                let curr_qty = parse_decimal_or_zero(&entry.total_quantity);
-                let curr_avail = parse_decimal_or_zero(&entry.total_available);
-                let curr_frz = parse_decimal_or_zero(&entry.total_frozen);
 
-                entry.total_quantity = (curr_qty + qty).to_string();
-                entry.total_available = (curr_avail + avail).to_string();
-                entry.total_frozen = (curr_frz + frz).to_string();
-                entry.value_usd += holding.value_usd.unwrap_or(0.0);
+                entry.total_quantity += qty;
+                entry.total_available += avail;
+                entry.total_frozen += frz;
 
-                entry.accounts.push(AccountHoldingDetail {
+                entry.account_details.push(AccountHoldingDetail {
                     account_id: account.id,
                     account_name: account.name.clone(),
                     quantity: holding.quantity.clone(),
@@ -798,9 +800,66 @@ pub async fn get_portfolio_holdings(
         }
     }
 
-    // Convert to vec and sort by value descending (highest value first)
-    // Note: NaN values are treated as equal to maintain stable ordering
-    let mut holdings: Vec<AssetHolding> = holdings_map.into_values().collect();
+    // Step 2: Lookup prices from database and calculate values
+    use crate::entities::asset_prices;
+    use crate::helpers::asset_identity::{AssetIdentityNormalizer, NormalizationResult};
+    
+    let normalizer = AssetIdentityNormalizer::new(db.clone());
+    let mut holdings: Vec<AssetHolding> = Vec::new();
+
+    for (symbol, aggregate) in holdings_by_symbol.into_iter() {
+        // Normalize the asset symbol to get canonical asset identity
+        let normalization_result = normalizer.normalize_from_symbol(&symbol).await;
+        
+        let (canonical_symbol, price_usd) = match normalization_result {
+            NormalizationResult::Mapped(asset_identity) => {
+                // Successfully mapped - now get the latest price
+                let latest_price = asset_prices::Entity::find()
+                    .filter(asset_prices::Column::AssetId.eq(asset_identity.asset_id))
+                    .order_by_desc(asset_prices::Column::Timestamp)
+                    .one(&db)
+                    .await?;
+
+                if let Some(price) = latest_price {
+                    let price_f64 = price.price_usd.to_string().parse::<f64>().unwrap_or(0.0);
+                    (asset_identity.symbol, price_f64)
+                } else {
+                    // Asset found but no price available
+                    tracing::warn!(
+                        "No price found for asset '{}' ({})",
+                        asset_identity.symbol,
+                        asset_identity.asset_id
+                    );
+                    (asset_identity.symbol, 0.0)
+                }
+            }
+            NormalizationResult::Unknown { original_identifier, context, .. } => {
+                // Could not normalize the asset - use original symbol with 0 price
+                tracing::warn!(
+                    "Could not normalize asset '{}': {}",
+                    original_identifier,
+                    context
+                );
+                (symbol.clone(), 0.0)
+            }
+        };
+
+        // Calculate value_usd = quantity * price
+        let qty_f64 = aggregate.total_quantity.to_string().parse::<f64>().unwrap_or(0.0);
+        let value_usd = qty_f64 * price_usd;
+
+        holdings.push(AssetHolding {
+            asset: canonical_symbol,
+            total_quantity: aggregate.total_quantity.to_string(),
+            total_available: aggregate.total_available.to_string(),
+            total_frozen: aggregate.total_frozen.to_string(),
+            price_usd,
+            value_usd,
+            accounts: aggregate.account_details,
+        });
+    }
+
+    // Sort by value descending (highest value first)
     holdings.sort_by(|a, b| {
         b.value_usd
             .partial_cmp(&a.value_usd)

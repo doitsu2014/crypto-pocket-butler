@@ -117,15 +117,25 @@ pub async fn fetch_all_coins(
             let volume_24h_usd = parse_decimal_from_f64(coin.quotes.usd.volume_24h);
             let change_percent_24h = parse_decimal_from_f64(coin.quotes.usd.percent_change_24h);
 
-            // Check if asset already exists by symbol or coinpaprika_id
+            // Check if asset already exists by coinpaprika_id first (primary key)
+            // Only fall back to symbol matching if CoinPaprika ID is not found
+            // This prevents duplicate mappings when multiple coins share the same symbol
             let existing_asset = assets::Entity::find()
-                .filter(
-                    assets::Column::Symbol.eq(&coin.symbol.to_uppercase())
-                        .or(assets::Column::CoingeckoId.eq(&coin.id))
-                )
+                .filter(assets::Column::CoingeckoId.eq(&coin.id))
                 .one(db)
                 .await
                 .map_err(|e| format!("Failed to query assets: {}", e))?;
+            
+            // If not found by CoinPaprika ID, try by symbol as fallback for legacy data
+            let existing_asset = if existing_asset.is_none() {
+                assets::Entity::find()
+                    .filter(assets::Column::Symbol.eq(&coin.symbol.to_uppercase()))
+                    .one(db)
+                    .await
+                    .map_err(|e| format!("Failed to query assets: {}", e))?
+            } else {
+                existing_asset
+            };
 
             let asset_id = match existing_asset {
                 Some(existing) => {

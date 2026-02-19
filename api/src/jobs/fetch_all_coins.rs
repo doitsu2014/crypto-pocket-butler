@@ -28,6 +28,36 @@ fn parse_decimal_from_f64(value: Option<f64>) -> Option<Decimal> {
     value.and_then(|v| Decimal::from_str(&v.to_string()).ok())
 }
 
+/// Deduplicate prices by keeping only the last occurrence of each unique (asset_id, timestamp, source) combination
+/// This prevents the "ON CONFLICT DO UPDATE command cannot affect row a second time" error
+pub fn deduplicate_prices(prices: Vec<asset_prices::ActiveModel>) -> Vec<asset_prices::ActiveModel> {
+    use std::collections::HashMap;
+    
+    let mut price_map: HashMap<(Uuid, i64, String), asset_prices::ActiveModel> = HashMap::new();
+    
+    for price in prices {
+        // Extract the key fields
+        let asset_id = match &price.asset_id {
+            ActiveValue::Set(id) => *id,
+            _ => continue,
+        };
+        let timestamp_millis = match &price.timestamp {
+            ActiveValue::Set(ts) => ts.timestamp_millis(),
+            _ => continue,
+        };
+        let source = match &price.source {
+            ActiveValue::Set(s) => s.clone(),
+            _ => continue,
+        };
+        
+        let key = (asset_id, timestamp_millis, source);
+        // This will overwrite any previous entry with the same key, keeping only the last one
+        price_map.insert(key, price);
+    }
+    
+    price_map.into_values().collect()
+}
+
 /// Fetch all active coins from CoinPaprika in one request and store in database
 /// 
 /// This function uses the CoinPaprika connector to:
@@ -181,8 +211,10 @@ pub async fn fetch_all_coins(
 
             // Batch insert every 500 prices to avoid too large transactions
             if prices_to_store.len() >= 500 {
-                let count = prices_to_store.len();
-                match Insert::many(prices_to_store)
+                // Deduplicate to prevent "ON CONFLICT DO UPDATE command cannot affect row a second time" error
+                let deduplicated = deduplicate_prices(prices_to_store);
+                let count = deduplicated.len();
+                match Insert::many(deduplicated)
                     .on_conflict(
                         OnConflict::columns([
                             asset_prices::Column::AssetId,
@@ -224,8 +256,10 @@ pub async fn fetch_all_coins(
 
         // Insert remaining prices
         let prices_stored = if !prices_to_store.is_empty() {
-            let count = prices_to_store.len();
-            match Insert::many(prices_to_store)
+            // Deduplicate to prevent "ON CONFLICT DO UPDATE command cannot affect row a second time" error
+            let deduplicated = deduplicate_prices(prices_to_store);
+            let count = deduplicated.len();
+            match Insert::many(deduplicated)
                 .on_conflict(
                     OnConflict::columns([
                         asset_prices::Column::AssetId,
@@ -300,6 +334,7 @@ pub async fn fetch_all_coins(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
 
     #[test]
     fn test_collection_result_creation() {
@@ -313,5 +348,617 @@ mod tests {
         };
         assert!(result.success);
         assert_eq!(result.coins_fetched, 1000);
+    }
+
+    #[test]
+    fn test_deduplicate_prices_no_duplicates() {
+        // Test with no duplicates - should return all prices unchanged
+        let asset_id_1 = Uuid::new_v4();
+        let asset_id_2 = Uuid::new_v4();
+        let timestamp = Utc::now();
+        
+        let prices = vec![
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id_1),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("100.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(None),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id_2),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("200.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(None),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+        ];
+
+        let deduplicated = deduplicate_prices(prices.clone());
+        assert_eq!(deduplicated.len(), 2, "Should keep all prices when no duplicates");
+    }
+
+    #[test]
+    fn test_deduplicate_prices_with_duplicates() {
+        // Test with duplicates - should keep only the last occurrence
+        let asset_id = Uuid::new_v4();
+        let timestamp = Utc::now();
+        
+        let prices = vec![
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("100.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(Some(1)),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("200.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(Some(2)),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+        ];
+
+        let deduplicated = deduplicate_prices(prices);
+        
+        // Should have only 1 price left (last one wins)
+        assert_eq!(deduplicated.len(), 1, "Should deduplicate to 1 price");
+        
+        // Verify it's the last price (rank=2, price=200)
+        let remaining_price = &deduplicated[0];
+        match &remaining_price.price_usd {
+            ActiveValue::Set(price) => {
+                assert_eq!(price, &Decimal::from_str("200.0").unwrap(), "Should keep the last price");
+            }
+            _ => panic!("Price should be set"),
+        }
+        match &remaining_price.rank {
+            ActiveValue::Set(rank) => {
+                assert_eq!(rank, &Some(2), "Should keep the last rank value");
+            }
+            _ => panic!("Rank should be set"),
+        }
+    }
+
+    #[test]
+    fn test_deduplicate_prices_different_sources() {
+        // Test that different sources are NOT deduplicated
+        let asset_id = Uuid::new_v4();
+        let timestamp = Utc::now();
+        
+        let prices = vec![
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("100.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(None),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("200.0").unwrap()),
+                source: ActiveValue::Set("coingecko".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(None),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+        ];
+
+        let deduplicated = deduplicate_prices(prices);
+        
+        // Both should remain as they have different sources
+        assert_eq!(deduplicated.len(), 2, "Should keep prices with different sources");
+    }
+
+    #[test]
+    fn test_deduplicate_prices_different_timestamps() {
+        // Test that different timestamps are NOT deduplicated
+        let asset_id = Uuid::new_v4();
+        let timestamp1 = Utc::now();
+        let timestamp2 = timestamp1 + chrono::Duration::seconds(1);
+        
+        let prices = vec![
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id),
+                timestamp: ActiveValue::Set(timestamp1.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("100.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(None),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp1.into()),
+            },
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id),
+                timestamp: ActiveValue::Set(timestamp2.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("200.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(None),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp2.into()),
+            },
+        ];
+
+        let deduplicated = deduplicate_prices(prices);
+        
+        // Both should remain as they have different timestamps
+        assert_eq!(deduplicated.len(), 2, "Should keep prices with different timestamps");
+    }
+
+    #[test]
+    fn test_deduplicate_prices_multiple_duplicates() {
+        // Test with multiple duplicate groups
+        let asset_id_1 = Uuid::new_v4();
+        let asset_id_2 = Uuid::new_v4();
+        let timestamp = Utc::now();
+        
+        let prices = vec![
+            // First duplicate group (asset_id_1)
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id_1),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("100.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(Some(1)),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id_1),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("150.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(Some(2)),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+            // Second duplicate group (asset_id_2)
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id_2),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("300.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(Some(3)),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+            asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_id_2),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str("350.0").unwrap()),
+                source: ActiveValue::Set("coinpaprika".to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(Some(4)),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            },
+        ];
+
+        let deduplicated = deduplicate_prices(prices);
+        
+        // Should have 2 prices (one for each asset_id)
+        assert_eq!(deduplicated.len(), 2, "Should deduplicate to 2 prices");
+        
+        // Check that we have one price for each asset
+        let mut found_asset_1 = false;
+        let mut found_asset_2 = false;
+        
+        for price in &deduplicated {
+            match &price.asset_id {
+                ActiveValue::Set(id) if *id == asset_id_1 => {
+                    found_asset_1 = true;
+                    // Should be the last one (price=150, rank=2)
+                    match &price.price_usd {
+                        ActiveValue::Set(p) => assert_eq!(p, &Decimal::from_str("150.0").unwrap()),
+                        _ => panic!("Price should be set"),
+                    }
+                    match &price.rank {
+                        ActiveValue::Set(r) => assert_eq!(r, &Some(2)),
+                        _ => panic!("Rank should be set"),
+                    }
+                }
+                ActiveValue::Set(id) if *id == asset_id_2 => {
+                    found_asset_2 = true;
+                    // Should be the last one (price=350, rank=4)
+                    match &price.price_usd {
+                        ActiveValue::Set(p) => assert_eq!(p, &Decimal::from_str("350.0").unwrap()),
+                        _ => panic!("Price should be set"),
+                    }
+                    match &price.rank {
+                        ActiveValue::Set(r) => assert_eq!(r, &Some(4)),
+                        _ => panic!("Rank should be set"),
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        assert!(found_asset_1, "Should have price for asset_id_1");
+        assert!(found_asset_2, "Should have price for asset_id_2");
+    }
+
+    #[test]
+    fn test_deduplicate_prices_empty_vec() {
+        let prices: Vec<asset_prices::ActiveModel> = vec![];
+        let deduplicated = deduplicate_prices(prices);
+        assert_eq!(deduplicated.len(), 0, "Empty vector should remain empty");
+    }
+
+    #[test]
+    fn test_parse_decimal_from_f64_valid() {
+        let value = Some(123.45);
+        let result = parse_decimal_from_f64(value);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), Decimal::from_str("123.45").unwrap());
+    }
+
+    #[test]
+    fn test_parse_decimal_from_f64_none() {
+        let value: Option<f64> = None;
+        let result = parse_decimal_from_f64(value);
+        assert!(result.is_none());
+    }
+
+    /// Integration test: Test batch insert with duplicates
+    /// This test simulates the actual scenario that would cause the error
+    #[test]
+    fn test_batch_insert_deduplication_scenario() {
+        // Simulate a scenario where the same coin appears multiple times in the API response
+        // This would create duplicate (asset_id, timestamp, source) entries in the batch
+        
+        let asset_id = Uuid::new_v4();
+        let timestamp = Utc::now();
+        let source = "coinpaprika";
+        
+        // Create a batch with 3 prices, where 2 are duplicates
+        let mut prices_batch = Vec::new();
+        
+        // First entry for BTC
+        prices_batch.push(asset_prices::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            asset_id: ActiveValue::Set(asset_id),
+            timestamp: ActiveValue::Set(timestamp.into()),
+            price_usd: ActiveValue::Set(Decimal::from_str("50000.0").unwrap()),
+            source: ActiveValue::Set(source.to_string()),
+            volume_24h_usd: ActiveValue::Set(Some(Decimal::from_str("1000000.0").unwrap())),
+            market_cap_usd: ActiveValue::Set(Some(Decimal::from_str("1000000000.0").unwrap())),
+            change_percent_24h: ActiveValue::Set(Some(Decimal::from_str("2.5").unwrap())),
+            rank: ActiveValue::Set(Some(1)),
+            circulating_supply: ActiveValue::Set(Some(Decimal::from_str("19000000.0").unwrap())),
+            total_supply: ActiveValue::Set(Some(Decimal::from_str("21000000.0").unwrap())),
+            max_supply: ActiveValue::Set(Some(Decimal::from_str("21000000.0").unwrap())),
+            beta_value: ActiveValue::Set(Some(Decimal::from_str("1.2").unwrap())),
+            percent_change_1h: ActiveValue::Set(Some(Decimal::from_str("0.5").unwrap())),
+            percent_change_7d: ActiveValue::Set(Some(Decimal::from_str("5.0").unwrap())),
+            percent_change_30d: ActiveValue::Set(Some(Decimal::from_str("10.0").unwrap())),
+            ath_price: ActiveValue::Set(Some(Decimal::from_str("69000.0").unwrap())),
+            ath_date: ActiveValue::Set(None),
+            percent_from_price_ath: ActiveValue::Set(Some(Decimal::from_str("-27.5").unwrap())),
+            created_at: ActiveValue::Set(timestamp.into()),
+        });
+        
+        // Duplicate entry for BTC (simulating API returning same coin twice)
+        prices_batch.push(asset_prices::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            asset_id: ActiveValue::Set(asset_id),
+            timestamp: ActiveValue::Set(timestamp.into()),
+            price_usd: ActiveValue::Set(Decimal::from_str("50100.0").unwrap()), // Different price
+            source: ActiveValue::Set(source.to_string()),
+            volume_24h_usd: ActiveValue::Set(Some(Decimal::from_str("1100000.0").unwrap())),
+            market_cap_usd: ActiveValue::Set(Some(Decimal::from_str("1010000000.0").unwrap())),
+            change_percent_24h: ActiveValue::Set(Some(Decimal::from_str("2.7").unwrap())),
+            rank: ActiveValue::Set(Some(1)),
+            circulating_supply: ActiveValue::Set(Some(Decimal::from_str("19000000.0").unwrap())),
+            total_supply: ActiveValue::Set(Some(Decimal::from_str("21000000.0").unwrap())),
+            max_supply: ActiveValue::Set(Some(Decimal::from_str("21000000.0").unwrap())),
+            beta_value: ActiveValue::Set(Some(Decimal::from_str("1.2").unwrap())),
+            percent_change_1h: ActiveValue::Set(Some(Decimal::from_str("0.6").unwrap())),
+            percent_change_7d: ActiveValue::Set(Some(Decimal::from_str("5.2").unwrap())),
+            percent_change_30d: ActiveValue::Set(Some(Decimal::from_str("10.5").unwrap())),
+            ath_price: ActiveValue::Set(Some(Decimal::from_str("69000.0").unwrap())),
+            ath_date: ActiveValue::Set(None),
+            percent_from_price_ath: ActiveValue::Set(Some(Decimal::from_str("-27.4").unwrap())),
+            created_at: ActiveValue::Set(timestamp.into()),
+        });
+        
+        // Different asset to ensure we don't over-deduplicate
+        let asset_id_2 = Uuid::new_v4();
+        prices_batch.push(asset_prices::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            asset_id: ActiveValue::Set(asset_id_2),
+            timestamp: ActiveValue::Set(timestamp.into()),
+            price_usd: ActiveValue::Set(Decimal::from_str("3000.0").unwrap()),
+            source: ActiveValue::Set(source.to_string()),
+            volume_24h_usd: ActiveValue::Set(Some(Decimal::from_str("500000.0").unwrap())),
+            market_cap_usd: ActiveValue::Set(Some(Decimal::from_str("500000000.0").unwrap())),
+            change_percent_24h: ActiveValue::Set(Some(Decimal::from_str("1.5").unwrap())),
+            rank: ActiveValue::Set(Some(2)),
+            circulating_supply: ActiveValue::Set(None),
+            total_supply: ActiveValue::Set(None),
+            max_supply: ActiveValue::Set(None),
+            beta_value: ActiveValue::Set(None),
+            percent_change_1h: ActiveValue::Set(Some(Decimal::from_str("0.3").unwrap())),
+            percent_change_7d: ActiveValue::Set(Some(Decimal::from_str("3.0").unwrap())),
+            percent_change_30d: ActiveValue::Set(Some(Decimal::from_str("8.0").unwrap())),
+            ath_price: ActiveValue::Set(Some(Decimal::from_str("4800.0").unwrap())),
+            ath_date: ActiveValue::Set(None),
+            percent_from_price_ath: ActiveValue::Set(Some(Decimal::from_str("-37.5").unwrap())),
+            created_at: ActiveValue::Set(timestamp.into()),
+        });
+        
+        // Before deduplication: 3 prices
+        assert_eq!(prices_batch.len(), 3, "Should start with 3 prices in batch");
+        
+        // After deduplication: should have 2 prices (duplicates merged, keeping last)
+        let deduplicated = deduplicate_prices(prices_batch);
+        assert_eq!(deduplicated.len(), 2, "Should have 2 prices after deduplication");
+        
+        // Verify the duplicate was removed and we kept the last one
+        let btc_price = deduplicated.iter().find(|p| {
+            matches!(&p.asset_id, ActiveValue::Set(id) if *id == asset_id)
+        }).expect("Should find BTC price");
+        
+        // Should keep the last duplicate's values
+        match &btc_price.price_usd {
+            ActiveValue::Set(price) => {
+                assert_eq!(price, &Decimal::from_str("50100.0").unwrap(), 
+                    "Should keep the last duplicate's price");
+            }
+            _ => panic!("Price should be set"),
+        }
+        
+        // Verify the other asset is still present
+        let eth_price = deduplicated.iter().find(|p| {
+            matches!(&p.asset_id, ActiveValue::Set(id) if *id == asset_id_2)
+        }).expect("Should find ETH price");
+        
+        match &eth_price.price_usd {
+            ActiveValue::Set(price) => {
+                assert_eq!(price, &Decimal::from_str("3000.0").unwrap());
+            }
+            _ => panic!("Price should be set"),
+        }
+    }
+
+    /// Test that demonstrates the fix prevents the database error
+    #[test]
+    fn test_large_batch_with_scattered_duplicates() {
+        // Simulate a more realistic scenario with 10 prices where some are duplicates
+        let timestamp = Utc::now();
+        let source = "coinpaprika";
+        
+        let asset_ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
+        let mut prices_batch = Vec::new();
+        
+        // Add 10 prices with some duplicates scattered throughout
+        for i in 0..10 {
+            let asset_idx = i % 5; // This creates duplicates
+            prices_batch.push(asset_prices::ActiveModel {
+                id: ActiveValue::Set(Uuid::new_v4()),
+                asset_id: ActiveValue::Set(asset_ids[asset_idx]),
+                timestamp: ActiveValue::Set(timestamp.into()),
+                price_usd: ActiveValue::Set(Decimal::from_str(&format!("{}.0", 100 + i)).unwrap()),
+                source: ActiveValue::Set(source.to_string()),
+                volume_24h_usd: ActiveValue::Set(None),
+                market_cap_usd: ActiveValue::Set(None),
+                change_percent_24h: ActiveValue::Set(None),
+                rank: ActiveValue::Set(Some(i as i32)),
+                circulating_supply: ActiveValue::Set(None),
+                total_supply: ActiveValue::Set(None),
+                max_supply: ActiveValue::Set(None),
+                beta_value: ActiveValue::Set(None),
+                percent_change_1h: ActiveValue::Set(None),
+                percent_change_7d: ActiveValue::Set(None),
+                percent_change_30d: ActiveValue::Set(None),
+                ath_price: ActiveValue::Set(None),
+                ath_date: ActiveValue::Set(None),
+                percent_from_price_ath: ActiveValue::Set(None),
+                created_at: ActiveValue::Set(timestamp.into()),
+            });
+        }
+        
+        // Should have 10 prices before deduplication
+        assert_eq!(prices_batch.len(), 10, "Should start with 10 prices");
+        
+        // After deduplication: should have 5 unique prices (one per asset)
+        let deduplicated = deduplicate_prices(prices_batch);
+        assert_eq!(deduplicated.len(), 5, "Should have 5 unique prices after deduplication");
+        
+        // Verify each asset appears exactly once
+        let mut asset_counts: std::collections::HashMap<Uuid, usize> = std::collections::HashMap::new();
+        for price in &deduplicated {
+            if let ActiveValue::Set(asset_id) = &price.asset_id {
+                *asset_counts.entry(*asset_id).or_insert(0) += 1;
+            }
+        }
+        
+        for (asset_id, count) in asset_counts.iter() {
+            assert_eq!(*count, 1, "Each asset should appear exactly once, but {:?} appears {} times", 
+                asset_id, count);
+        }
+        
+        // Verify we kept the last values (highest rank for each asset)
+        // Asset 0 should have rank 5 (indices 0, 5), Asset 1 should have rank 6, etc.
+        for (idx, asset_id) in asset_ids.iter().enumerate() {
+            let price = deduplicated.iter().find(|p| {
+                matches!(&p.asset_id, ActiveValue::Set(id) if id == asset_id)
+            }).expect("Should find price for asset");
+            
+            let expected_rank = 5 + idx as i32;
+            match &price.rank {
+                ActiveValue::Set(Some(rank)) => {
+                    assert_eq!(*rank, expected_rank, 
+                        "Asset {} should have rank {} (last occurrence)", idx, expected_rank);
+                }
+                _ => panic!("Rank should be set"),
+            }
+        }
     }
 }

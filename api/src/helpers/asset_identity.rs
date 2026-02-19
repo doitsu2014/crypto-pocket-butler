@@ -445,16 +445,17 @@ impl AssetIdentityNormalizer {
         use crate::entities::{assets, asset_prices};
         
         // First, try to find assets with the given symbol that have price data with rank
-        let assets_with_rank = assets::Entity::find()
+        // We only consider non-null ranks and order by rank ascending (lower is better)
+        let asset_with_rank = assets::Entity::find()
             .filter(assets::Column::Symbol.eq(normalized_symbol))
             .inner_join(asset_prices::Entity)
+            .filter(asset_prices::Column::Rank.is_not_null())
             .order_by_asc(asset_prices::Column::Rank)
-            .all(&self.db)
+            .one(&self.db)
             .await?;
         
-        if !assets_with_rank.is_empty() {
-            // Return the first one (lowest rank)
-            return Ok(Some(assets_with_rank[0].clone()));
+        if let Some(asset) = asset_with_rank {
+            return Ok(Some(asset));
         }
         
         // Fallback: if no assets have price data with rank, just return any matching asset

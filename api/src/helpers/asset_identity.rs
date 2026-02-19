@@ -26,7 +26,7 @@
 //! ).await?;
 //! ```
 
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait};
+use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, QueryOrder};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -139,9 +139,8 @@ impl AssetIdentityNormalizer {
     /// # Note
     /// This method only uses symbol for lookup as OKX doesn't provide name.
     /// For full symbol+name lookup, use normalize_from_symbol_and_name instead.
+    /// When multiple assets share the same symbol, prefers the one with lower rank (higher market cap).
     pub async fn normalize_from_okx(&self, okx_symbol: &str) -> NormalizationResult {
-        use crate::entities::assets;
-        
         tracing::debug!("Normalizing OKX symbol: {}", okx_symbol);
         
         // Normalize symbol to uppercase for case-insensitive matching
@@ -156,12 +155,8 @@ impl AssetIdentityNormalizer {
         }
         
         // Try to find asset by symbol only (OKX doesn't provide name)
-        // Note: With the new uniqueness constraint on (symbol, name), this may return
-        // the first match if multiple assets exist with the same symbol but different names.
-        let asset_result = assets::Entity::find()
-            .filter(assets::Column::Symbol.eq(&normalized_symbol))
-            .one(&self.db)
-            .await;
+        // Prefer assets with better (lower) rank when multiple assets share the same symbol
+        let asset_result = self.find_asset_by_symbol_with_rank(&normalized_symbol).await;
         
         match asset_result {
             Ok(Some(asset)) => {
@@ -428,6 +423,35 @@ impl AssetIdentityNormalizer {
         }
     }
     
+    /// Find the best asset by symbol, preferring assets with lower rank (higher market cap)
+    /// when multiple assets share the same symbol.
+    ///
+    /// This helper method joins with asset_prices to access rank information and selects
+    /// the asset with the lowest rank value (e.g., rank 2 before rank 900).
+    async fn find_asset_by_symbol_with_rank(&self, normalized_symbol: &str) -> Result<Option<crate::entities::assets::Model>, sea_orm::DbErr> {
+        use crate::entities::{assets, asset_prices};
+        
+        // First, try to find assets with the given symbol that have price data with rank
+        // We only consider non-null ranks and order by rank ascending (lower is better)
+        let asset_with_rank = assets::Entity::find()
+            .filter(assets::Column::Symbol.eq(normalized_symbol))
+            .inner_join(asset_prices::Entity)
+            .filter(asset_prices::Column::Rank.is_not_null())
+            .order_by_asc(asset_prices::Column::Rank)
+            .one(&self.db)
+            .await?;
+        
+        if let Some(asset) = asset_with_rank {
+            return Ok(Some(asset));
+        }
+        
+        // Fallback: if no assets have price data with rank, just return any matching asset
+        assets::Entity::find()
+            .filter(assets::Column::Symbol.eq(normalized_symbol))
+            .one(&self.db)
+            .await
+    }
+
     /// Normalize an asset from a generic symbol
     ///
     /// This is a convenience method that tries to match a symbol directly.
@@ -442,8 +466,6 @@ impl AssetIdentityNormalizer {
     /// # Returns
     /// A NormalizationResult containing either the mapped asset identity or unknown info
     pub async fn normalize_from_symbol(&self, symbol: &str) -> NormalizationResult {
-        use crate::entities::assets;
-        
         tracing::debug!("Normalizing generic symbol: {}", symbol);
         
         // Check if this is a chain-specific symbol (e.g., "USDT-ethereum")
@@ -460,11 +482,8 @@ impl AssetIdentityNormalizer {
                 // Try to normalize as a symbol first (for native tokens like ETH)
                 let normalized_symbol = base_symbol.trim().to_uppercase();
                 
-                // Try to find asset by symbol first
-                let asset_result = assets::Entity::find()
-                    .filter(assets::Column::Symbol.eq(&normalized_symbol))
-                    .one(&self.db)
-                    .await;
+                // Try to find asset by symbol first (preferring best rank)
+                let asset_result = self.find_asset_by_symbol_with_rank(&normalized_symbol).await;
                 
                 if let Ok(Some(asset)) = asset_result {
                     let debug_info = format!(
@@ -505,11 +524,8 @@ impl AssetIdentityNormalizer {
             };
         }
         
-        // Try to find asset by symbol
-        let asset_result = assets::Entity::find()
-            .filter(assets::Column::Symbol.eq(&normalized_symbol))
-            .one(&self.db)
-            .await;
+        // Try to find asset by symbol (preferring best rank)
+        let asset_result = self.find_asset_by_symbol_with_rank(&normalized_symbol).await;
         
         match asset_result {
             Ok(Some(asset)) => {

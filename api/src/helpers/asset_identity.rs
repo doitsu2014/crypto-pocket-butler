@@ -436,6 +436,7 @@ impl AssetIdentityNormalizer {
     ///
     /// # Returns
     /// A NormalizationResult containing either the mapped asset identity or unknown info
+    
     /// Find the best asset by symbol, preferring assets with lower rank (higher market cap)
     /// when multiple assets share the same symbol.
     ///

@@ -423,20 +423,6 @@ impl AssetIdentityNormalizer {
         }
     }
     
-    /// Normalize an asset from a generic symbol
-    ///
-    /// This is a convenience method that tries to match a symbol directly.
-    /// Use this for symbols that don't have a specific source context.
-    /// 
-    /// Special handling: If the symbol contains a chain suffix (e.g., "USDT-ethereum"),
-    /// this will attempt to parse it and use EVM contract normalization instead.
-    ///
-    /// # Arguments
-    /// * `symbol` - The symbol to normalize (e.g., "BTC", "ETH", "USDT-ethereum")
-    ///
-    /// # Returns
-    /// A NormalizationResult containing either the mapped asset identity or unknown info
-    
     /// Find the best asset by symbol, preferring assets with lower rank (higher market cap)
     /// when multiple assets share the same symbol.
     ///
@@ -466,6 +452,19 @@ impl AssetIdentityNormalizer {
             .await
     }
 
+    /// Normalize an asset from a generic symbol
+    ///
+    /// This is a convenience method that tries to match a symbol directly.
+    /// Use this for symbols that don't have a specific source context.
+    /// 
+    /// Special handling: If the symbol contains a chain suffix (e.g., "USDT-ethereum"),
+    /// this will attempt to parse it and use EVM contract normalization instead.
+    ///
+    /// # Arguments
+    /// * `symbol` - The symbol to normalize (e.g., "BTC", "ETH", "USDT-ethereum")
+    ///
+    /// # Returns
+    /// A NormalizationResult containing either the mapped asset identity or unknown info
     pub async fn normalize_from_symbol(&self, symbol: &str) -> NormalizationResult {
         tracing::debug!("Normalizing generic symbol: {}", symbol);
         

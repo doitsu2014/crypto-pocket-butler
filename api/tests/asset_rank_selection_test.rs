@@ -49,7 +49,7 @@ async fn test_normalize_from_symbol_prefers_better_rank() {
         updated_at: ActiveValue::Set(timestamp.into()),
     };
     
-    let _inserted_asset1 = asset1.insert(&db).await.expect("Should insert first asset");
+    asset1.insert(&db).await.expect("Should insert first asset");
     
     // Create price record for Ethereum Carbon with rank 950
     let price1_id = Uuid::new_v4();
@@ -95,7 +95,7 @@ async fn test_normalize_from_symbol_prefers_better_rank() {
         updated_at: ActiveValue::Set(timestamp.into()),
     };
     
-    let _inserted_asset2 = asset2.insert(&db).await.expect("Should insert second asset");
+    asset2.insert(&db).await.expect("Should insert second asset");
     
     // Create price record for Ethereum with rank 2
     let price2_id = Uuid::new_v4();

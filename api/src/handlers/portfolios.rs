@@ -161,12 +161,18 @@ impl From<accounts::Model> for AccountInPortfolioResponse {
 pub struct AssetHolding {
     /// Asset symbol (e.g., BTC, ETH, USDT)
     pub asset: String,
-    /// Total quantity across all accounts
+    /// Total quantity across all accounts (raw balance string)
     pub total_quantity: String,
-    /// Total available quantity
+    /// Total available quantity (raw balance string)
     pub total_available: String,
-    /// Total frozen quantity
+    /// Total frozen quantity (raw balance string)
     pub total_frozen: String,
+    /// Number of decimal places for this token (e.g., 18 for ETH, 6 for USDC)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u8>,
+    /// Human-readable normalized total quantity (e.g., "1.5" ETH instead of "1500000000000000000")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub normalized_quantity: Option<String>,
     /// Price per unit in USD
     pub price_usd: f64,
     /// Total value in USD
@@ -179,9 +185,18 @@ pub struct AssetHolding {
 pub struct AccountHoldingDetail {
     pub account_id: Uuid,
     pub account_name: String,
+    /// Raw balance quantity string
     pub quantity: String,
+    /// Raw available balance string
     pub available: String,
+    /// Raw frozen balance string
     pub frozen: String,
+    /// Number of decimal places for this token
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u8>,
+    /// Human-readable normalized quantity
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub normalized_quantity: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -742,6 +757,7 @@ pub async fn get_portfolio_holdings(
         total_quantity: Decimal,
         total_available: Decimal,
         total_frozen: Decimal,
+        decimals: Option<u8>, // Store decimals if available
         account_details: Vec<AccountHoldingDetail>,
     }
 
@@ -776,6 +792,7 @@ pub async fn get_portfolio_holdings(
                         total_quantity: Decimal::ZERO,
                         total_available: Decimal::ZERO,
                         total_frozen: Decimal::ZERO,
+                        decimals: holding.decimals, // Store decimals from first holding
                         account_details: Vec::new(),
                     }
                 });
@@ -788,6 +805,17 @@ pub async fn get_portfolio_holdings(
                 entry.total_quantity += qty;
                 entry.total_available += avail;
                 entry.total_frozen += frz;
+                
+                // Update decimals if not set yet
+                if entry.decimals.is_none() && holding.decimals.is_some() {
+                    entry.decimals = holding.decimals;
+                }
+                
+                // Calculate normalized quantity for this account
+                use crate::helpers::balance_normalization::normalize_token_balance;
+                let normalized_quantity = holding.decimals.and_then(|decimals| {
+                    normalize_token_balance(&holding.quantity, decimals).ok()
+                });
 
                 entry.account_details.push(AccountHoldingDetail {
                     account_id: account.id,
@@ -795,6 +823,8 @@ pub async fn get_portfolio_holdings(
                     quantity: holding.quantity.clone(),
                     available: holding.available_quantity().to_string(),
                     frozen: holding.frozen_quantity().to_string(),
+                    decimals: holding.decimals,
+                    normalized_quantity,
                 });
             }
         }
@@ -847,12 +877,20 @@ pub async fn get_portfolio_holdings(
         // Calculate value_usd = quantity * price
         let qty_f64 = aggregate.total_quantity.to_f64().unwrap_or(0.0);
         let value_usd = qty_f64 * price_usd;
+        
+        // Calculate normalized total quantity if decimals are available
+        use crate::helpers::balance_normalization::normalize_token_balance;
+        let normalized_quantity = aggregate.decimals.and_then(|decimals| {
+            normalize_token_balance(&aggregate.total_quantity.to_string(), decimals).ok()
+        });
 
         holdings.push(AssetHolding {
             asset: canonical_symbol,
             total_quantity: aggregate.total_quantity.to_string(),
             total_available: aggregate.total_available.to_string(),
             total_frozen: aggregate.total_frozen.to_string(),
+            decimals: aggregate.decimals,
+            normalized_quantity,
             price_usd,
             value_usd,
             accounts: aggregate.account_details,

@@ -5,7 +5,7 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    sea_query::OnConflict, Insert,
+    sea_query::OnConflict, Insert, Condition,
 };
 use std::error::Error;
 use std::str::FromStr;
@@ -128,11 +128,13 @@ pub async fn fetch_all_coins(
                 .map_err(|e| format!("Failed to query assets: {}", e))?;
             
             // If not found by CoinPaprika ID, try by (symbol AND name) as fallback for legacy data
+            // Using Condition::all() for clarity and proper operator precedence
             let existing_asset = if existing_asset.is_none() {
                 assets::Entity::find()
                     .filter(
-                        assets::Column::Symbol.eq(&coin.symbol.to_uppercase())
-                            .and(assets::Column::Name.eq(&coin.name))
+                        Condition::all()
+                            .add(assets::Column::Symbol.eq(&coin.symbol.to_uppercase()))
+                            .add(assets::Column::Name.eq(&coin.name))
                     )
                     .one(db)
                     .await

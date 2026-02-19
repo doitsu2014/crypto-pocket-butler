@@ -66,7 +66,36 @@ impl EvmChain {
 }
 
 /// Common ERC-20 token addresses by chain
-/// These are well-known stablecoins and tokens to check
+/// 
+/// This function returns a predefined list of well-known tokens to check for balances.
+/// 
+/// # Current Limitations
+/// 
+/// This approach only checks a limited set of common tokens. It does **not** discover
+/// all tokens in a wallet. Full token discovery would require:
+/// 
+/// 1. **Event Log Scanning**: Query all `Transfer` events to/from the wallet
+/// 2. **Indexing Service**: Use The Graph, Alchemy, or Moralis APIs
+/// 3. **Token Lists**: Reference community-maintained token lists
+/// 
+/// # Why Not Full Discovery?
+/// 
+/// - No complete on-chain registry of all ERC-20 tokens
+/// - Event log queries are slow and expensive on public RPC nodes
+/// - Public RPC endpoints have strict rate limits
+/// - Would significantly increase sync time
+/// 
+/// # Extending Token Support
+/// 
+/// To add more tokens, simply add them to the appropriate chain's vector:
+/// 
+/// ```rust
+/// EvmChain::Ethereum => vec![
+///     ("USDT", "0xdAC17F958D2ee523a2206206994597C13D831ec7"),
+///     ("USDC", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
+///     // Add more tokens here
+/// ],
+/// ```
 pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> {
     match chain {
         EvmChain::Ethereum => vec![

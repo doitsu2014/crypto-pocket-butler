@@ -206,7 +206,10 @@ export default function AccountDetailClient() {
               <thead>
                 <tr className="border-b-2 border-violet-500/30">
                   <th className="text-left py-3 px-4 text-sm font-bold text-violet-300">Asset</th>
-                  <th className="text-right py-3 px-4 text-sm font-bold text-violet-300">Quantity</th>
+                  <th className="text-right py-3 px-4 text-sm font-bold text-violet-300">
+                    Qty (normalized)
+                  </th>
+                  <th className="text-right py-3 px-4 text-sm font-bold text-violet-300">Decimals</th>
                 </tr>
               </thead>
               <tbody>
@@ -217,6 +220,15 @@ export default function AccountDetailClient() {
                   >
                     <td className="py-3 px-4 text-slate-200 font-medium">{holding.asset}</td>
                     <td className="py-3 px-4 text-slate-200 text-right font-mono">{holding.quantity}</td>
+                    <td className="py-3 px-4 text-right">
+                      {holding.decimals !== undefined ? (
+                        <span className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-slate-700/60 text-slate-400 border border-slate-600/50">
+                          {holding.decimals}d
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 text-xs">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

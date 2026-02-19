@@ -5,16 +5,30 @@ import { useState } from "react";
 export interface AccountHoldingDetail {
   account_id: string;
   account_name: string;
+  /** Normalized (human-readable) quantity, e.g. "1.5" for 1.5 ETH */
   quantity: string;
+  /** Normalized available quantity */
   available: string;
+  /** Normalized frozen quantity */
   frozen: string;
+  /** Token decimal places metadata */
+  decimals?: number;
+  /** Same as quantity – kept for backwards compatibility */
+  normalized_quantity?: string;
 }
 
 export interface AssetHolding {
   asset: string;
+  /** Normalized (human-readable) total quantity */
   total_quantity: string;
+  /** Normalized total available quantity */
   total_available: string;
+  /** Normalized total frozen quantity */
   total_frozen: string;
+  /** Token decimal places metadata */
+  decimals?: number;
+  /** Same as total_quantity – kept for backwards compatibility */
+  normalized_quantity?: string;
   price_usd: number;
   value_usd: number;
   accounts: AccountHoldingDetail[];
@@ -48,12 +62,17 @@ function formatPercentage(value: number): string {
   }).format(value / 100);
 }
 
+/**
+ * Format a normalized (human-readable) quantity string for display.
+ * Quantities stored in the DB are already normalized decimals (e.g. "1.5" for 1.5 ETH),
+ * so this function only applies locale formatting — no further normalization is performed.
+ */
 function formatQuantity(quantity: string): string {
   try {
     const num = parseFloat(quantity);
     if (isNaN(num)) return quantity;
     
-    // For very small numbers, use more decimal places
+    // For very small numbers, use exponential notation
     if (num < 0.000001 && num > 0) {
       return num.toExponential(4);
     }
@@ -76,6 +95,7 @@ function formatQuantity(quantity: string): string {
 export default function HoldingsTable({ holdings, allocation }: HoldingsTableProps) {
   const [sortField, setSortField] = useState<'asset' | 'quantity' | 'value'>('value');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
 
   function handleSort(field: 'asset' | 'quantity' | 'value') {
     if (sortField === field) {
@@ -141,7 +161,7 @@ export default function HoldingsTable({ holdings, allocation }: HoldingsTablePro
                   onClick={() => handleSort('quantity')}
                   className="flex items-center gap-2 justify-end w-full text-sm font-bold text-slate-300 hover:text-fuchsia-300 transition-colors"
                 >
-                  Quantity
+                  Qty (normalized)
                   {sortField === 'quantity' && (
                     <svg className={`w-4 h-4 transition-transform ${sortDirection === 'desc' ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -168,49 +188,109 @@ export default function HoldingsTable({ holdings, allocation }: HoldingsTablePro
               <th className="px-6 py-4 text-right">
                 <span className="text-sm font-bold text-slate-300">Allocation</span>
               </th>
+              <th className="px-6 py-4 text-center">
+                <span className="text-sm font-bold text-slate-300">Accounts</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/50">
             {sortedHoldings.map((holding, index) => {
               const allocationItem = allocation.find(a => a.asset === holding.asset);
+              const isExpanded = expandedAsset === holding.asset;
               return (
-                <tr
-                  key={holding.asset}
-                  className="hover:bg-slate-900/30 transition-colors"
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-fuchsia-300 drop-shadow-[0_0_6px_rgba(232,121,249,0.4)]">
-                        {holding.asset}
-                      </span>
-                      {index < 3 && (
-                        <span className="inline-flex items-center px-2 py-0.5 text-xs font-bold rounded bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white shadow-[0_0_10px_rgba(217,70,239,0.4)]">
-                          Top {index + 1}
+                <>
+                  <tr
+                    key={holding.asset}
+                    className="hover:bg-slate-900/30 transition-colors cursor-pointer"
+                    onClick={() => setExpandedAsset(isExpanded ? null : holding.asset)}
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-fuchsia-300 drop-shadow-[0_0_6px_rgba(232,121,249,0.4)]">
+                          {holding.asset}
                         </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <span className="text-sm text-slate-300 font-mono tabular-nums">
-                      {formatQuantity(holding.total_quantity)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <span className="text-sm text-slate-300 font-mono tabular-nums">
-                      {formatCurrency(holding.price_usd)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <span className="text-sm font-bold text-cyan-300 font-mono tabular-nums drop-shadow-[0_0_6px_rgba(103,232,249,0.4)]">
-                      {formatCurrency(holding.value_usd)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <span className="text-sm font-bold text-violet-300 font-mono tabular-nums">
-                      {allocationItem ? formatPercentage(allocationItem.percentage) : '0.00%'}
-                    </span>
-                  </td>
-                </tr>
+                        {index < 3 && (
+                          <span className="inline-flex items-center px-2 py-0.5 text-xs font-bold rounded bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white shadow-[0_0_10px_rgba(217,70,239,0.4)]">
+                            Top {index + 1}
+                          </span>
+                        )}
+                        {holding.decimals !== undefined && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 text-xs rounded bg-slate-700/60 text-slate-400 border border-slate-600/50">
+                            {holding.decimals}d
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-sm text-slate-300 font-mono tabular-nums">
+                        {formatQuantity(holding.total_quantity)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-sm text-slate-300 font-mono tabular-nums">
+                        {formatCurrency(holding.price_usd)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-sm font-bold text-cyan-300 font-mono tabular-nums drop-shadow-[0_0_6px_rgba(103,232,249,0.4)]">
+                        {formatCurrency(holding.value_usd)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-sm font-bold text-violet-300 font-mono tabular-nums">
+                        {allocationItem ? formatPercentage(allocationItem.percentage) : '0.00%'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="text-xs text-slate-400">{holding.accounts.length}</span>
+                        <svg
+                          className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </td>
+                  </tr>
+                  {isExpanded && holding.accounts.length > 0 && (
+                    <tr key={`${holding.asset}-detail`} className="bg-slate-900/40">
+                      <td colSpan={6} className="px-6 py-3">
+                        <div className="ml-4 border-l-2 border-cyan-500/30 pl-4">
+                          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+                            Per-account breakdown
+                          </p>
+                          <div className="space-y-1">
+                            {holding.accounts.map((acc) => (
+                              <div
+                                key={acc.account_id}
+                                className="flex items-center justify-between text-xs bg-slate-800/40 rounded-lg px-3 py-2"
+                              >
+                                <span className="text-slate-300 font-medium">{acc.account_name}</span>
+                                <div className="flex items-center gap-4">
+                                  <div className="text-right">
+                                    <p className="text-slate-500">Qty</p>
+                                    <p className="text-slate-200 font-mono">
+                                      {formatQuantity(acc.normalized_quantity ?? acc.quantity)}
+                                    </p>
+                                  </div>
+                                  {acc.frozen && acc.frozen !== '0' && (
+                                    <div className="text-right">
+                                      <p className="text-slate-500">Frozen</p>
+                                      <p className="text-orange-300 font-mono">
+                                        {formatQuantity(acc.frozen)}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               );
             })}
           </tbody>

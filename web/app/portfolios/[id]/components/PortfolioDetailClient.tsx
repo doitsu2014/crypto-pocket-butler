@@ -36,16 +36,26 @@ interface Portfolio {
 interface AccountHoldingDetail {
   account_id: string;
   account_name: string;
+  /** Normalized (human-readable) quantity */
   quantity: string;
   available: string;
   frozen: string;
+  /** Token decimal places metadata */
+  decimals?: number;
+  /** Same as quantity – backwards-compat alias */
+  normalized_quantity?: string;
 }
 
 interface AssetHolding {
   asset: string;
+  /** Normalized (human-readable) total quantity */
   total_quantity: string;
   total_available: string;
   total_frozen: string;
+  /** Token decimal places metadata */
+  decimals?: number;
+  /** Same as total_quantity – backwards-compat alias */
+  normalized_quantity?: string;
   price_usd: number;
   value_usd: number;
   accounts: AccountHoldingDetail[];
@@ -96,6 +106,22 @@ function formatPercentage(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value / 100);
+}
+
+/**
+ * Format a normalized (human-readable) quantity string for display.
+ * Quantities are already normalized decimals (e.g. "1.5" for 1.5 ETH).
+ */
+function formatQuantity(quantity: string): string {
+  try {
+    const num = parseFloat(quantity);
+    if (isNaN(num)) return quantity;
+    if (num < 0.000001 && num > 0) return num.toExponential(4);
+    if (num < 0.01) return num.toFixed(8).replace(/\.?0+$/, '');
+    return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+  } catch {
+    return quantity;
+  }
 }
 
 export default function PortfolioDetailClient({ portfolioId }: { portfolioId: string }) {
@@ -395,8 +421,8 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
                     </div>
                     <div className="flex items-center gap-6">
                       <div className="text-right">
-                        <p className="text-xs text-slate-400">Quantity</p>
-                        <p className="text-sm font-semibold text-slate-200">{holding.quantity}</p>
+                        <p className="text-xs text-slate-400">Qty (normalized)</p>
+                        <p className="text-sm font-semibold text-slate-200 font-mono">{formatQuantity(holding.quantity)}</p>
                       </div>
                       {holding.price_usd && (
                         <div className="text-right">

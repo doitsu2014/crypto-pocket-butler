@@ -1,5 +1,6 @@
 use super::{Balance, ExchangeConnector};
 use crate::concurrency::RateLimiter;
+use crate::helpers::balance_normalization::normalize_token_balance;
 use alloy::{
     primitives::{Address, U256},
     providers::{Provider, ProviderBuilder},
@@ -233,12 +234,15 @@ async fn fetch_native_balance_for_chain(
         return Ok(None);
     }
     
-    let balance_str = balance.to_string();
-    
+    let raw_balance_str = balance.to_string();
+    // Normalize to human-readable decimal (18 decimals for native tokens)
+    let normalized = normalize_token_balance(&raw_balance_str, 18)
+        .unwrap_or_else(|_| raw_balance_str.clone());
+
     Ok(Some(Balance {
         asset: format!("{}-{}", chain.native_symbol(), chain.name()),
-        quantity: balance_str.clone(),
-        available: balance_str.clone(),
+        quantity: normalized.clone(),
+        available: normalized,
         frozen: "0".to_string(),
         // Native tokens typically have 18 decimals
         decimals: Some(18),
@@ -271,7 +275,7 @@ async fn fetch_token_balances_for_chain(
         match contract.balanceOf(wallet_address).call().await {
             Ok(balance) => {
                 if balance > U256::ZERO {
-                    let balance_str = balance.to_string();
+                    let raw_balance_str = balance.to_string();
                     
                     // Fetch decimals from the contract
                     let decimals = match contract.decimals().call().await {
@@ -287,17 +291,22 @@ async fn fetch_token_balances_for_chain(
                         }
                     };
                     
+                    // Normalize to human-readable decimal using on-chain decimals (default 18)
+                    let token_decimals = decimals.unwrap_or(18);
+                    let normalized = normalize_token_balance(&raw_balance_str, token_decimals)
+                        .unwrap_or_else(|_| raw_balance_str.clone());
+
                     balances.push(Balance {
                         asset: format!("{}-{}", symbol, chain.name()),
-                        quantity: balance_str.clone(),
-                        available: balance_str.clone(),
+                        quantity: normalized.clone(),
+                        available: normalized,
                         frozen: "0".to_string(),
                         decimals,
                     });
                     
                     tracing::debug!(
                         "Found {} {} on {} ({}) with {} decimals",
-                        balance_str,
+                        raw_balance_str,
                         symbol,
                         chain.name(),
                         token_address,

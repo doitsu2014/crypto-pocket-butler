@@ -1,13 +1,19 @@
 /// Domain model for account holdings (quantity-only)
 ///
-/// Represents raw holdings data from accounts, before price enrichment.
+/// Represents holdings data from accounts, before price enrichment.
+/// **All `quantity` values are normalized (human-readable) decimal strings.**
 
 use serde::{Deserialize, Serialize};
 
 /// A holding in an account with quantity information only.
 ///
-/// This represents the raw data structure as stored in account holdings JSON.
+/// This represents the data structure as stored in account holdings JSON.
 /// Price and value information is added later during allocation construction.
+///
+/// **Important:** `quantity` is always a normalized (human-readable) decimal value,
+/// e.g., `"1.5"` for 1.5 ETH, not the raw on-chain integer `"1500000000000000000"`.
+/// The EVM connector normalizes raw balances using `normalize_token_balance` before
+/// storing, and OKX balances are already human-readable.
 ///
 /// # JSON Schema
 /// ```json
@@ -16,7 +22,7 @@ use serde::{Deserialize, Serialize};
 ///   "quantity": "1.5",
 ///   "available": "1.5",   // Optional, defaults to quantity if not present
 ///   "frozen": "0",        // Optional, defaults to "0" if not present
-///   "decimals": 8         // Optional, number of decimal places for normalization
+///   "decimals": 8         // Optional, number of decimal places (metadata only)
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -38,7 +44,7 @@ pub struct AccountHolding {
     pub frozen: Option<String>,
     
     /// Number of decimal places for this token (e.g., 18 for ETH, 6 for USDC)
-    /// Used for normalizing raw balances to human-readable values
+    /// Metadata only — quantity is already normalized; do not use this to normalize again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u8>,
     

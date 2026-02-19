@@ -17,21 +17,55 @@ export interface Portfolio {
   updated_at: string;
 }
 
+/** Per-account breakdown of a single asset holding */
+export interface AccountHoldingDetail {
+  account_id: string;
+  account_name: string;
+  /** Normalized (human-readable) quantity, e.g. "1.5" */
+  quantity: string;
+  /** Normalized available quantity */
+  available: string;
+  /** Normalized frozen quantity */
+  frozen: string;
+  /** Token decimal places metadata (e.g. 18 for ETH, 6 for USDC) */
+  decimals?: number;
+  /** Same as quantity – kept for backwards compatibility */
+  normalized_quantity?: string;
+}
+
+/** Aggregated holding for a single asset across all accounts */
 export interface AssetHolding {
   asset: string;
-  quantity: string;
-  avg_cost_usd: string;
-  current_value_usd: string;
+  /** Normalized (human-readable) total quantity, e.g. "1.5" for 1.5 ETH */
+  total_quantity: string;
+  /** Normalized total available quantity */
+  total_available: string;
+  /** Normalized total frozen quantity */
+  total_frozen: string;
+  /** Token decimal places metadata */
+  decimals?: number;
+  /** Same as total_quantity – kept for backwards compatibility */
+  normalized_quantity?: string;
+  /** Current price per unit in USD */
+  price_usd: number;
+  /** Total value in USD (normalized_quantity × price_usd) */
+  value_usd: number;
+  /** Per-account breakdown */
+  accounts: AccountHoldingDetail[];
+}
+
+export interface AllocationItem {
+  asset: string;
+  value_usd: number;
   percentage: number;
-  pnl_usd?: string;
-  pnl_percentage?: number;
 }
 
 export interface PortfolioHoldingsResponse {
-  portfolio: Portfolio;
+  portfolio_id: string;
+  total_value_usd: number;
   holdings: AssetHolding[];
-  total_value_usd: string;
-  last_updated: string;
+  allocation: AllocationItem[];
+  as_of: string;
 }
 
 export interface CreatePortfolioInput {
@@ -46,7 +80,10 @@ export interface CreatePortfolioInput {
 
 export interface AccountHolding {
   asset: string;
+  /** Normalized (human-readable) quantity, e.g. "1.5" for 1.5 ETH */
   quantity: string;
+  /** Token decimal places metadata (e.g. 18 for ETH, 6 for USDC) */
+  decimals?: number;
 }
 
 export interface Account {

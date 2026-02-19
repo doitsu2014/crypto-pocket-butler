@@ -15,14 +15,19 @@ use std::error::Error;
 /// NOTE: This struct contains NO price or valuation fields by design.
 /// Holdings store only quantities. Price/valuation is calculated separately
 /// during portfolio construction using reference price data.
+///
+/// The `quantity` field is **always a normalized (human-readable) decimal value**.
+/// For EVM connectors, raw on-chain integers are converted using `normalize_token_balance`
+/// before being stored here. OKX already returns human-readable values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Balance {
     pub asset: String,
+    /// Normalized (human-readable) decimal quantity, e.g. "1.5" for 1.5 ETH
     pub quantity: String,
     pub available: String,
     pub frozen: String,
     /// Number of decimal places for this token (e.g., 18 for ETH, 6 for USDC)
-    /// Optional because not all connectors can provide this information
+    /// Kept as metadata; the quantity field is already normalized.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u8>,
 }

@@ -9,6 +9,7 @@ mod m20240101_000005_create_snapshots_system;
 mod m20240217_000001_refactor_assets_coinpaprika;
 mod m20240218_000001_drop_asset_rankings;
 mod m20260218_000001_fix_column_names;
+mod m20260219_000001_symbol_name_uniqueness;
 
 pub struct Migrator;
 
@@ -24,6 +25,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240217_000001_refactor_assets_coinpaprika::Migration),
             Box::new(m20240218_000001_drop_asset_rankings::Migration),
             Box::new(m20260218_000001_fix_column_names::Migration),
+            Box::new(m20260219_000001_symbol_name_uniqueness::Migration),
         ]
     }
 }

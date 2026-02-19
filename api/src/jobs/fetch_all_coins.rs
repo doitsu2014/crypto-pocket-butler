@@ -5,7 +5,7 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    sea_query::OnConflict, Insert,
+    sea_query::OnConflict, Insert, Condition,
 };
 use std::error::Error;
 use std::str::FromStr;
@@ -118,8 +118,8 @@ pub async fn fetch_all_coins(
             let change_percent_24h = parse_decimal_from_f64(coin.quotes.usd.percent_change_24h);
 
             // Check if asset already exists by coinpaprika_id first (primary key)
-            // Only fall back to symbol matching if CoinPaprika ID is not found
-            // This prevents duplicate mappings when multiple coins share the same symbol
+            // Only fall back to symbol+name matching if CoinPaprika ID is not found
+            // This prevents duplicate mappings when multiple coins share the same symbol but different names
             // Note: CoingeckoId column is a legacy name that now stores CoinPaprika IDs
             let existing_asset = assets::Entity::find()
                 .filter(assets::Column::CoingeckoId.eq(&coin.id))
@@ -127,10 +127,15 @@ pub async fn fetch_all_coins(
                 .await
                 .map_err(|e| format!("Failed to query assets: {}", e))?;
             
-            // If not found by CoinPaprika ID, try by symbol as fallback for legacy data
+            // If not found by CoinPaprika ID, try by (symbol AND name) as fallback for legacy data
+            // Using Condition::all() for clarity and proper operator precedence
             let existing_asset = if existing_asset.is_none() {
                 assets::Entity::find()
-                    .filter(assets::Column::Symbol.eq(&coin.symbol.to_uppercase()))
+                    .filter(
+                        Condition::all()
+                            .add(assets::Column::Symbol.eq(&coin.symbol.to_uppercase()))
+                            .add(assets::Column::Name.eq(&coin.name))
+                    )
                     .one(db)
                     .await
                     .map_err(|e| format!("Failed to query assets: {}", e))?

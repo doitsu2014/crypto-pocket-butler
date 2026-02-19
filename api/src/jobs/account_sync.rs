@@ -319,12 +319,14 @@ mod tests {
                 quantity: "1.5".to_string(),
                 available: "1.2".to_string(),
                 frozen: "0.3".to_string(),
+                decimals: Some(8),
             },
             Balance {
                 asset: "ETH".to_string(),
                 quantity: "10.0".to_string(),
                 available: "8.0".to_string(),
                 frozen: "2.0".to_string(),
+                decimals: Some(18),
             },
         ];
 

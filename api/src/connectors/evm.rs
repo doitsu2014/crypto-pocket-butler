@@ -211,6 +211,8 @@ async fn fetch_native_balance_for_chain(
         quantity: balance_str.clone(),
         available: balance_str.clone(),
         frozen: "0".to_string(),
+        // Native tokens typically have 18 decimals
+        decimals: Some(18),
     }))
 }
 
@@ -242,17 +244,33 @@ async fn fetch_token_balances_for_chain(
                 if balance > U256::ZERO {
                     let balance_str = balance.to_string();
                     
+                    // Fetch decimals from the contract
+                    let decimals = match contract.decimals().call().await {
+                        Ok(d) => Some(d),
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to fetch decimals for {} on {}: {}, defaulting to None",
+                                symbol,
+                                chain.name(),
+                                e
+                            );
+                            None
+                        }
+                    };
+                    
                     balances.push(Balance {
                         asset: format!("{}-{}", symbol, chain.name()),
                         quantity: balance_str.clone(),
                         available: balance_str.clone(),
                         frozen: "0".to_string(),
+                        decimals,
                     });
                     
                     tracing::debug!(
-                        "Found {} {} on {} ({})",
+                        "Found {} {} (decimals: {:?}) on {} ({})",
                         balance_str,
                         symbol,
+                        decimals,
                         chain.name(),
                         token_address
                     );

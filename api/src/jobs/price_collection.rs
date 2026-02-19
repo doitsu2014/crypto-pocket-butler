@@ -156,10 +156,12 @@ async fn upsert_asset(
     use crate::entities::assets;
     use sea_orm::ActiveModelTrait;
     
-    // Check if asset already exists by symbol or coingecko_id (legacy field name, stores coinpaprika_id)
+    // Check if asset already exists by (symbol AND name) OR coingecko_id (legacy field name, stores coinpaprika_id)
+    // The new uniqueness constraint requires both symbol and name to match
     let existing_asset = assets::Entity::find()
         .filter(
             assets::Column::Symbol.eq(&coin.symbol.to_uppercase())
+                .and(assets::Column::Name.eq(&coin.name))
                 .or(assets::Column::CoingeckoId.eq(&coin.id))
         )
         .one(db)

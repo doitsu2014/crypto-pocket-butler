@@ -135,6 +135,10 @@ impl AssetIdentityNormalizer {
     ///
     /// # Returns
     /// A NormalizationResult containing either the mapped asset identity or unknown info
+    /// 
+    /// # Note
+    /// This method only uses symbol for lookup as OKX doesn't provide name.
+    /// For full symbol+name lookup, use normalize_from_symbol_and_name instead.
     pub async fn normalize_from_okx(&self, okx_symbol: &str) -> NormalizationResult {
         use crate::entities::assets;
         
@@ -151,7 +155,9 @@ impl AssetIdentityNormalizer {
             };
         }
         
-        // Try to find asset by symbol
+        // Try to find asset by symbol only (OKX doesn't provide name)
+        // Note: With the new uniqueness constraint on (symbol, name), this may return
+        // the first match if multiple assets exist with the same symbol but different names.
         let asset_result = assets::Entity::find()
             .filter(assets::Column::Symbol.eq(&normalized_symbol))
             .one(&self.db)
@@ -327,6 +333,95 @@ impl AssetIdentityNormalizer {
                 NormalizationResult::Unknown {
                     original_identifier: contract_address.to_string(),
                     identifier_type: "evm_contract".to_string(),
+                    context,
+                }
+            }
+        }
+    }
+    
+    /// Normalize an asset from both symbol and name
+    ///
+    /// This method enforces the new uniqueness constraint by checking both
+    /// symbol AND name fields together.
+    ///
+    /// # Arguments
+    /// * `symbol` - The asset symbol (e.g., "BTC", "ETH")
+    /// * `name` - The asset name (e.g., "Bitcoin", "Ethereum")
+    ///
+    /// # Returns
+    /// A NormalizationResult containing either the mapped asset identity or unknown info
+    pub async fn normalize_from_symbol_and_name(
+        &self,
+        symbol: &str,
+        name: &str,
+    ) -> NormalizationResult {
+        use crate::entities::assets;
+        
+        tracing::debug!("Normalizing by symbol '{}' and name '{}'", symbol, name);
+        
+        // Normalize symbol to uppercase and trim both fields
+        let normalized_symbol = symbol.trim().to_uppercase();
+        let normalized_name = name.trim();
+        
+        if normalized_symbol.is_empty() || normalized_name.is_empty() {
+            return NormalizationResult::Unknown {
+                original_identifier: format!("{}:{}", symbol, name),
+                identifier_type: "symbol_and_name".to_string(),
+                context: "Empty symbol or name".to_string(),
+            };
+        }
+        
+        // Try to find asset by both symbol AND name
+        let asset_result = assets::Entity::find()
+            .filter(assets::Column::Symbol.eq(&normalized_symbol))
+            .filter(assets::Column::Name.eq(normalized_name))
+            .one(&self.db)
+            .await;
+        
+        match asset_result {
+            Ok(Some(asset)) => {
+                let debug_info = format!(
+                    "Mapped symbol '{}' and name '{}' to asset '{}' ({})",
+                    symbol, name, asset.symbol, asset.id
+                );
+                tracing::info!("{}", debug_info);
+                
+                NormalizationResult::Mapped(AssetIdentity {
+                    asset_id: asset.id,
+                    symbol: asset.symbol.clone(),
+                    name: asset.name.clone(),
+                    mapping_source: MappingSource::DirectSymbolMatch {
+                        original_symbol: format!("{}:{}", symbol, name),
+                    },
+                    debug_info,
+                })
+            }
+            Ok(None) => {
+                let context = format!(
+                    "Asset with symbol '{}' and name '{}' not found in assets database",
+                    normalized_symbol, normalized_name
+                );
+                tracing::warn!(
+                    "Failed to normalize symbol '{}' and name '{}': {}",
+                    symbol, name, context
+                );
+                
+                NormalizationResult::Unknown {
+                    original_identifier: format!("{}:{}", symbol, name),
+                    identifier_type: "symbol_and_name".to_string(),
+                    context,
+                }
+            }
+            Err(e) => {
+                let context = format!("Database error: {}", e);
+                tracing::error!(
+                    "Failed to normalize symbol '{}' and name '{}': {}",
+                    symbol, name, context
+                );
+                
+                NormalizationResult::Unknown {
+                    original_identifier: format!("{}:{}", symbol, name),
+                    identifier_type: "symbol_and_name".to_string(),
                     context,
                 }
             }

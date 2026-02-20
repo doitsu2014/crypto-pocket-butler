@@ -11,16 +11,9 @@ import {
   useCreateEvmToken,
   useUpdateEvmToken,
   useDeleteEvmToken,
+  useEvmChains,
 } from "@/hooks";
 import type { EvmToken } from "@/types/api";
-
-const SUPPORTED_CHAINS = [
-  "ethereum",
-  "arbitrum",
-  "optimism",
-  "base",
-  "bsc",
-];
 
 export default function EvmTokensClient() {
   const toast = useToast();
@@ -29,11 +22,15 @@ export default function EvmTokensClient() {
   const [editingToken, setEditingToken] = useState<EvmToken | null>(null);
   const [filterChain, setFilterChain] = useState<string>("");
   const [formData, setFormData] = useState({
-    chain: "ethereum",
+    chain: "",
     symbol: "",
     contract_address: "",
     is_active: true,
   });
+
+  // Fetch chains dynamically from the API
+  const { data: chains = [] } = useEvmChains();
+  const chainIds = chains.map((c) => c.chain_id);
 
   const { data: tokens = [], isLoading, error: queryError } = useEvmTokens(
     filterChain || undefined
@@ -41,7 +38,7 @@ export default function EvmTokensClient() {
   const createToken = useCreateEvmToken();
   const deleteToken = useDeleteEvmToken();
 
-  // For update we need a dynamic hook – we call it conditionally via a wrapper
+  // For update we need a dynamic hook – we call it with the current editing token id
   const updateToken = useUpdateEvmToken(editingToken?.id ?? "");
 
   const error = queryError instanceof ApiError ? queryError.message :
@@ -49,7 +46,12 @@ export default function EvmTokensClient() {
 
   function openCreateForm() {
     setEditingToken(null);
-    setFormData({ chain: "ethereum", symbol: "", contract_address: "", is_active: true });
+    setFormData({
+      chain: chainIds[0] ?? "",
+      symbol: "",
+      contract_address: "",
+      is_active: true,
+    });
     setShowForm(true);
   }
 
@@ -124,7 +126,7 @@ export default function EvmTokensClient() {
             className="bg-slate-800/60 border border-slate-600/50 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:border-fuchsia-500/70"
           >
             <option value="">All chains</option>
-            {SUPPORTED_CHAINS.map((c) => (
+            {chainIds.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
@@ -155,7 +157,7 @@ export default function EvmTokensClient() {
                   onChange={(e) => setFormData({ ...formData, chain: e.target.value })}
                   className="w-full bg-slate-800/60 border border-slate-600/50 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:border-fuchsia-500/70"
                 >
-                  {SUPPORTED_CHAINS.map((c) => (
+                  {chainIds.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>

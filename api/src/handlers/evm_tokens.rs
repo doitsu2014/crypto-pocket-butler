@@ -461,15 +461,18 @@ fn coinpaprika_platform_to_chain(platform_type: &str) -> Option<&'static str> {
 
 /// Look up contract addresses for a token symbol
 ///
-/// Queries CoinPaprika for all coins matching the given symbol, selects the
-/// highest market-cap coin (lowest rank), then fetches its on-chain contract
-/// addresses via `GET /v1/coins/{id}`.
+/// First queries the local `assets` table for a CoinPaprika ID (populated nightly by
+/// `fetch_all_coins`, 0 external API calls). If found, calls `GET /v1/coins/{id}` for
+/// contract details — **1 CoinPaprika call total** for the common case.
 ///
-/// This makes exactly **two** CoinPaprika API calls: one bulk `/v1/coins` listing
-/// (shared with other callers via the rate limiter) and one targeted `/v1/coins/{id}`
-/// call for the best-match coin.
+/// Falls back to a bulk `GET /v1/coins` listing (adds 1 extra call) only when the symbol
+/// is not yet in the local database (e.g. a very new or obscure token).
 ///
 /// Use this endpoint to pre-fill the contract address field when adding a new EVM token.
+///
+/// **API call cost:**
+/// - **1 call** when the symbol is already in the local `assets` table (populated nightly by `fetch_all_coins`)
+/// - **2 calls** as a fallback for unknown/new tokens not yet in the database
 #[utoipa::path(
     get,
     path = "/api/v1/evm-tokens/lookup-contracts",
@@ -483,35 +486,84 @@ fn coinpaprika_platform_to_chain(platform_type: &str) -> Option<&'static str> {
     tag = "evm-tokens"
 )]
 pub async fn lookup_contracts_handler(
+    State(db): State<DatabaseConnection>,
     Extension(_token): Extension<axum_keycloak_auth::decode::KeycloakToken<String>>,
     Query(q): Query<LookupContractsQuery>,
 ) -> Result<Json<LookupContractsResponse>, ApiError> {
+    use crate::entities::{assets, asset_prices};
+    use sea_orm::QueryOrder;
+
     if q.symbol.is_empty() {
         return Err(ApiError::BadRequest("symbol is required".to_string()));
     }
 
     let connector = CoinPaprikaConnector::new();
 
-    // Step 1: bulk /v1/coins listing filtered by symbol (1 API call)
-    let matches = connector
-        .search_coins_by_symbol(&q.symbol)
+    // Step 1: look up the CoinPaprika ID from the local `assets` table (DB query, 0 API calls).
+    // The assets table is populated nightly by `fetch_all_coins` and stores coingecko_id which
+    // is actually the CoinPaprika ID.  We join with asset_prices to pick the highest market-cap
+    // coin when multiple assets share the same symbol.
+    let coin_id: Option<String> = assets::Entity::find()
+        .filter(
+            sea_orm::Condition::all()
+                .add(assets::Column::Symbol.eq(q.symbol.to_uppercase().as_str()))
+                .add(assets::Column::IsActive.eq(true))
+                .add(assets::Column::CoingeckoId.is_not_null()),
+        )
+        .find_also_related(asset_prices::Entity)
+        .order_by_asc(asset_prices::Column::Rank)
+        .one(&db)
         .await
-        .map_err(|e| {
-            tracing::error!("CoinPaprika symbol search failed: {}", e);
-            ApiError::InternalServerError(format!("CoinPaprika lookup failed: {}", e))
-        })?;
+        .map_err(|e| ApiError::InternalServerError(format!("DB query failed: {}", e)))?
+        .and_then(|(asset, _)| asset.coingecko_id);
 
-    let best_match = matches
-        .into_iter()
-        .next()
-        .ok_or(ApiError::NotFound)?;
+    // Determine the CoinPaprika ID: use DB result if available, otherwise fall back to
+    // the bulk /v1/coins listing (adds 1 extra API call only when the asset is not yet
+    // in our database, e.g. a brand-new or very obscure token).
+    let (resolved_coin_id, resolved_symbol, resolved_name) = if let Some(id) = coin_id {
+        tracing::info!(
+            "lookup-contracts for '{}': found coin_id='{}' in DB (0 extra API calls)",
+            q.symbol,
+            id
+        );
+        // We still need name/symbol for the response — get them from the same assets row.
+        let asset = assets::Entity::find()
+            .filter(assets::Column::CoingeckoId.eq(id.as_str()))
+            .one(&db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("DB query failed: {}", e)))?
+            .ok_or(ApiError::NotFound)?;
+        (id, asset.symbol, asset.name)
+    } else {
+        // Fallback: search CoinPaprika's coin listing for the symbol (1 extra API call)
+        tracing::info!(
+            "lookup-contracts for '{}': not in DB, falling back to CoinPaprika /v1/coins",
+            q.symbol
+        );
+        let matches = connector
+            .search_coins_by_symbol(&q.symbol)
+            .await
+            .map_err(|e| {
+                tracing::error!("CoinPaprika symbol search failed: {}", e);
+                ApiError::InternalServerError(format!("CoinPaprika lookup failed: {}", e))
+            })?;
 
-    // Step 2: targeted /v1/coins/{id} for contract details (1 API call)
+        let best = matches.into_iter().next().ok_or(ApiError::NotFound)?;
+        let name = best.name.clone();
+        let symbol = best.symbol.clone();
+        (best.id, symbol, name)
+    };
+
+    // Step 2: fetch contract addresses from CoinPaprika /v1/coins/{id} (1 API call always)
     let detail = connector
-        .fetch_coin_detail(&best_match.id)
+        .fetch_coin_detail(&resolved_coin_id)
         .await
         .map_err(|e| {
-            tracing::error!("CoinPaprika coin detail failed for {}: {}", best_match.id, e);
+            tracing::error!(
+                "CoinPaprika coin detail failed for {}: {}",
+                resolved_coin_id,
+                e
+            );
             ApiError::InternalServerError(format!("CoinPaprika detail fetch failed: {}", e))
         })?;
 
@@ -530,14 +582,14 @@ pub async fn lookup_contracts_handler(
     tracing::info!(
         "lookup-contracts for '{}': coin_id={}, {} supported chains found",
         q.symbol,
-        best_match.id,
+        resolved_coin_id,
         contracts.len()
     );
 
     Ok(Json(LookupContractsResponse {
-        symbol: detail.symbol,
-        coin_id: best_match.id,
-        coin_name: detail.name,
+        symbol: resolved_symbol,
+        coin_id: resolved_coin_id,
+        coin_name: resolved_name,
         contracts,
     }))
 }

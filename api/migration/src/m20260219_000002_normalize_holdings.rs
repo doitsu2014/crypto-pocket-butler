@@ -32,10 +32,10 @@ DECLARE
     i int;
 BEGIN
     FOR acc IN
-        SELECT id, holdings
+        SELECT id, holdings::jsonb AS holdings
         FROM accounts
         WHERE holdings IS NOT NULL
-          AND jsonb_array_length(holdings) > 0
+          AND jsonb_array_length(holdings::jsonb) > 0
     LOOP
         updated_holdings := '[]'::jsonb;
 

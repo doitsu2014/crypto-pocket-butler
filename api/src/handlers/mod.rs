@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod chains;
 pub mod error;
+pub mod evm_chains;
 pub mod evm_tokens;
 pub mod jobs;
 pub mod migrations;

@@ -226,3 +226,56 @@ export interface Chain {
   name: string;
   native_symbol: string;
 }
+
+// ============================================================================
+// EVM Token Types
+// ============================================================================
+
+export interface EvmToken {
+  id: string;
+  chain: string;
+  symbol: string;
+  contract_address: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateEvmTokenInput {
+  chain: string;
+  symbol: string;
+  contract_address: string;
+  is_active?: boolean;
+}
+
+export interface UpdateEvmTokenInput {
+  symbol?: string;
+  is_active?: boolean;
+}
+
+// ============================================================================
+// EVM Chain Types
+// ============================================================================
+
+export interface EvmChain {
+  id: string;
+  chain_id: string;
+  name: string;
+  rpc_url: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateEvmChainInput {
+  chain_id: string;
+  name: string;
+  rpc_url: string;
+  is_active?: boolean;
+}
+
+export interface UpdateEvmChainInput {
+  name?: string;
+  rpc_url?: string;
+  is_active?: boolean;
+}

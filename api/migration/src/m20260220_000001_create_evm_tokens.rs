@@ -1,7 +1,7 @@
 use sea_orm_migration::{prelude::*, schema::*};
 use sea_orm::{Statement, DbBackend, sea_query::Values};
 
-/// Consolidates all 2026-02-20 schema changes into one migration:
+/// Creates the `evm_tokens` table and seeds it with well-known ERC-20 token addresses.
 ///
 /// 1. Creates the `evm_tokens` table — stores the DB-driven list of ERC-20 token addresses the
 ///    EVM connector checks during account sync.  Manageable at runtime via `/api/v1/evm-tokens`.
@@ -9,8 +9,8 @@ use sea_orm::{Statement, DbBackend, sea_query::Values};
 /// 2. Seeds `evm_tokens` with a curated set of well-known tokens across all supported EVM chains
 ///    (Ethereum 22, Arbitrum 16, Optimism 16, Base 9, BSC 12).
 ///
-/// 3. Renames `assets.coingecko_id` → `assets.coinpaprika_id` — the column has always stored
-///    CoinPaprika IDs; the name previously referenced the wrong data source.
+/// Note: `assets.coinpaprika_id` is created with that name from the start in
+/// `m20240101_000002_create_assets_system`; no column rename is needed here.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -177,65 +177,11 @@ impl MigrationTrait for Migration {
             .await?;
         }
 
-        // ── 3. Rename assets.coingecko_id → assets.coinpaprika_id ────────────
-        manager
-            .drop_index(
-                Index::drop()
-                    .name("idx_assets_coingecko_id")
-                    .table(Assets::Table)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "ALTER TABLE assets RENAME COLUMN coingecko_id TO coinpaprika_id",
-            )
-            .await?;
-
-        manager
-            .create_index(
-                Index::create()
-                    .name("idx_assets_coinpaprika_id")
-                    .table(Assets::Table)
-                    .col(Assets::CoinpaprikaId)
-                    .to_owned(),
-            )
-            .await?;
-
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // ── Undo 3: rename coinpaprika_id back to coingecko_id ────────────────
-        manager
-            .drop_index(
-                Index::drop()
-                    .name("idx_assets_coinpaprika_id")
-                    .table(Assets::Table)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "ALTER TABLE assets RENAME COLUMN coinpaprika_id TO coingecko_id",
-            )
-            .await?;
-
-        manager
-            .create_index(
-                Index::create()
-                    .name("idx_assets_coingecko_id")
-                    .table(Assets::Table)
-                    .col(Assets::CoingeckoId)
-                    .to_owned(),
-            )
-            .await?;
-
-        // ── Undo 1+2: drop evm_tokens (seed rows go with the table) ──────────
+        // Drop evm_tokens (seed rows go with the table)
         manager
             .drop_table(Table::drop().table(EvmTokens::Table).to_owned())
             .await
@@ -252,11 +198,4 @@ enum EvmTokens {
     IsActive,
     CreatedAt,
     UpdatedAt,
-}
-
-#[derive(DeriveIden)]
-enum Assets {
-    Table,
-    CoinpaprikaId,
-    CoingeckoId, // used in down() only
 }

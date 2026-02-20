@@ -500,22 +500,22 @@ pub async fn lookup_contracts_handler(
     let connector = CoinPaprikaConnector::new();
 
     // Step 1: look up the CoinPaprika ID from the local `assets` table (DB query, 0 API calls).
-    // The assets table is populated nightly by `fetch_all_coins` and stores coingecko_id which
-    // is actually the CoinPaprika ID.  We join with asset_prices to pick the highest market-cap
+    // The assets table is populated nightly by `fetch_all_coins` and stores coinpaprika_id
+    // (the CoinPaprika coin ID).  We join with asset_prices to pick the highest market-cap
     // coin when multiple assets share the same symbol.
     let coin_id: Option<String> = assets::Entity::find()
         .filter(
             sea_orm::Condition::all()
                 .add(assets::Column::Symbol.eq(q.symbol.to_uppercase().as_str()))
                 .add(assets::Column::IsActive.eq(true))
-                .add(assets::Column::CoingeckoId.is_not_null()),
+                .add(assets::Column::CoinpaprikaId.is_not_null()),
         )
         .find_also_related(asset_prices::Entity)
         .order_by_asc(asset_prices::Column::Rank)
         .one(&db)
         .await
         .map_err(|e| ApiError::InternalServerError(format!("DB query failed: {}", e)))?
-        .and_then(|(asset, _)| asset.coingecko_id);
+        .and_then(|(asset, _)| asset.coinpaprika_id);
 
     // Determine the CoinPaprika ID: use DB result if available, otherwise fall back to
     // the bulk /v1/coins listing (adds 1 extra API call only when the asset is not yet
@@ -528,7 +528,7 @@ pub async fn lookup_contracts_handler(
         );
         // We still need name/symbol for the response — get them from the same assets row.
         let asset = assets::Entity::find()
-            .filter(assets::Column::CoingeckoId.eq(id.as_str()))
+            .filter(assets::Column::CoinpaprikaId.eq(id.as_str()))
             .one(&db)
             .await
             .map_err(|e| ApiError::InternalServerError(format!("DB query failed: {}", e)))?

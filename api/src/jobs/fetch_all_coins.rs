@@ -120,9 +120,11 @@ pub async fn fetch_all_coins(
             // Check if asset already exists by coinpaprika_id first (primary key)
             // Only fall back to symbol+name matching if CoinPaprika ID is not found
             // This prevents duplicate mappings when multiple coins share the same symbol but different names
-            // Note: CoingeckoId column is a legacy name that now stores CoinPaprika IDs
+            // Check if asset already exists by coinpaprika_id first (primary key)
+            // Only fall back to symbol+name matching if CoinPaprika ID is not found
+            // This prevents duplicate mappings when multiple coins share the same symbol but different names
             let existing_asset = assets::Entity::find()
-                .filter(assets::Column::CoingeckoId.eq(&coin.id))
+                .filter(assets::Column::CoinpaprikaId.eq(&coin.id))
                 .one(db)
                 .await
                 .map_err(|e| format!("Failed to query assets: {}", e))?;
@@ -149,7 +151,7 @@ pub async fn fetch_all_coins(
                     let mut asset_update: assets::ActiveModel = existing.into();
                     asset_update.name = ActiveValue::Set(coin.name.clone());
                     asset_update.symbol = ActiveValue::Set(coin.symbol.to_uppercase());
-                    asset_update.coingecko_id = ActiveValue::Set(Some(coin.id.clone()));
+                    asset_update.coinpaprika_id = ActiveValue::Set(Some(coin.id.clone()));
                     asset_update.is_active = ActiveValue::Set(true);
                     asset_update.updated_at = ActiveValue::Set(current_timestamp.into());
                     
@@ -166,7 +168,7 @@ pub async fn fetch_all_coins(
                         symbol: ActiveValue::Set(coin.symbol.to_uppercase()),
                         name: ActiveValue::Set(coin.name.clone()),
                         asset_type: ActiveValue::Set("cryptocurrency".to_string()),
-                        coingecko_id: ActiveValue::Set(Some(coin.id.clone())),
+                        coinpaprika_id: ActiveValue::Set(Some(coin.id.clone())),
                         coinmarketcap_id: ActiveValue::NotSet,
                         logo_url: ActiveValue::NotSet,
                         description: ActiveValue::NotSet,

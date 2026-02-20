@@ -9,7 +9,7 @@ pub struct Model {
     pub symbol: String,
     pub name: String,
     pub asset_type: String, // "cryptocurrency", "token", "stablecoin"
-    pub coingecko_id: Option<String>,
+    pub coinpaprika_id: Option<String>,
     pub coinmarketcap_id: Option<String>,
     pub logo_url: Option<String>,
     pub description: Option<String>,

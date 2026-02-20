@@ -13,6 +13,7 @@ mod m20260219_000001_symbol_name_uniqueness;
 mod m20260219_000002_normalize_holdings;
 mod m20260220_000001_create_evm_tokens;
 mod m20260220_000002_seed_evm_tokens;
+mod m20260220_000003_rename_coingecko_id_to_coinpaprika_id;
 
 pub struct Migrator;
 
@@ -32,6 +33,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260219_000002_normalize_holdings::Migration),
             Box::new(m20260220_000001_create_evm_tokens::Migration),
             Box::new(m20260220_000002_seed_evm_tokens::Migration),
+            Box::new(m20260220_000003_rename_coingecko_id_to_coinpaprika_id::Migration),
         ]
     }
 }

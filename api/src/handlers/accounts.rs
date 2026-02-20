@@ -146,11 +146,19 @@ impl From<account_sync::SyncResult> for SyncResultResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct SyncAllAccountsResponse {
-    pub total: usize,
-    pub successful: usize,
-    pub failed: usize,
-    pub results: Vec<SyncResultResponse>,
+pub struct SyncInitiatedResponse {
+    /// Human-readable status message
+    pub message: String,
+    /// Account ID that sync was initiated for
+    pub account_id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SyncAllInitiatedResponse {
+    /// Human-readable status message
+    pub message: String,
+    /// Number of accounts queued for background sync
+    pub account_count: usize,
 }
 
 // === Helper Functions ===
@@ -399,7 +407,8 @@ async fn delete_account_handler(
 
 /// Sync a specific account
 ///
-/// Triggers a sync for a specific account to fetch latest balances from the exchange
+/// Triggers a background sync for a specific account to fetch latest balances.
+/// Returns immediately with 202 Accepted while sync runs in the background.
 #[utoipa::path(
     post,
     path = "/api/v1/accounts/{account_id}/sync",
@@ -407,8 +416,9 @@ async fn delete_account_handler(
         ("account_id" = Uuid, Path, description = "Account ID to sync")
     ),
     responses(
-        (status = 200, description = "Sync completed", body = SyncResultResponse),
+        (status = 202, description = "Sync started in background", body = SyncInitiatedResponse),
         (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
         (status = 404, description = "Account not found"),
         (status = 500, description = "Internal server error")
     ),
@@ -419,7 +429,7 @@ async fn sync_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Path(account_id): Path<Uuid>,
-) -> Result<Json<SyncResultResponse>, ApiError> {
+) -> Result<(StatusCode, Json<SyncInitiatedResponse>), ApiError> {
     // Get or create user
     let user = get_or_create_user(&db, &token).await?;
 
@@ -433,22 +443,53 @@ async fn sync_account_handler(
         return Err(ApiError::Forbidden);
     }
 
-    // Perform sync
-    let result = account_sync::sync_account(&db, account_id)
-        .await
-        .map_err(|e| ApiError::InternalServerError(format!("Sync failed: {}", e)))?;
+    // Spawn background sync task – return 202 immediately so the UI is not blocked.
+    // A watcher task monitors the JoinHandle so panics are observable in logs.
+    let db_bg = db.clone();
+    let handle = tokio::spawn(async move {
+        match account_sync::sync_account(&db_bg, account_id).await {
+            Ok(result) => {
+                if result.success {
+                    tracing::info!(
+                        "Background sync completed for account {}: {} holdings",
+                        account_id, result.holdings_count
+                    );
+                } else {
+                    tracing::warn!(
+                        "Background sync finished with error for account {}: {:?}",
+                        account_id, result.error
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::error!("Background sync failed for account {}: {}", account_id, e);
+            }
+        }
+    });
+    tokio::spawn(async move {
+        if let Err(e) = handle.await {
+            tracing::error!("Background sync task panicked for account {}: {:?}", account_id, e);
+        }
+    });
 
-    Ok(Json(result.into()))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(SyncInitiatedResponse {
+            message: "Sync started in background".to_string(),
+            account_id,
+        }),
+    ))
 }
 
 /// Sync all accounts for the authenticated user
 ///
-/// Triggers a sync for all active accounts belonging to the authenticated user
+/// Triggers background syncs for all active accounts belonging to the authenticated user.
+/// Returns immediately with 202 Accepted while syncs run in the background.
 #[utoipa::path(
     post,
     path = "/api/v1/accounts/sync-all",
     responses(
-        (status = 200, description = "Sync completed", body = SyncAllAccountsResponse),
+        (status = 202, description = "Sync started in background", body = SyncAllInitiatedResponse),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "Internal server error")
     ),
@@ -458,25 +499,52 @@ async fn sync_account_handler(
 async fn sync_all_accounts_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
-) -> Result<Json<SyncAllAccountsResponse>, ApiError> {
+) -> Result<(StatusCode, Json<SyncAllInitiatedResponse>), ApiError> {
     // Get or create user
     let user = get_or_create_user(&db, &token).await?;
 
-    // Perform sync for all user accounts
-    let results = account_sync::sync_user_accounts(&db, user.id)
-        .await
-        .map_err(|e| ApiError::InternalServerError(format!("Sync failed: {}", e)))?;
+    // Fetch accounts now so we can report the count in the response
+    let active_accounts = accounts::Entity::find()
+        .filter(accounts::Column::UserId.eq(user.id))
+        .filter(accounts::Column::IsActive.eq(true))
+        .all(&db)
+        .await?;
 
-    let total = results.len();
-    let successful = results.iter().filter(|r| r.success).count();
-    let failed = total - successful;
+    let account_count = active_accounts.len();
+    let user_id = user.id;
 
-    Ok(Json(SyncAllAccountsResponse {
-        total,
-        successful,
-        failed,
-        results: results.into_iter().map(|r| r.into()).collect(),
-    }))
+    // Spawn a single background task that syncs all accounts sequentially.
+    // A watcher task monitors the JoinHandle so panics are observable in logs.
+    let db_bg = db.clone();
+    let handle = tokio::spawn(async move {
+        tracing::info!("Background sync started for {} accounts of user {}", account_count, user_id);
+        match account_sync::sync_user_accounts(&db_bg, user_id).await {
+            Ok(results) => {
+                let successful = results.iter().filter(|r| r.success).count();
+                let failed = results.len() - successful;
+                tracing::info!(
+                    "Background sync completed for user {}: {} successful, {} failed",
+                    user_id, successful, failed
+                );
+            }
+            Err(e) => {
+                tracing::error!("Background sync failed for user {}: {}", user_id, e);
+            }
+        }
+    });
+    tokio::spawn(async move {
+        if let Err(e) = handle.await {
+            tracing::error!("Background sync-all task panicked for user {}: {:?}", user_id, e);
+        }
+    });
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(SyncAllInitiatedResponse {
+            message: "Sync started in background".to_string(),
+            account_count,
+        }),
+    ))
 }
 
 /// Create router for account endpoints

@@ -1,24 +1,16 @@
 use crate::connectors::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, ExchangeConnector};
 // TODO: Solana connector temporarily disabled due to dependency conflicts
 // use crate::connectors::solana::SolanaConnector;
-use crate::entities::accounts;
+use crate::entities::{accounts, evm_tokens};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 use serde_json::json;
+use std::collections::HashMap;
 use std::error::Error;
 use tracing;
 use uuid::Uuid;
-
-/// Default EVM chains to use when no specific chains are configured
-const DEFAULT_EVM_CHAINS: [EvmChain; 5] = [
-    EvmChain::Ethereum,
-    EvmChain::Arbitrum,
-    EvmChain::Optimism,
-    EvmChain::Base,
-    EvmChain::BinanceSmartChain,
-];
 
 /// Result of syncing an account
 #[derive(Debug)]
@@ -150,23 +142,26 @@ pub async fn sync_account(
                                 }
                                 if chains.is_empty() {
                                     // If no valid chains were found, use all chains
-                                    DEFAULT_EVM_CHAINS.to_vec()
+                                    EvmChain::all()
                                 } else {
                                     chains
                                 }
                             }
                             Err(e) => {
                                 tracing::warn!("Failed to parse enabled_chains: {}, using all chains", e);
-                                DEFAULT_EVM_CHAINS.to_vec()
+                                EvmChain::all()
                             }
                         }
                     } else {
                         // No enabled_chains specified, use all chains
-                        DEFAULT_EVM_CHAINS.to_vec()
+                        EvmChain::all()
                     };
 
-                    // Create EVM connector
-                    match EvmConnector::new(wallet_address.clone(), chains) {
+                    // Load token list from DB; fall back to built-in list on error
+                    let db_tokens = load_tokens_from_db(db).await;
+
+                    // Create EVM connector with DB-sourced token list
+                    match EvmConnector::new_with_tokens(wallet_address.clone(), chains, db_tokens) {
                         Ok(connector) => Box::new(connector),
                         Err(e) => {
                             return Ok(SyncResult {
@@ -295,6 +290,47 @@ pub async fn sync_user_accounts(
     );
 
     Ok(results)
+}
+
+/// Load active EVM tokens from the database grouped by chain name.
+///
+/// Returns `Some(map)` when the table is reachable and contains rows.
+/// Falls back to `None` on any DB error so the EVM connector uses its built-in token list.
+async fn load_tokens_from_db(
+    db: &DatabaseConnection,
+) -> Option<HashMap<String, Vec<(String, String)>>> {
+    match evm_tokens::Entity::find()
+        .filter(evm_tokens::Column::IsActive.eq(true))
+        .all(db)
+        .await
+    {
+        Ok(rows) if !rows.is_empty() => {
+            let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
+            for row in rows {
+                map.entry(row.chain)
+                    .or_default()
+                    .push((row.symbol, row.contract_address));
+            }
+            tracing::info!(
+                "Loaded {} active EVM tokens from DB across {} chains",
+                map.values().map(|v| v.len()).sum::<usize>(),
+                map.len()
+            );
+            Some(map)
+        }
+        Ok(_) => {
+            // Table exists but is empty – fall back to built-in list
+            tracing::warn!("evm_tokens table is empty, falling back to built-in token list");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to load EVM tokens from DB: {}, falling back to built-in token list",
+                e
+            );
+            None
+        }
+    }
 }
 
 #[cfg(test)]

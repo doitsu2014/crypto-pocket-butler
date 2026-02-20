@@ -27,6 +27,9 @@ pub enum ApiError {
     /// 404 Not Found - Resource does not exist
     NotFound,
     
+    /// 409 Conflict - Resource already exists or state conflict
+    Conflict(String),
+    
     /// 500 Internal Server Error - Database or other internal errors
     DatabaseError(sea_orm::DbErr),
     
@@ -41,6 +44,7 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
             ApiError::NotFound => (StatusCode::NOT_FOUND, "Resource not found".to_string()),
+            ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg),
             ApiError::DatabaseError(err) => {
                 // Log the actual database error for debugging
                 tracing::error!("Database error: {:?}", err);
@@ -84,6 +88,7 @@ impl std::fmt::Display for ApiError {
             ApiError::Unauthorized => write!(f, "Unauthorized"),
             ApiError::Forbidden => write!(f, "Forbidden"),
             ApiError::NotFound => write!(f, "Not Found"),
+            ApiError::Conflict(msg) => write!(f, "Conflict: {}", msg),
             ApiError::DatabaseError(err) => write!(f, "Database Error: {:?}", err),
             ApiError::InternalServerError(msg) => write!(f, "Internal Server Error: {}", msg),
         }

@@ -156,7 +156,7 @@ async fn upsert_asset(
     use crate::entities::assets;
     use sea_orm::{ActiveModelTrait, Condition};
     
-    // Check if asset already exists by (symbol AND name) OR coingecko_id (legacy field name, stores coinpaprika_id)
+    // Check if asset already exists by (symbol AND name) OR coinpaprika_id
     // The new uniqueness constraint requires both symbol and name to match
     let existing_asset = assets::Entity::find()
         .filter(
@@ -166,7 +166,7 @@ async fn upsert_asset(
                         .add(assets::Column::Symbol.eq(&coin.symbol.to_uppercase()))
                         .add(assets::Column::Name.eq(&coin.name))
                 )
-                .add(assets::Column::CoingeckoId.eq(&coin.id))
+                .add(assets::Column::CoinpaprikaId.eq(&coin.id))
         )
         .one(db)
         .await?;
@@ -177,7 +177,7 @@ async fn upsert_asset(
             let mut asset_update: assets::ActiveModel = existing.into();
             asset_update.name = ActiveValue::Set(coin.name.clone());
             asset_update.symbol = ActiveValue::Set(coin.symbol.to_uppercase());
-            asset_update.coingecko_id = ActiveValue::Set(Some(coin.id.clone()));
+            asset_update.coinpaprika_id = ActiveValue::Set(Some(coin.id.clone()));
             asset_update.is_active = ActiveValue::Set(true);
             asset_update.updated_at = ActiveValue::Set(Utc::now().into());
             
@@ -192,7 +192,7 @@ async fn upsert_asset(
                 symbol: ActiveValue::Set(coin.symbol.to_uppercase()),
                 name: ActiveValue::Set(coin.name.clone()),
                 asset_type: ActiveValue::Set("cryptocurrency".to_string()),
-                coingecko_id: ActiveValue::Set(Some(coin.id.clone())),
+                coinpaprika_id: ActiveValue::Set(Some(coin.id.clone())),
                 coinmarketcap_id: ActiveValue::NotSet,
                 logo_url: ActiveValue::NotSet,
                 description: ActiveValue::NotSet,
@@ -220,10 +220,9 @@ async fn get_tracked_assets(
     // Note: The actual "top N by market cap" is determined by CoinPaprika API in fetch_prices_for_assets().
     // This query just ensures we have asset records in our DB to match against.
     // The limit here helps reduce unnecessary lookups when we have many assets in the DB.
-    // Note: The field is named CoingeckoId for historical reasons but now stores CoinPaprika IDs
     let top_assets = assets::Entity::find()
         .filter(assets::Column::IsActive.eq(true))
-        .filter(assets::Column::CoingeckoId.is_not_null())
+        .filter(assets::Column::CoinpaprikaId.is_not_null())
         .order_by_asc(assets::Column::Symbol) // Order by symbol for consistent results
         .limit(top_n_limit as u64)
         .all(db)
@@ -272,7 +271,7 @@ async fn get_tracked_assets(
     // Fetch full asset models for all tracked asset IDs
     let tracked_assets = assets::Entity::find()
         .filter(assets::Column::Id.is_in(tracked_asset_ids))
-        .filter(assets::Column::CoingeckoId.is_not_null()) // Only assets with CoinPaprika ID (field name is legacy)
+        .filter(assets::Column::CoinpaprikaId.is_not_null()) // Only assets with CoinPaprika ID
         .all(db)
         .await?;
 
@@ -299,7 +298,7 @@ async fn fetch_prices_for_assets(
     // Identify assets not in the top N that we still need prices for
     let mut missing_coin_ids: Vec<String> = Vec::new();
     for asset in tracked_assets {
-        if let Some(coinpaprika_id) = &asset.coingecko_id {
+        if let Some(coinpaprika_id) = &asset.coinpaprika_id {
             if !fetched_ids.contains(coinpaprika_id) {
                 missing_coin_ids.push(coinpaprika_id.clone());
             }
@@ -328,7 +327,7 @@ async fn fetch_prices_for_assets(
     let mut price_data = Vec::new();
     
     for asset in tracked_assets {
-        if let Some(coinpaprika_id) = &asset.coingecko_id {
+        if let Some(coinpaprika_id) = &asset.coinpaprika_id {
             // Find matching coin data
             if let Some(coin) = coins_map.get(coinpaprika_id) {
                 price_data.push(PriceData {

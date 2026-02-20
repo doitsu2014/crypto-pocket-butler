@@ -95,6 +95,17 @@ pub struct ContractInfo {
     pub contract: String,
 }
 
+/// Basic coin metadata returned by the CoinPaprika /v1/coins listing endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoinBasicInfo {
+    pub id: String,
+    pub name: String,
+    pub symbol: String,
+    pub rank: u32,
+    #[serde(default)]
+    pub is_active: bool,
+}
+
 impl CoinPaprikaConnector {
     /// Create a new CoinPaprika connector
     /// 
@@ -321,6 +332,62 @@ impl CoinPaprikaConnector {
         );
         
         Ok(coin_detail)
+    }
+
+    /// Search CoinPaprika for coins matching a given symbol.
+    ///
+    /// Fetches the full coin listing (`GET /v1/coins`) in a single request and filters
+    /// client-side by symbol (case-insensitive). Results are sorted by rank (ascending) so
+    /// the highest market-cap coin for that symbol comes first.
+    ///
+    /// This is intentionally **one API call**, regardless of how many coins are returned,
+    /// to stay within free-tier rate limits.
+    pub async fn search_coins_by_symbol(
+        &self,
+        symbol: &str,
+    ) -> Result<Vec<CoinBasicInfo>, Box<dyn Error + Send + Sync>> {
+        let _permit = self.rate_limiter.acquire().await?;
+
+        let url = format!("{}/coins", self.base_url);
+
+        let mut request = self.client.get(&url).header("accept", "application/json");
+        if let Some(key) = &self.api_key {
+            request = request.header("Authorization", format!("Bearer {}", key));
+        }
+
+        let response = request.send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            log_coinpaprika_error(status, &error_text);
+            return Err(
+                format!("CoinPaprika /coins error: {} - {}", status, error_text).into(),
+            );
+        }
+
+        let all_coins: Vec<CoinBasicInfo> = response.json().await?;
+
+        let symbol_upper = symbol.to_uppercase();
+        let mut matches: Vec<CoinBasicInfo> = all_coins
+            .into_iter()
+            .filter(|c| c.is_active && c.symbol.to_uppercase() == symbol_upper)
+            .collect();
+
+        // Sort by rank ascending (rank=0 means unranked; push those to the end)
+        const UNRANKED_SORT_KEY: u32 = u32::MAX;
+        matches.sort_by_key(|c| if c.rank == 0 { UNRANKED_SORT_KEY } else { c.rank });
+
+        tracing::info!(
+            "CoinPaprika symbol search '{}': {} matches",
+            symbol,
+            matches.len()
+        );
+
+        Ok(matches)
     }
 
     /// Helper method to convert CoinPaprika contracts to platform map format

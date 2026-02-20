@@ -49,7 +49,7 @@ export default function AccountDetailClient() {
   async function handleSyncAccount() {
     try {
       const result = await syncAccount.mutateAsync(accountId);
-      if (result.success) {
+      if (result && result.account_id) {
         toast.success(`Account synced successfully! ${result.holdings_count} holdings updated.`);
         refetch();
       } else {

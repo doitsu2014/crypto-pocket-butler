@@ -128,7 +128,7 @@ export default function AccountsClient() {
   async function handleSyncAccount(accountId: string) {
     try {
       const result = await syncAccount.mutateAsync(accountId);
-      if (result.success) {
+      if (result && result.account_id) {
         toast.success(`Account synced successfully! ${result.holdings_count} holdings updated.`);
       } else {
         toast.error(result.error || "Sync failed");
@@ -147,7 +147,7 @@ export default function AccountsClient() {
     for (const account of accounts) {
       try {
         const result = await syncAccount.mutateAsync(account.id);
-        if (result.success) {
+        if (result && result.account_id) {
           successCount++;
         } else {
           failCount++;

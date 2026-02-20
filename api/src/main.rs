@@ -80,6 +80,12 @@ struct HealthResponse {
         handlers::recommendations::generate_mock_recommendations,
         handlers::migrations::migrate_handler,
         handlers::jobs::fetch_all_coins_handler,
+        handlers::evm_tokens::list_evm_tokens_handler,
+        handlers::evm_tokens::get_evm_token_handler,
+        handlers::evm_tokens::create_evm_token_handler,
+        handlers::evm_tokens::update_evm_token_handler,
+        handlers::evm_tokens::delete_evm_token_handler,
+        handlers::evm_tokens::sync_tokens_from_contracts_handler,
     ),
     components(
         schemas(
@@ -115,6 +121,10 @@ struct HealthResponse {
             handlers::recommendations::CreateRecommendationRequest,
             handlers::migrations::MigrationResponse,
             handlers::jobs::FetchAllCoinsResponse,
+            handlers::evm_tokens::EvmTokenResponse,
+            handlers::evm_tokens::CreateEvmTokenRequest,
+            handlers::evm_tokens::UpdateEvmTokenRequest,
+            handlers::evm_tokens::SyncFromContractsResponse,
             handlers::error::ErrorResponse,
         )
     ),
@@ -127,7 +137,7 @@ struct HealthResponse {
         (name = "snapshots", description = "Portfolio snapshot endpoints"),
         (name = "recommendations", description = "Portfolio recommendation endpoints"),
         (name = "migrations", description = "Database migration endpoints"),
-        (name = "jobs", description = "Background job management endpoints")
+        (name = "evm-tokens", description = "EVM token registry – configurable list of ERC-20 tokens checked during wallet sync"),
     ),
     info(
         title = "Crypto Pocket Butler API",
@@ -470,6 +480,8 @@ async fn main() {
         .merge(handlers::migrations::create_router())
         // Job management API routes (protected)
         .merge(handlers::jobs::create_router())
+        // EVM token registry API routes (protected)
+        .merge(handlers::evm_tokens::create_router())
         .layer(auth_layer);
 
     // Build application with public and protected routes

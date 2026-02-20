@@ -8,6 +8,7 @@ use alloy::{
 };
 use async_trait::async_trait;
 use futures::future::join_all;
+use std::collections::HashMap;
 use std::error::Error;
 use tracing;
 
@@ -63,6 +64,20 @@ impl EvmChain {
             EvmChain::Base => "ETH",
             EvmChain::BinanceSmartChain => "BNB",
         }
+    }
+
+    /// Returns all supported EVM chains.
+    ///
+    /// This is the single source of truth used by `account_sync` (default chain list)
+    /// and the `evm-tokens` handler (supported-chains filter).
+    pub fn all() -> Vec<EvmChain> {
+        vec![
+            EvmChain::Ethereum,
+            EvmChain::Arbitrum,
+            EvmChain::Optimism,
+            EvmChain::Base,
+            EvmChain::BinanceSmartChain,
+        ]
     }
 }
 
@@ -210,16 +225,36 @@ pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> 
 pub struct EvmConnector {
     wallet_address: Address,
     chains: Vec<EvmChain>,
+    /// Per-chain token overrides sourced from the database.
+    /// When `Some`, these are used instead of `get_common_tokens()`.
+    /// Key: chain name (e.g. "ethereum"), Value: [(symbol, contract_address)]
+    custom_tokens: Option<HashMap<String, Vec<(String, String)>>>,
 }
 
 impl EvmConnector {
-    /// Create a new EVM connector for a wallet address
+    /// Create a new EVM connector for a wallet address using the built-in token list.
     /// 
     /// # Arguments
     /// * `wallet_address` - The wallet address to fetch balances for (hex string)
     /// * `chains` - List of EVM chains to check (defaults to Ethereum mainnet if empty)
     pub fn new(wallet_address: String, chains: Vec<EvmChain>) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        // Parse the wallet address
+        Self::new_with_tokens(wallet_address, chains, None)
+    }
+
+    /// Create a new EVM connector with a custom per-chain token list sourced from the database.
+    ///
+    /// When `custom_tokens` is `Some`, it fully replaces `get_common_tokens()` for every chain
+    /// that has an entry.  Chains without an entry fall back to the built-in list.
+    ///
+    /// # Arguments
+    /// * `wallet_address` - The wallet address to fetch balances for (hex string)
+    /// * `chains` - List of EVM chains to check (defaults to Ethereum mainnet if empty)
+    /// * `custom_tokens` - Optional per-chain token map from the database
+    pub fn new_with_tokens(
+        wallet_address: String,
+        chains: Vec<EvmChain>,
+        custom_tokens: Option<HashMap<String, Vec<(String, String)>>>,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let addr = wallet_address.parse::<Address>()
             .map_err(|e| format!("Invalid wallet address: {}", e))?;
         
@@ -232,6 +267,7 @@ impl EvmConnector {
         Ok(Self {
             wallet_address: addr,
             chains,
+            custom_tokens,
         })
     }
 }
@@ -250,12 +286,28 @@ impl ExchangeConnector for EvmConnector {
             let chain = chain.clone();
             let wallet_address = format!("{:?}", self.wallet_address); // Convert Address to hex string
             let rate_limiter = rate_limiter.clone();
+            // Resolve tokens for this chain: DB-sourced list takes priority over the built-in list
+            let chain_tokens: Vec<(String, String)> = if let Some(ref custom) = self.custom_tokens {
+                if let Some(tokens) = custom.get(chain.name()) {
+                    tokens.clone()
+                } else {
+                    get_common_tokens(&chain)
+                        .into_iter()
+                        .map(|(s, a)| (s.to_string(), a.to_string()))
+                        .collect()
+                }
+            } else {
+                get_common_tokens(&chain)
+                    .into_iter()
+                    .map(|(s, a)| (s.to_string(), a.to_string()))
+                    .collect()
+            };
             
             async move {
                 // Acquire rate limit permit
                 let _permit = rate_limiter.acquire().await.ok()?;
                 
-                tracing::info!("Checking {} chain", chain.name());
+                tracing::info!("Checking {} chain ({} tokens)", chain.name(), chain_tokens.len());
                 let mut chain_balances = Vec::new();
                 
                 // Fetch native balance
@@ -267,8 +319,8 @@ impl ExchangeConnector for EvmConnector {
                     }
                 }
                 
-                // Fetch token balances
-                match fetch_token_balances_for_chain(&wallet_address, &chain).await {
+                // Fetch token balances using the resolved token list
+                match fetch_token_balances_for_chain(&wallet_address, &chain, &chain_tokens).await {
                     Ok(balances) => chain_balances.extend(balances),
                     Err(e) => {
                         tracing::error!("Failed to fetch token balances on {}: {}", chain.name(), e);
@@ -328,15 +380,15 @@ async fn fetch_native_balance_for_chain(
 async fn fetch_token_balances_for_chain(
     wallet_address: &str,
     chain: &EvmChain,
+    token_list: &[(String, String)],
 ) -> Result<Vec<Balance>, Box<dyn Error + Send + Sync>> {
     let provider = ProviderBuilder::new().connect_http(chain.rpc_url().parse()?);
     let wallet_address: Address = wallet_address.parse()?;
     
-    let token_addresses = get_common_tokens(chain);
     let mut balances = Vec::new();
     
     // Note: provider.clone() is cheap (Arc-based in alloy)
-    for (symbol, token_address) in token_addresses {
+    for (symbol, token_address) in token_list {
         let contract_address: Address = match token_address.parse() {
             Ok(addr) => addr,
             Err(e) => {
@@ -422,7 +474,7 @@ mod tests {
 
     #[test]
     fn test_connector_creation() {
-        // Valid address
+        // Valid address – default (built-in) token list
         let result = EvmConnector::new(
             "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045".to_string(),
             vec![EvmChain::Ethereum],
@@ -435,6 +487,27 @@ mod tests {
             vec![EvmChain::Ethereum],
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_connector_creation_with_custom_tokens() {
+        let mut custom: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        custom.insert(
+            "ethereum".to_string(),
+            vec![("MYTOKEN".to_string(), "0xdAC17F958D2ee523a2206206994597C13D831ec7".to_string())],
+        );
+
+        let result = EvmConnector::new_with_tokens(
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045".to_string(),
+            vec![EvmChain::Ethereum],
+            Some(custom),
+        );
+        assert!(result.is_ok());
+        let connector = result.unwrap();
+        // Custom tokens should be stored
+        let custom_ref = connector.custom_tokens.as_ref().unwrap();
+        assert!(custom_ref.contains_key("ethereum"));
+        assert_eq!(custom_ref["ethereum"][0].0, "MYTOKEN");
     }
 
     #[test]

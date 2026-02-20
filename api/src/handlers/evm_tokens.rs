@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+use crate::connectors::coinpaprika::CoinPaprikaConnector;
 use crate::entities::{asset_contracts, evm_tokens};
 use super::error::ApiError;
 
@@ -415,6 +416,132 @@ pub async fn sync_tokens_from_contracts_handler(
     Ok(Json(SyncFromContractsResponse { inserted, skipped }))
 }
 
+// === DTOs for contract-address lookup ===
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct LookupContractsQuery {
+    /// Token symbol to search for (e.g. "USDC", "WBTC")
+    pub symbol: String,
+}
+
+/// A single chain/address pair returned by the contract lookup
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ChainContractEntry {
+    /// EVM chain identifier, e.g. "ethereum"
+    pub chain: String,
+    /// ERC-20 contract address on that chain
+    pub contract_address: String,
+}
+
+/// Response from the contract-address lookup endpoint
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct LookupContractsResponse {
+    /// Token symbol that was searched
+    pub symbol: String,
+    /// CoinPaprika coin ID of the best match (lowest rank / highest market cap)
+    pub coin_id: String,
+    /// Full coin name
+    pub coin_name: String,
+    /// Contract addresses found on supported EVM chains
+    pub contracts: Vec<ChainContractEntry>,
+}
+
+/// Maps a CoinPaprika `platform_type` string to our chain identifier.
+/// Returns `None` for platforms we don't support.
+fn coinpaprika_platform_to_chain(platform_type: &str) -> Option<&'static str> {
+    match platform_type.to_lowercase().as_str() {
+        "erc20" | "ethereum" => Some("ethereum"),
+        "arbitrum" => Some("arbitrum"),
+        "optimism" => Some("optimism"),
+        "base" => Some("base"),
+        "bep20" | "binance" | "bsc" | "bnb" | "binance-smart-chain" => Some("bsc"),
+        _ => None,
+    }
+}
+
+/// Look up contract addresses for a token symbol
+///
+/// Queries CoinPaprika for all coins matching the given symbol, selects the
+/// highest market-cap coin (lowest rank), then fetches its on-chain contract
+/// addresses via `GET /v1/coins/{id}`.
+///
+/// This makes exactly **two** CoinPaprika API calls: one bulk `/v1/coins` listing
+/// (shared with other callers via the rate limiter) and one targeted `/v1/coins/{id}`
+/// call for the best-match coin.
+///
+/// Use this endpoint to pre-fill the contract address field when adding a new EVM token.
+#[utoipa::path(
+    get,
+    path = "/api/v1/evm-tokens/lookup-contracts",
+    params(LookupContractsQuery),
+    responses(
+        (status = 200, description = "Contract addresses found", body = LookupContractsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "No active coin found for that symbol"),
+        (status = 500, description = "Internal server error or CoinPaprika unavailable")
+    ),
+    tag = "evm-tokens"
+)]
+pub async fn lookup_contracts_handler(
+    Extension(_token): Extension<axum_keycloak_auth::decode::KeycloakToken<String>>,
+    Query(q): Query<LookupContractsQuery>,
+) -> Result<Json<LookupContractsResponse>, ApiError> {
+    if q.symbol.is_empty() {
+        return Err(ApiError::BadRequest("symbol is required".to_string()));
+    }
+
+    let connector = CoinPaprikaConnector::new();
+
+    // Step 1: bulk /v1/coins listing filtered by symbol (1 API call)
+    let matches = connector
+        .search_coins_by_symbol(&q.symbol)
+        .await
+        .map_err(|e| {
+            tracing::error!("CoinPaprika symbol search failed: {}", e);
+            ApiError::InternalServerError(format!("CoinPaprika lookup failed: {}", e))
+        })?;
+
+    let best_match = matches
+        .into_iter()
+        .next()
+        .ok_or(ApiError::NotFound)?;
+
+    // Step 2: targeted /v1/coins/{id} for contract details (1 API call)
+    let detail = connector
+        .fetch_coin_detail(&best_match.id)
+        .await
+        .map_err(|e| {
+            tracing::error!("CoinPaprika coin detail failed for {}: {}", best_match.id, e);
+            ApiError::InternalServerError(format!("CoinPaprika detail fetch failed: {}", e))
+        })?;
+
+    // Filter contracts to supported EVM chains only
+    let contracts: Vec<ChainContractEntry> = detail
+        .contracts
+        .iter()
+        .filter_map(|c| {
+            coinpaprika_platform_to_chain(&c.platform_type).map(|chain| ChainContractEntry {
+                chain: chain.to_string(),
+                contract_address: c.contract.clone(),
+            })
+        })
+        .collect();
+
+    tracing::info!(
+        "lookup-contracts for '{}': coin_id={}, {} supported chains found",
+        q.symbol,
+        best_match.id,
+        contracts.len()
+    );
+
+    Ok(Json(LookupContractsResponse {
+        symbol: detail.symbol,
+        coin_id: best_match.id,
+        coin_name: detail.name,
+        contracts,
+    }))
+}
+
 /// Create router for evm-tokens endpoints
 pub fn create_router() -> Router<DatabaseConnection> {
     Router::new()
@@ -431,6 +558,10 @@ pub fn create_router() -> Router<DatabaseConnection> {
         .route(
             "/api/v1/evm-tokens/sync-from-contracts",
             post(sync_tokens_from_contracts_handler),
+        )
+        .route(
+            "/api/v1/evm-tokens/lookup-contracts",
+            get(lookup_contracts_handler),
         )
 }
 

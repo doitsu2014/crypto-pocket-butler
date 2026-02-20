@@ -86,6 +86,7 @@ struct HealthResponse {
         handlers::evm_tokens::update_evm_token_handler,
         handlers::evm_tokens::delete_evm_token_handler,
         handlers::evm_tokens::sync_tokens_from_contracts_handler,
+        handlers::evm_tokens::lookup_contracts_handler,
     ),
     components(
         schemas(
@@ -125,6 +126,8 @@ struct HealthResponse {
             handlers::evm_tokens::CreateEvmTokenRequest,
             handlers::evm_tokens::UpdateEvmTokenRequest,
             handlers::evm_tokens::SyncFromContractsResponse,
+            handlers::evm_tokens::LookupContractsResponse,
+            handlers::evm_tokens::ChainContractEntry,
             handlers::error::ErrorResponse,
         )
     ),

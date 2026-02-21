@@ -16,6 +16,7 @@ function getChainDisplayName(chainId: string): string {
     optimism: 'Optimism',
     base: 'Base',
     bsc: 'BNB Chain',
+    solana: 'Solana',
   };
   return chainMap[chainId] || chainId;
 }
@@ -153,6 +154,16 @@ export default function AccountDetailClient() {
             <div>
               <label className="block text-sm font-medium text-slate-400 mb-1">Wallet Address</label>
               <p className="text-slate-200 font-mono break-all">{account.wallet_address}</p>
+            </div>
+          )}
+          {account.account_type === "wallet" && account.exchange_name === "solana" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-1">Network</label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <span className="inline-flex items-center text-xs px-3 py-1 rounded-full bg-violet-900/40 text-violet-300 border border-violet-500/40">
+                  Solana
+                </span>
+              </div>
             </div>
           )}
           {account.account_type === "exchange" && account.exchange_name && (

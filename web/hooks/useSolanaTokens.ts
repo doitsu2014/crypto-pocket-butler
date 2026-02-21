@@ -30,7 +30,7 @@ export function useSolanaTokens(isActive?: boolean) {
   return useQuery({
     queryKey: [...solanaTokenKeys.list(), { isActive }],
     queryFn: async () => {
-      return apiClient<SolanaToken[]>(`/api/v1/solana-tokens${params}`);
+      return apiClient<SolanaToken[]>(`/v1/solana-tokens${params}`);
     },
   });
 }
@@ -47,7 +47,7 @@ export function useCreateSolanaToken() {
 
   return useMutation({
     mutationFn: async (input: CreateSolanaTokenInput) => {
-      return apiClient<SolanaToken>("/api/v1/solana-tokens", {
+      return apiClient<SolanaToken>("/v1/solana-tokens", {
         method: "POST",
         body: input,
       });
@@ -66,7 +66,7 @@ export function useUpdateSolanaToken(tokenUuid: string) {
 
   return useMutation({
     mutationFn: async (input: UpdateSolanaTokenInput) => {
-      return apiClient<SolanaToken>(`/api/v1/solana-tokens/${tokenUuid}`, {
+      return apiClient<SolanaToken>(`/v1/solana-tokens/${tokenUuid}`, {
         method: "PUT",
         body: input,
       });
@@ -86,7 +86,7 @@ export function useDeleteSolanaToken() {
 
   return useMutation({
     mutationFn: async (tokenUuid: string) => {
-      return apiClient<void>(`/api/v1/solana-tokens/${tokenUuid}`, {
+      return apiClient<void>(`/v1/solana-tokens/${tokenUuid}`, {
         method: "DELETE",
       });
     },

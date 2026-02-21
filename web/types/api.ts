@@ -279,3 +279,27 @@ export interface UpdateEvmChainInput {
   rpc_url?: string;
   is_active?: boolean;
 }
+
+// ============================================================================
+// Solana Token Types
+// ============================================================================
+
+export interface SolanaToken {
+  id: string;
+  symbol: string;
+  mint_address: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSolanaTokenInput {
+  symbol: string;
+  mint_address: string;
+  is_active?: boolean;
+}
+
+export interface UpdateSolanaTokenInput {
+  symbol?: string;
+  is_active?: boolean;
+}

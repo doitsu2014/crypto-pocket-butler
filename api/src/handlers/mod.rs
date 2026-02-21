@@ -8,3 +8,4 @@ pub mod migrations;
 pub mod portfolios;
 pub mod recommendations;
 pub mod snapshots;
+pub mod solana_tokens;

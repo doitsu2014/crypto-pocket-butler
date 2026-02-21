@@ -3,8 +3,7 @@ pub mod evm;
 pub mod coinpaprika;
 // Legacy CoinGecko connector (deprecated in favor of CoinPaprika)
 // pub mod coingecko;
-// TODO: Solana connector temporarily disabled due to dependency conflicts
-// pub mod solana;
+pub mod solana;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

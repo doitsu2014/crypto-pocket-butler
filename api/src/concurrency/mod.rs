@@ -76,6 +76,14 @@ impl RateLimiter {
         )
     }
 
+    /// Create a rate limiter for Solana JSON-RPC calls
+    pub fn solana_rpc() -> Self {
+        Self::new(
+            3,                           // Max 3 concurrent requests
+            Duration::from_millis(100),  // 100ms delay for public RPC protection
+        )
+    }
+
     /// Acquire permission to make a request
     ///
     /// This will wait until a permit is available and then impose the minimum delay

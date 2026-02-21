@@ -92,6 +92,11 @@ struct HealthResponse {
         handlers::evm_chains::create_evm_chain_handler,
         handlers::evm_chains::update_evm_chain_handler,
         handlers::evm_chains::delete_evm_chain_handler,
+        handlers::solana_tokens::list_solana_tokens_handler,
+        handlers::solana_tokens::get_solana_token_handler,
+        handlers::solana_tokens::create_solana_token_handler,
+        handlers::solana_tokens::update_solana_token_handler,
+        handlers::solana_tokens::delete_solana_token_handler,
     ),
     components(
         schemas(
@@ -136,6 +141,9 @@ struct HealthResponse {
             handlers::evm_chains::EvmChainResponse,
             handlers::evm_chains::CreateEvmChainRequest,
             handlers::evm_chains::UpdateEvmChainRequest,
+            handlers::solana_tokens::SolanaTokenResponse,
+            handlers::solana_tokens::CreateSolanaTokenRequest,
+            handlers::solana_tokens::UpdateSolanaTokenRequest,
             handlers::error::ErrorResponse,
         )
     ),
@@ -150,6 +158,7 @@ struct HealthResponse {
         (name = "migrations", description = "Database migration endpoints"),
         (name = "evm-tokens", description = "EVM token registry – configurable list of ERC-20 tokens checked during wallet sync"),
         (name = "evm-chains", description = "EVM chain registry – configurable list of EVM chains with RPC URLs"),
+        (name = "solana-tokens", description = "Solana token registry – configurable list of SPL tokens checked during wallet sync"),
     ),
     info(
         title = "Crypto Pocket Butler API",
@@ -509,6 +518,8 @@ async fn main() {
         .merge(handlers::evm_tokens::create_router())
         // EVM chain registry API routes (admin only)
         .merge(handlers::evm_chains::create_router())
+        // Solana token registry API routes (admin only)
+        .merge(handlers::solana_tokens::create_router())
         .layer(admin_auth_layer);
 
     // Build application with public and protected routes

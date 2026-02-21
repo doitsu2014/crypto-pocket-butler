@@ -9,6 +9,7 @@ pub mod portfolio_allocations;
 pub mod portfolios;
 pub mod recommendations;
 pub mod snapshots;
+pub mod solana_tokens;
 pub mod users;
 
 pub use accounts::Entity as Accounts;
@@ -22,4 +23,5 @@ pub use portfolio_allocations::Entity as PortfolioAllocations;
 pub use portfolios::Entity as Portfolios;
 pub use recommendations::Entity as Recommendations;
 pub use snapshots::Entity as Snapshots;
+pub use solana_tokens::Entity as SolanaTokens;
 pub use users::Entity as Users;

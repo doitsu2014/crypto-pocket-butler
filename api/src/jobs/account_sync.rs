@@ -1,7 +1,5 @@
-use crate::connectors::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, ExchangeConnector};
-// TODO: Solana connector temporarily disabled due to dependency conflicts
-// use crate::connectors::solana::SolanaConnector;
-use crate::entities::{accounts, evm_chains, evm_tokens};
+use crate::connectors::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, solana::SolanaConnector, ExchangeConnector};
+use crate::entities::{accounts, evm_chains, evm_tokens, solana_tokens};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
@@ -111,13 +109,15 @@ pub async fn sync_account(
             // Otherwise, use EVM connector for all other chains
             match account.exchange_name.as_deref() {
                 Some("solana") => {
-                    // Solana support coming soon - dependency conflicts being resolved
-                    return Ok(SyncResult {
-                        account_id,
-                        success: false,
-                        error: Some("Solana support temporarily unavailable - coming in next update".to_string()),
-                        holdings_count: 0,
-                    });
+                    // Use SOLANA_RPC_URL env var; fall back to public mainnet endpoint
+                    let rpc_url = std::env::var("SOLANA_RPC_URL")
+                        .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string());
+                    let db_tokens = load_solana_tokens_from_db(db).await;
+                    Box::new(SolanaConnector::new(
+                        wallet_address.clone(),
+                        rpc_url,
+                        db_tokens,
+                    ))
                 }
                 _ => {
                     // Default to EVM chains (Ethereum, Arbitrum, Optimism, Base, BSC)
@@ -366,6 +366,44 @@ async fn load_rpc_urls_from_db(
         Err(e) => {
             tracing::warn!(
                 "Failed to load EVM chain RPC URLs from DB: {}, using hardcoded defaults",
+                e
+            );
+            None
+        }
+    }
+}
+
+/// Load active Solana SPL tokens from the database.
+///
+/// Returns `Some(vec)` of `(symbol, mint_address)` pairs when the table is reachable
+/// and contains rows. Falls back to `None` on any DB error so the Solana connector
+/// uses its built-in token list.
+async fn load_solana_tokens_from_db(
+    db: &DatabaseConnection,
+) -> Option<Vec<(String, String)>> {
+    match solana_tokens::Entity::find()
+        .filter(solana_tokens::Column::IsActive.eq(true))
+        .all(db)
+        .await
+    {
+        Ok(rows) if !rows.is_empty() => {
+            let pairs: Vec<(String, String)> = rows
+                .into_iter()
+                .map(|row| (row.symbol, row.mint_address))
+                .collect();
+            tracing::info!(
+                "Loaded {} active Solana tokens from DB",
+                pairs.len()
+            );
+            Some(pairs)
+        }
+        Ok(_) => {
+            tracing::warn!("solana_tokens table is empty, falling back to built-in token list");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to load Solana tokens from DB: {}, falling back to built-in token list",
                 e
             );
             None

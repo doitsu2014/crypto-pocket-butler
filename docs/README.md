@@ -13,10 +13,21 @@ Setup and configuration guides for getting started with the project.
 - **[SWAGGER_UI_GUIDE.md](./setup/SWAGGER_UI_GUIDE.md)** - API documentation interface guide
 
 ### 🏗️ [architecture/](./architecture/)
-Architecture decisions and design documentation.
+System architecture, design decisions, and service topology.
 
+- **[ARCHITECTURE.md](./architecture/ARCHITECTURE.md)** ⭐ - **Comprehensive architecture reference** (topology, tech stack, DB schema, request flows, jobs, connectors)
 - **[NAMING_CONVENTION.md](./architecture/NAMING_CONVENTION.md)** - Project naming conventions
 - **[TECHNICAL_DESIGN.md](./architecture/TECHNICAL_DESIGN.md)** - Overall technical design
+
+### 📐 [coding-guidelines/](./coding-guidelines/)
+Project-specific coding conventions for Rust and TypeScript/React.
+
+- **[CODING_GUIDELINES.md](./coding-guidelines/CODING_GUIDELINES.md)** ⭐ - **Comprehensive coding guidelines** (Rust patterns, TypeScript patterns, UI design rules, API conventions, migration rules)
+
+### 📋 [use-cases/](./use-cases/)
+End-to-end workflows for all user roles and system automation.
+
+- **[USE_CASES.md](./use-cases/USE_CASES.md)** ⭐ - **Complete use case & workflow reference** (authentication, account management, portfolio workflows, snapshots, rebalancing, admin, background jobs)
 
 ### ⚙️ [api/](./api/)
 API (Rust/Axum) specific documentation.
@@ -72,17 +83,20 @@ Project planning documents and roadmaps.
 
 ## 🚦 Quick Start
 
-1. **New to the project?** Start with the main [README.md](../README.md) in the root directory
+1. **New to the project?** Start with [architecture/ARCHITECTURE.md](./architecture/ARCHITECTURE.md) for the full system overview
 2. **Setting up for development?** Check [setup/DOCKER_SETUP.md](./setup/DOCKER_SETUP.md)
-3. **Working on web?** See [web/web-overview.md](./web/web-overview.md)
-4. **Working on api?** See [api/api-overview.md](./api/api-overview.md)
-5. **Understanding architecture?** Browse [architecture/](./architecture/)
+3. **Writing code?** Read [coding-guidelines/CODING_GUIDELINES.md](./coding-guidelines/CODING_GUIDELINES.md) first
+4. **Understanding user workflows?** See [use-cases/USE_CASES.md](./use-cases/USE_CASES.md)
+5. **Working on web?** See [web/web-overview.md](./web/web-overview.md)
+6. **Working on api?** See [api/api-overview.md](./api/api-overview.md)
 
 ## 📝 Contributing
 
 When adding new documentation:
 - Place setup guides in `setup/`
-- Place architectural decisions in `architecture/`
+- Place architectural decisions and system design in `architecture/`
+- Place coding standards and patterns in `coding-guidelines/`
+- Place use case and workflow documentation in `use-cases/`
 - Place API-specific docs in `api/`
 - Place web-specific docs in `web/`
 - Place implementation summaries in `development/`

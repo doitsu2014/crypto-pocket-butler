@@ -17,8 +17,8 @@ export default async function EvmChainsPage() {
         <div className="bg-slate-950/70 backdrop-blur-sm border-2 border-fuchsia-500/40 shadow-[0_0_40px_rgba(217,70,239,0.4)] rounded-2xl p-6">
           {/* Breadcrumb */}
           <div className="flex items-center gap-2 text-sm text-slate-400 mb-6">
-            <Link href="/settings" className="hover:text-fuchsia-300 transition-colors">
-              Settings
+            <Link href="/admin" className="hover:text-fuchsia-300 transition-colors">
+              Administration
             </Link>
             <span>/</span>
             <span className="text-slate-200">EVM Chains</span>

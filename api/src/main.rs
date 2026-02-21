@@ -87,6 +87,11 @@ struct HealthResponse {
         handlers::evm_tokens::delete_evm_token_handler,
         handlers::evm_tokens::sync_tokens_from_contracts_handler,
         handlers::evm_tokens::lookup_contracts_handler,
+        handlers::evm_chains::list_evm_chains_handler,
+        handlers::evm_chains::get_evm_chain_handler,
+        handlers::evm_chains::create_evm_chain_handler,
+        handlers::evm_chains::update_evm_chain_handler,
+        handlers::evm_chains::delete_evm_chain_handler,
     ),
     components(
         schemas(
@@ -128,6 +133,9 @@ struct HealthResponse {
             handlers::evm_tokens::SyncFromContractsResponse,
             handlers::evm_tokens::LookupContractsResponse,
             handlers::evm_tokens::ChainContractEntry,
+            handlers::evm_chains::EvmChainResponse,
+            handlers::evm_chains::CreateEvmChainRequest,
+            handlers::evm_chains::UpdateEvmChainRequest,
             handlers::error::ErrorResponse,
         )
     ),
@@ -141,6 +149,7 @@ struct HealthResponse {
         (name = "recommendations", description = "Portfolio recommendation endpoints"),
         (name = "migrations", description = "Database migration endpoints"),
         (name = "evm-tokens", description = "EVM token registry – configurable list of ERC-20 tokens checked during wallet sync"),
+        (name = "evm-chains", description = "EVM chain registry – configurable list of EVM chains with RPC URLs"),
     ),
     info(
         title = "Crypto Pocket Butler API",
@@ -485,6 +494,8 @@ async fn main() {
         .merge(handlers::jobs::create_router())
         // EVM token registry API routes (protected)
         .merge(handlers::evm_tokens::create_router())
+        // EVM chain registry API routes (protected)
+        .merge(handlers::evm_chains::create_router())
         .layer(auth_layer);
 
     // Build application with public and protected routes

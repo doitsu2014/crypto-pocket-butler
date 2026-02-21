@@ -48,3 +48,21 @@ export {
   useChains,
   chainKeys,
 } from "./useChains";
+
+// EVM Token hooks
+export {
+  useEvmTokens,
+  useCreateEvmToken,
+  useUpdateEvmToken,
+  useDeleteEvmToken,
+  evmTokenKeys,
+} from "./useEvmTokens";
+
+// EVM Chain hooks
+export {
+  useEvmChains,
+  useCreateEvmChain,
+  useUpdateEvmChain,
+  useDeleteEvmChain,
+  evmChainKeys,
+} from "./useEvmChains";

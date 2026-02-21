@@ -229,35 +229,44 @@ pub struct EvmConnector {
     /// When `Some`, these are used instead of `get_common_tokens()`.
     /// Key: chain name (e.g. "ethereum"), Value: [(symbol, contract_address)]
     custom_tokens: Option<HashMap<String, Vec<(String, String)>>>,
+    /// Per-chain RPC URL overrides sourced from the `evm_chains` DB table.
+    /// Key: chain name (e.g. "ethereum"), Value: RPC URL string.
+    /// Falls back to `EvmChain::rpc_url()` for chains not present in this map.
+    rpc_urls: HashMap<String, String>,
 }
 
 impl EvmConnector {
     /// Create a new EVM connector for a wallet address using the built-in token list.
-    /// 
+    ///
     /// # Arguments
     /// * `wallet_address` - The wallet address to fetch balances for (hex string)
     /// * `chains` - List of EVM chains to check (defaults to Ethereum mainnet if empty)
     pub fn new(wallet_address: String, chains: Vec<EvmChain>) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        Self::new_with_tokens(wallet_address, chains, None)
+        Self::new_with_tokens(wallet_address, chains, None, None)
     }
 
-    /// Create a new EVM connector with a custom per-chain token list sourced from the database.
+    /// Create a new EVM connector with custom per-chain token lists and RPC URLs from the database.
     ///
     /// When `custom_tokens` is `Some`, it fully replaces `get_common_tokens()` for every chain
-    /// that has an entry.  Chains without an entry fall back to the built-in list.
+    /// that has an entry. Chains without an entry fall back to the built-in list.
+    ///
+    /// When `custom_rpc_urls` is `Some`, those URLs are used instead of the hardcoded defaults
+    /// in `EvmChain::rpc_url()`. Chains not present in the map use their hardcoded default.
     ///
     /// # Arguments
     /// * `wallet_address` - The wallet address to fetch balances for (hex string)
     /// * `chains` - List of EVM chains to check (defaults to Ethereum mainnet if empty)
-    /// * `custom_tokens` - Optional per-chain token map from the database
+    /// * `custom_tokens` - Optional per-chain token map from the `evm_tokens` DB table
+    /// * `custom_rpc_urls` - Optional per-chain RPC URL map from the `evm_chains` DB table
     pub fn new_with_tokens(
         wallet_address: String,
         chains: Vec<EvmChain>,
         custom_tokens: Option<HashMap<String, Vec<(String, String)>>>,
+        custom_rpc_urls: Option<HashMap<String, String>>,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let addr = wallet_address.parse::<Address>()
             .map_err(|e| format!("Invalid wallet address: {}", e))?;
-        
+
         let chains = if chains.is_empty() {
             vec![EvmChain::Ethereum]
         } else {
@@ -268,6 +277,7 @@ impl EvmConnector {
             wallet_address: addr,
             chains,
             custom_tokens,
+            rpc_urls: custom_rpc_urls.unwrap_or_default(),
         })
     }
 }
@@ -302,31 +312,36 @@ impl ExchangeConnector for EvmConnector {
                     .map(|(s, a)| (s.to_string(), a.to_string()))
                     .collect()
             };
-            
+            // Resolve RPC URL: DB-sourced value takes priority over the hardcoded default
+            let rpc_url = self.rpc_urls
+                .get(chain.name())
+                .cloned()
+                .unwrap_or_else(|| chain.rpc_url().to_string());
+
             async move {
                 // Acquire rate limit permit
                 let _permit = rate_limiter.acquire().await.ok()?;
-                
+
                 tracing::info!("Checking {} chain ({} tokens)", chain.name(), chain_tokens.len());
                 let mut chain_balances = Vec::new();
-                
+
                 // Fetch native balance
-                match fetch_native_balance_for_chain(&wallet_address, &chain).await {
+                match fetch_native_balance_for_chain(&wallet_address, &chain, &rpc_url).await {
                     Ok(Some(balance)) => chain_balances.push(balance),
                     Ok(None) => {},
                     Err(e) => {
                         tracing::error!("Failed to fetch native balance on {}: {}", chain.name(), e);
                     }
                 }
-                
+
                 // Fetch token balances using the resolved token list
-                match fetch_token_balances_for_chain(&wallet_address, &chain, &chain_tokens).await {
+                match fetch_token_balances_for_chain(&wallet_address, &chain, &chain_tokens, &rpc_url).await {
                     Ok(balances) => chain_balances.extend(balances),
                     Err(e) => {
                         tracing::error!("Failed to fetch token balances on {}: {}", chain.name(), e);
                     }
                 }
-                
+
                 Some(chain_balances)
             }
         }).collect();
@@ -351,8 +366,9 @@ impl ExchangeConnector for EvmConnector {
 async fn fetch_native_balance_for_chain(
     wallet_address: &str,
     chain: &EvmChain,
+    rpc_url: &str,
 ) -> Result<Option<Balance>, Box<dyn Error + Send + Sync>> {
-    let provider = ProviderBuilder::new().connect_http(chain.rpc_url().parse()?);
+    let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
     let address: Address = wallet_address.parse()?;
     
     let balance = provider.get_balance(address).await?;
@@ -381,8 +397,9 @@ async fn fetch_token_balances_for_chain(
     wallet_address: &str,
     chain: &EvmChain,
     token_list: &[(String, String)],
+    rpc_url: &str,
 ) -> Result<Vec<Balance>, Box<dyn Error + Send + Sync>> {
-    let provider = ProviderBuilder::new().connect_http(chain.rpc_url().parse()?);
+    let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
     let wallet_address: Address = wallet_address.parse()?;
     
     let mut balances = Vec::new();
@@ -501,6 +518,7 @@ mod tests {
             "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045".to_string(),
             vec![EvmChain::Ethereum],
             Some(custom),
+            None,
         );
         assert!(result.is_ok());
         let connector = result.unwrap();

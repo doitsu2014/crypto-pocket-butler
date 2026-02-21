@@ -1,7 +1,7 @@
 use crate::connectors::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, ExchangeConnector};
 // TODO: Solana connector temporarily disabled due to dependency conflicts
 // use crate::connectors::solana::SolanaConnector;
-use crate::entities::{accounts, evm_tokens};
+use crate::entities::{accounts, evm_chains, evm_tokens};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
@@ -160,8 +160,11 @@ pub async fn sync_account(
                     // Load token list from DB; fall back to built-in list on error
                     let db_tokens = load_tokens_from_db(db).await;
 
-                    // Create EVM connector with DB-sourced token list
-                    match EvmConnector::new_with_tokens(wallet_address.clone(), chains, db_tokens) {
+                    // Load RPC URLs from DB; fall back to hardcoded defaults on error
+                    let db_rpc_urls = load_rpc_urls_from_db(db).await;
+
+                    // Create EVM connector with DB-sourced token list and RPC URLs
+                    match EvmConnector::new_with_tokens(wallet_address.clone(), chains, db_tokens, db_rpc_urls) {
                         Ok(connector) => Box::new(connector),
                         Err(e) => {
                             return Ok(SyncResult {
@@ -326,6 +329,43 @@ async fn load_tokens_from_db(
         Err(e) => {
             tracing::warn!(
                 "Failed to load EVM tokens from DB: {}, falling back to built-in token list",
+                e
+            );
+            None
+        }
+    }
+}
+
+/// Load active EVM chain RPC URLs from the database.
+///
+/// Returns `Some(map)` where key = `chain_id` (e.g. "ethereum") and value = RPC URL string.
+/// Falls back to `None` on any DB error so the EVM connector uses its hardcoded defaults.
+async fn load_rpc_urls_from_db(
+    db: &DatabaseConnection,
+) -> Option<HashMap<String, String>> {
+    match evm_chains::Entity::find()
+        .filter(evm_chains::Column::IsActive.eq(true))
+        .all(db)
+        .await
+    {
+        Ok(rows) if !rows.is_empty() => {
+            let map: HashMap<String, String> = rows
+                .into_iter()
+                .map(|row| (row.chain_id, row.rpc_url))
+                .collect();
+            tracing::info!(
+                "Loaded RPC URLs for {} active EVM chains from DB",
+                map.len()
+            );
+            Some(map)
+        }
+        Ok(_) => {
+            tracing::warn!("evm_chains table is empty, using hardcoded RPC URLs");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to load EVM chain RPC URLs from DB: {}, using hardcoded defaults",
                 e
             );
             None

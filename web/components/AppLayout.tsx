@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { SignOutButton } from "./SignOutButton";
 
 interface AppLayoutProps {
@@ -9,7 +10,13 @@ interface AppLayoutProps {
   userEmail?: string | null;
 }
 
-const navigation = [
+const navigation: {
+  name: string;
+  href: string;
+  matchExact: boolean;
+  adminOnly?: boolean;
+  icon: React.ReactNode;
+}[] = [
   {
     name: "Dashboard",
     href: "/dashboard",
@@ -55,6 +62,7 @@ const navigation = [
     name: "Administration",
     href: "/admin",
     matchExact: false,
+    adminOnly: true,
     icon: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -65,8 +73,14 @@ const navigation = [
 
 export default function AppLayout({ children, userEmail }: AppLayoutProps) {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const isAdmin = session?.roles?.includes("administrator") ?? false;
 
-  const isActive = (item: typeof navigation[0]) => {
+  const visibleNavigation = navigation.filter(
+    (item) => !item.adminOnly || isAdmin
+  );
+
+  const isActive = (item: (typeof navigation)[0]) => {
     if (!pathname) return false;
     
     if (item.matchExact) {
@@ -119,7 +133,7 @@ export default function AppLayout({ children, userEmail }: AppLayoutProps) {
         {/* Sidebar */}
         <aside className="relative w-64 min-h-[calc(100vh-4rem)] bg-slate-950/60 backdrop-blur-sm border-r-2 border-fuchsia-500/20" aria-label="Main navigation sidebar">
           <nav className="p-4 space-y-2" aria-label="Main navigation">
-            {navigation.map((item) => {
+            {visibleNavigation.map((item) => {
               const active = isActive(item);
               return (
                 <Link

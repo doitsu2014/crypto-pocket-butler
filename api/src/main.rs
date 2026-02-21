@@ -466,16 +466,25 @@ async fn main() {
     // Initialize Keycloak auth instance with OIDC discovery
     let keycloak_auth_instance = Arc::new(KeycloakAuthInstance::new(keycloak_config));
 
-    // Build the Keycloak auth layer
+    // Build the Keycloak auth layer — any authenticated user
     let auth_layer = KeycloakAuthLayer::<String>::builder()
         .instance(keycloak_auth_instance.clone())
         .passthrough_mode(PassthroughMode::Block)
         .persist_raw_claims(false)
-        .expected_audiences(vec![client_id])
+        .expected_audiences(vec![client_id.clone()])
         .required_roles(vec![]) // No required roles for basic authentication
         .build();
 
-    // Build protected routes that require authentication
+    // Build the admin auth layer — requires the "administrator" Keycloak realm role
+    let admin_auth_layer = KeycloakAuthLayer::<String>::builder()
+        .instance(keycloak_auth_instance.clone())
+        .passthrough_mode(PassthroughMode::Block)
+        .persist_raw_claims(false)
+        .expected_audiences(vec![client_id])
+        .required_roles(vec!["administrator".to_string()])
+        .build();
+
+    // Build protected routes that require authentication (any authenticated user)
     let protected_routes = Router::new()
         // Protected routes that require authentication
         .route("/api/me", get(get_user_info))
@@ -490,13 +499,17 @@ async fn main() {
         .merge(handlers::recommendations::create_router())
         // Migration API routes (protected)
         .merge(handlers::migrations::create_router())
-        // Job management API routes (protected)
-        .merge(handlers::jobs::create_router())
-        // EVM token registry API routes (protected)
-        .merge(handlers::evm_tokens::create_router())
-        // EVM chain registry API routes (protected)
-        .merge(handlers::evm_chains::create_router())
         .layer(auth_layer);
+
+    // Build admin-only routes — require the "administrator" Keycloak realm role
+    let admin_routes = Router::new()
+        // Job management API routes (admin only)
+        .merge(handlers::jobs::create_router())
+        // EVM token registry API routes (admin only)
+        .merge(handlers::evm_tokens::create_router())
+        // EVM chain registry API routes (admin only)
+        .merge(handlers::evm_chains::create_router())
+        .layer(admin_auth_layer);
 
     // Build application with public and protected routes
     // Axum handles concurrent requests efficiently using Tokio's async runtime
@@ -511,6 +524,8 @@ async fn main() {
         .merge(handlers::chains::create_router())
         // Merge protected routes
         .merge(protected_routes)
+        // Merge admin-only routes
+        .merge(admin_routes)
         // Apply database state to all routes
         .with_state(db);
 

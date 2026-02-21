@@ -3,6 +3,7 @@ import "./globals.css";
 import { ToastProvider } from "@/contexts/ToastContext";
 import ToastContainer from "@/components/Toast";
 import { QueryClientProvider } from "@/contexts/QueryClientProvider";
+import SessionProviderWrapper from "@/components/SessionProviderWrapper";
 
 export const metadata: Metadata = {
   title: "Crypto Pocket Butler",
@@ -17,12 +18,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <QueryClientProvider>
-          <ToastProvider>
-            {children}
-            <ToastContainer />
-          </ToastProvider>
-        </QueryClientProvider>
+        <SessionProviderWrapper>
+          <QueryClientProvider>
+            <ToastProvider>
+              {children}
+              <ToastContainer />
+            </ToastProvider>
+          </QueryClientProvider>
+        </SessionProviderWrapper>
       </body>
     </html>
   );

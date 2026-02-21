@@ -11,6 +11,10 @@ export default async function EvmChainsPage() {
     redirect("/auth/signin");
   }
 
+  if (!session.roles?.includes("administrator")) {
+    redirect("/dashboard");
+  }
+
   return (
     <AppLayout userEmail={session.user.email}>
       <div className="max-w-4xl">

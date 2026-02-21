@@ -2,6 +2,21 @@ import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
 
 /**
+ * Decode a JWT payload and extract Keycloak realm roles.
+ * No signature verification — the token is already validated by Keycloak/NextAuth.
+ */
+function extractRealmRoles(accessToken: string): string[] {
+  try {
+    const payload = JSON.parse(
+      Buffer.from(accessToken.split(".")[1], "base64").toString("utf-8")
+    );
+    return (payload.realm_access?.roles as string[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Refresh the access token using the refresh token
  */
 async function refreshAccessToken(token: any) {
@@ -31,6 +46,7 @@ async function refreshAccessToken(token: any) {
       expiresAt: Math.floor(Date.now() / 1000) + refreshedTokens.expires_in,
       refreshToken: refreshedTokens.refresh_token ?? token.refreshToken, // Fall back to old refresh token
       idToken: refreshedTokens.id_token ?? token.idToken,
+      roles: extractRealmRoles(refreshedTokens.access_token),
     };
   } catch (error) {
     console.error("Error refreshing access token", error);
@@ -65,6 +81,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at;
         token.issuedAt = Math.floor(Date.now() / 1000);
+        token.roles = extractRealmRoles(account.access_token!);
         return token;
       }
 
@@ -92,6 +109,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       session.accessToken = token.accessToken as string;
       session.idToken = token.idToken as string;
       session.error = token.error as string | undefined;
+      session.roles = token.roles as string[] | undefined;
       return session;
     },
   },

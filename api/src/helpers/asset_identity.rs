@@ -30,11 +30,12 @@ use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, QueryOr
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Known EVM chain identifiers used for chain-specific symbol parsing
-/// 
+/// Known chain identifiers used for chain-specific symbol parsing
+///
 /// This constant is used when parsing symbols in the format "SYMBOL-CHAIN"
 /// to distinguish chain suffixes from legitimate hyphenated asset symbols.
-const KNOWN_EVM_CHAINS: &[&str] = &["ethereum", "arbitrum", "optimism", "base", "bsc"];
+/// Includes both EVM chains and other supported chains (e.g. Solana).
+const KNOWN_CHAIN_SUFFIXES: &[&str] = &["ethereum", "arbitrum", "optimism", "base", "bsc", "solana"];
 
 /// Represents a canonical asset identity
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,7 +475,7 @@ impl AssetIdentityNormalizer {
         if let Some((base_symbol, chain_suffix)) = symbol.rsplit_once('-') {
             // Check if the suffix is a known chain (case-insensitive)
             let chain_lower = chain_suffix.to_lowercase();
-            if KNOWN_EVM_CHAINS.contains(&chain_lower.as_str()) {
+            if KNOWN_CHAIN_SUFFIXES.contains(&chain_lower.as_str()) {
                 tracing::debug!(
                     "Detected chain-specific symbol: {} on chain {}",
                     base_symbol, chain_suffix
@@ -696,6 +697,35 @@ mod tests {
         assert!(json.is_ok());
     }
     
+    #[test]
+    fn test_known_chain_suffixes_includes_solana() {
+        // Solana must be in the list so "SOL-solana" and "USDC-solana" parse correctly
+        assert!(KNOWN_CHAIN_SUFFIXES.contains(&"solana"));
+        // EVM chains must still be present
+        assert!(KNOWN_CHAIN_SUFFIXES.contains(&"ethereum"));
+        assert!(KNOWN_CHAIN_SUFFIXES.contains(&"arbitrum"));
+        assert!(KNOWN_CHAIN_SUFFIXES.contains(&"optimism"));
+        assert!(KNOWN_CHAIN_SUFFIXES.contains(&"base"));
+        assert!(KNOWN_CHAIN_SUFFIXES.contains(&"bsc"));
+    }
+
+    #[test]
+    fn test_solana_symbol_chain_split() {
+        // Verify that "SOL-solana" and "USDC-solana" split correctly
+        // so the normalizer will extract the base symbol before querying the DB
+        for asset_name in &["SOL-solana", "USDC-solana", "BONK-solana"] {
+            let (base, suffix) = asset_name.rsplit_once('-').expect("should contain '-'");
+            let chain_lower = suffix.to_lowercase();
+            assert!(
+                KNOWN_CHAIN_SUFFIXES.contains(&chain_lower.as_str()),
+                "suffix '{}' from '{}' must be a known chain suffix",
+                suffix,
+                asset_name
+            );
+            assert!(!base.is_empty(), "base symbol must not be empty for '{}'", asset_name);
+        }
+    }
+
     #[test]
     fn test_normalization_result_variants() {
         // Test Mapped variant

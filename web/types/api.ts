@@ -108,6 +108,13 @@ export interface CreateWalletAccountInput {
   enabled_chains?: string[];
 }
 
+export interface CreateSolanaWalletAccountInput {
+  name: string;
+  account_type: "wallet";
+  wallet_address: string;
+  exchange_name: "solana";
+}
+
 export interface CreateExchangeAccountInput {
   name: string;
   account_type: "exchange";
@@ -117,7 +124,10 @@ export interface CreateExchangeAccountInput {
   passphrase?: string;
 }
 
-export type CreateAccountInput = CreateWalletAccountInput | CreateExchangeAccountInput;
+export type CreateAccountInput =
+  | CreateWalletAccountInput
+  | CreateSolanaWalletAccountInput
+  | CreateExchangeAccountInput;
 
 export interface SyncAccountResult {
   account_id: string;
@@ -277,5 +287,29 @@ export interface CreateEvmChainInput {
 export interface UpdateEvmChainInput {
   name?: string;
   rpc_url?: string;
+  is_active?: boolean;
+}
+
+// ============================================================================
+// Solana Token Types
+// ============================================================================
+
+export interface SolanaToken {
+  id: string;
+  symbol: string;
+  mint_address: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSolanaTokenInput {
+  symbol: string;
+  mint_address: string;
+  is_active?: boolean;
+}
+
+export interface UpdateSolanaTokenInput {
+  symbol?: string;
   is_active?: boolean;
 }

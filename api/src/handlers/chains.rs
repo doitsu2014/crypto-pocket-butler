@@ -2,10 +2,10 @@ use axum::{routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Supported EVM chain information
+/// Supported chain information
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct ChainInfo {
-    /// Chain identifier (e.g., "ethereum", "arbitrum")
+    /// Chain identifier (e.g., "ethereum", "solana")
     pub id: String,
     /// Human-readable chain name
     pub name: String,
@@ -16,14 +16,15 @@ pub struct ChainInfo {
 /// Response containing list of supported chains
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ListChainsResponse {
-    /// List of supported EVM chains
+    /// List of supported chains
     pub chains: Vec<ChainInfo>,
 }
 
-/// List all supported EVM chains
+/// List all supported chains
 ///
-/// Returns a list of EVM chains that can be selected for wallet accounts.
-/// These chains are used in the `enabled_chains` field when creating or updating wallet accounts.
+/// Returns a list of chains that can be selected for wallet accounts.
+/// EVM chains are used in the `enabled_chains` field when creating or updating wallet accounts.
+/// Solana wallets use `exchange_name: "solana"` with no `enabled_chains` needed.
 #[utoipa::path(
     get,
     path = "/v1/chains",
@@ -59,6 +60,11 @@ pub async fn list_supported_chains() -> Json<ListChainsResponse> {
             name: "BNB Smart Chain".to_string(),
             native_symbol: "BNB".to_string(),
         },
+        ChainInfo {
+            id: "solana".to_string(),
+            name: "Solana".to_string(),
+            native_symbol: "SOL".to_string(),
+        },
     ];
 
     Json(ListChainsResponse { chains })
@@ -81,9 +87,9 @@ mod tests {
         let response = list_supported_chains().await;
         let chains_response = response.0;
         
-        // Should return 5 chains
-        assert_eq!(chains_response.chains.len(), 5);
-        
+        // Should return 6 chains (5 EVM + Solana)
+        assert_eq!(chains_response.chains.len(), 6);
+
         // Verify all expected chains are present
         let chain_ids: Vec<String> = chains_response.chains.iter().map(|c| c.id.clone()).collect();
         assert!(chain_ids.contains(&"ethereum".to_string()));
@@ -91,6 +97,7 @@ mod tests {
         assert!(chain_ids.contains(&"optimism".to_string()));
         assert!(chain_ids.contains(&"base".to_string()));
         assert!(chain_ids.contains(&"bsc".to_string()));
+        assert!(chain_ids.contains(&"solana".to_string()));
         
         // Verify specific chain details
         let ethereum = chains_response.chains.iter().find(|c| c.id == "ethereum").unwrap();

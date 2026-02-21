@@ -5,6 +5,7 @@ mod m20240101_000002_create_assets_system;
 mod m20260219_000002_normalize_holdings;
 mod m20260220_000001_create_evm_tokens;
 mod m20260220_000002_create_evm_chains;
+mod m20260221_000001_create_solana_tokens;
 
 pub struct Migrator;
 
@@ -17,6 +18,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260219_000002_normalize_holdings::Migration),
             Box::new(m20260220_000001_create_evm_tokens::Migration),
             Box::new(m20260220_000002_create_evm_chains::Migration),
+            Box::new(m20260221_000001_create_solana_tokens::Migration),
         ]
     }
 }

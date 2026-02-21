@@ -10,7 +10,7 @@ import ErrorAlert from "@/components/ErrorAlert";
 import { useAccounts, useCreateAccount, useSyncAccount, useDeleteAccount } from "@/hooks";
 import type { CreateAccountInput } from "@/types/api";
 
-type AccountFormType = "wallet" | "exchange" | null;
+type AccountFormType = "wallet" | "solana" | "exchange" | null;
 
 // Helper function to get user-friendly chain name
 function getChainDisplayName(chainId: string): string {
@@ -20,6 +20,7 @@ function getChainDisplayName(chainId: string): string {
     optimism: 'Optimism',
     base: 'Base',
     bsc: 'BNB Chain',
+    solana: 'Solana',
   };
   return chainMap[chainId] || chainId;
 }
@@ -46,6 +47,10 @@ export default function AccountsClient() {
     name: "",
     wallet_address: "",
     enabled_chains: [] as string[],
+  });
+  const [solanaFormData, setSolanaFormData] = useState({
+    name: "",
+    wallet_address: "",
   });
   const [exchangeFormData, setExchangeFormData] = useState({
     name: "",
@@ -93,6 +98,32 @@ export default function AccountsClient() {
       setFormType(null);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to create wallet";
+      toast.error(message);
+    }
+  }
+
+  async function handleCreateSolana(e: React.FormEvent) {
+    e.preventDefault();
+    if (!solanaFormData.name.trim() || !solanaFormData.wallet_address.trim()) {
+      toast.error("Name and wallet address are required");
+      return;
+    }
+
+    try {
+      await createAccount.mutateAsync({
+        name: solanaFormData.name.trim(),
+        account_type: "wallet",
+        wallet_address: solanaFormData.wallet_address.trim(),
+        exchange_name: "solana",
+      });
+
+      toast.success("Solana wallet created successfully!");
+
+      setSolanaFormData({ name: "", wallet_address: "" });
+      setShowCreateForm(false);
+      setFormType(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to create Solana wallet";
       toast.error(message);
     }
   }
@@ -210,6 +241,7 @@ export default function AccountsClient() {
   function closeForm() {
     setShowCreateForm(false);
     setFormType(null);
+    setSolanaFormData({ name: "", wallet_address: "" });
   }
 
   return (
@@ -269,7 +301,7 @@ export default function AccountsClient() {
               <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
                 Select Account Type
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <button
                   onClick={() => setFormType("wallet")}
                   className="p-6 bg-slate-900/50 border-2 border-violet-500/50 rounded-xl hover:border-fuchsia-500 hover:bg-slate-800/70 transition-all group"
@@ -279,6 +311,16 @@ export default function AccountsClient() {
                   </svg>
                   <h4 className="text-lg font-bold text-fuchsia-300 mb-1">EVM Wallet</h4>
                   <p className="text-sm text-slate-400">Ethereum, BSC, Arbitrum, etc.</p>
+                </button>
+                <button
+                  onClick={() => setFormType("solana")}
+                  className="p-6 bg-slate-900/50 border-2 border-violet-500/50 rounded-xl hover:border-fuchsia-500 hover:bg-slate-800/70 transition-all group"
+                >
+                  <svg className="w-12 h-12 mx-auto mb-3 text-violet-400 group-hover:text-fuchsia-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <h4 className="text-lg font-bold text-fuchsia-300 mb-1">Solana Wallet</h4>
+                  <p className="text-sm text-slate-400">SOL &amp; SPL tokens</p>
                 </button>
                 <button
                   onClick={() => setFormType("exchange")}
@@ -379,6 +421,59 @@ export default function AccountsClient() {
                     className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
                   >
                     {createAccount.isPending ? "Creating..." : "Create Wallet"}
+                  </LoadingButton>
+                  <button
+                    type="button"
+                    onClick={closeForm}
+                    className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </>
+          ) : formType === "solana" ? (
+            <>
+              <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
+                Add Solana Wallet
+              </h3>
+              <form onSubmit={handleCreateSolana} className="space-y-4">
+                <div>
+                  <label htmlFor="solana-name" className="block text-sm font-medium text-slate-300 mb-2">
+                    Wallet Name <span className="text-fuchsia-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="solana-name"
+                    value={solanaFormData.name}
+                    onChange={(e) => setSolanaFormData({ ...solanaFormData, name: e.target.value })}
+                    placeholder="e.g., My Solana Wallet"
+                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="solana-address" className="block text-sm font-medium text-slate-300 mb-2">
+                    Wallet Address <span className="text-fuchsia-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="solana-address"
+                    value={solanaFormData.wallet_address}
+                    onChange={(e) => setSolanaFormData({ ...solanaFormData, wallet_address: e.target.value })}
+                    placeholder="e.g. 5YNmS1R9nNSCDzb5a7mMJ1dwK9uHeAAF4CmPEwKgVWr8"
+                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                    required
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <LoadingButton
+                    type="submit"
+                    loading={createAccount.isPending}
+                    disabled={createAccount.isPending}
+                    className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
+                  >
+                    {createAccount.isPending ? "Creating..." : "Create Solana Wallet"}
                   </LoadingButton>
                   <button
                     type="button"
@@ -547,15 +642,22 @@ export default function AccountsClient() {
               {account.account_type === "wallet" && account.wallet_address && (
                 <>
                   <p className="text-slate-400 text-xs mb-2 font-mono break-all">
-                    {account.wallet_address.length > 18 
+                    {account.wallet_address.length > 18
                       ? `${account.wallet_address.slice(0, 10)}...${account.wallet_address.slice(-8)}`
                       : account.wallet_address
                     }
                   </p>
+                  {account.exchange_name === "solana" && (
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      <span className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-500/40">
+                        Solana
+                      </span>
+                    </div>
+                  )}
                   {account.enabled_chains && account.enabled_chains.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-3">
                       {account.enabled_chains.map((chain) => (
-                        <span 
+                        <span
                           key={chain}
                           className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-500/40"
                         >

@@ -66,6 +66,32 @@ export default async function AdminPage() {
                 </Link>
               </div>
             </div>
+
+            {/* Solana Configuration Section */}
+            <div>
+              <h3 className="text-xl font-bold text-emerald-300 mb-4 drop-shadow-[0_0_15px_rgba(52,211,153,0.6)]">
+                Solana Configuration
+              </h3>
+              <p className="text-slate-400 text-sm mb-4">
+                Manage the SPL token registry used during Solana wallet account synchronisation.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Link
+                  href="/admin/solana-tokens"
+                  className="group flex items-start gap-4 p-4 rounded-xl bg-slate-900/50 border border-slate-700/40 hover:border-fuchsia-500/50 hover:bg-slate-900/70 transition-all"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500/30 to-teal-500/30 flex items-center justify-center shrink-0 group-hover:from-emerald-500/50 group-hover:to-teal-500/50 transition-all">
+                    <svg className="w-5 h-5 text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-100 group-hover:text-fuchsia-200 transition-colors">Solana Tokens</p>
+                    <p className="text-slate-400 text-sm mt-0.5">Manage SPL tokens tracked during sync</p>
+                  </div>
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </div>

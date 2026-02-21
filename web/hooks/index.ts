@@ -66,3 +66,12 @@ export {
   useDeleteEvmChain,
   evmChainKeys,
 } from "./useEvmChains";
+
+// Solana Token hooks
+export {
+  useSolanaTokens,
+  useCreateSolanaToken,
+  useUpdateSolanaToken,
+  useDeleteSolanaToken,
+  solanaTokenKeys,
+} from "./useSolanaTokens";

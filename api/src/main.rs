@@ -147,7 +147,7 @@ struct HealthResponse {
             handlers::error::ErrorResponse,
         )
     ),
-    modifiers(&SecurityAddon),
+    modifiers(&SecurityAddon, &ServerAddon),
     tags(
         (name = "crypto-pocket-butler", description = "Crypto Pocket Butler API endpoints"),
         (name = "portfolios", description = "Portfolio management endpoints"),
@@ -171,16 +171,47 @@ struct HealthResponse {
         3. **OAuth2 Authorization Code**: Authenticate using client ID via authorization code flow (for user authentication)\n\n\
         To use OAuth2 flows in Swagger UI, click the 'Authorize' button and enter your Keycloak credentials.",
     ),
-    servers(
-        (url = "http://localhost:3001", description = "Local development server (standalone)"),
-        (url = "http://localhost:3000", description = "Docker backend server")
-    )
 )]
 struct ApiDoc;
 
 use utoipa::Modify;
 
 struct SecurityAddon;
+
+struct ServerAddon;
+
+impl Modify for ServerAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let mut servers = Vec::new();
+
+        // If a public URL is configured (e.g. via nginx domain mapping), put it first
+        // so Swagger UI uses it as the default server.
+        // Set API_PUBLIC_URL=https://api.yourdomain.com in your deployment environment.
+        if let Ok(url) = std::env::var("API_PUBLIC_URL") {
+            servers.push(
+                utoipa::openapi::ServerBuilder::new()
+                    .url(url)
+                    .description(Some("Deployed server"))
+                    .build(),
+            );
+        }
+
+        servers.push(
+            utoipa::openapi::ServerBuilder::new()
+                .url("http://localhost:3001")
+                .description(Some("Local development server (standalone)"))
+                .build(),
+        );
+        servers.push(
+            utoipa::openapi::ServerBuilder::new()
+                .url("http://localhost:3000")
+                .description(Some("Docker backend server"))
+                .build(),
+        );
+
+        openapi.servers = Some(servers);
+    }
+}
 
 impl Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {

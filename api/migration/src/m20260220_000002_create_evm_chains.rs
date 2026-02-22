@@ -1,5 +1,5 @@
+use sea_orm::{sea_query::Values, DbBackend, Statement};
 use sea_orm_migration::{prelude::*, schema::*};
-use sea_orm::{Statement, DbBackend, sea_query::Values};
 
 /// Creates the `evm_chains` table and seeds it with default EVM chain configurations.
 ///
@@ -10,11 +10,25 @@ pub struct Migration;
 
 /// Default chain seeds: (chain_id, name, rpc_url)
 const SEED_CHAINS: &[(&str, &str, &str)] = &[
-    ("ethereum",  "Ethereum",        "https://eth.llamarpc.com"),
-    ("arbitrum",  "Arbitrum",        "https://arbitrum.llamarpc.com"),
-    ("optimism",  "Optimism",        "https://optimism.llamarpc.com"),
-    ("base",      "Base",            "https://base.llamarpc.com"),
-    ("bsc",       "BNB Smart Chain", "https://bsc-dataseed.bnbchain.org"),
+    ("ethereum", "Ethereum", "https://eth.llamarpc.com"),
+    ("arbitrum", "Arbitrum", "https://arb1.arbitrum.io/rpc"),
+    (
+        "optimism",
+        "Optimism",
+        "https://optimism-rpc.publicnode.com",
+    ),
+    ("base", "Base", "https://base.llamarpc.com"),
+    (
+        "bsc",
+        "BNB Smart Chain",
+        "https://bsc-dataseed.bnbchain.org",
+    ),
+    (
+        "hyper_liquid",
+        "Hyper Liquid",
+        "https://rpc.hyperliquid.xyz/evm",
+    ),
+    ("mantle", "Mantle", "https://rpc.mantle.xyz"),
 ];
 
 #[async_trait::async_trait]
@@ -77,11 +91,7 @@ impl MigrationTrait for Migration {
                 "INSERT INTO evm_chains (chain_id, name, rpc_url, is_active) \
                  VALUES ($1, $2, $3, true) \
                  ON CONFLICT (chain_id) DO NOTHING",
-                Values(vec![
-                    (*chain_id).into(),
-                    (*name).into(),
-                    (*rpc_url).into(),
-                ]),
+                Values(vec![(*chain_id).into(), (*name).into(), (*rpc_url).into()]),
             ))
             .await?;
         }

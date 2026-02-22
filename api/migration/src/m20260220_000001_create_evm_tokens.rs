@@ -94,6 +94,7 @@ const SEED_TOKENS: &[(&str, &str, &str)] = &[
     ("bsc",      "XVS",    "0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63"),
     ("bsc",      "ALPACA", "0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F"),
     ("bsc",      "LINK",   "0xF8A0BF9cF54Bb92F17374d9e9A321E6a111a51bD"),
+    ("bsc",      "ASTER",  "0x000ae314e2a2172a039b26378814c252734f556a"),
 ];
 
 #[async_trait::async_trait]

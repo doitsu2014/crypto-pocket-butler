@@ -19,6 +19,8 @@ export interface AccountHoldingDetail {
 
 export interface AssetHolding {
   asset: string;
+  /** Chain label when asset is chain-specific (e.g. "ethereum", "bsc", "solana") */
+  chain?: string;
   /** Normalized (human-readable) total quantity */
   total_quantity: string;
   /** Normalized total available quantity */
@@ -36,6 +38,8 @@ export interface AssetHolding {
 
 export interface AllocationItem {
   asset: string;
+  /** Chain label – mirrors AssetHolding.chain */
+  chain?: string;
   value_usd: number;
   percentage: number;
 }
@@ -90,6 +94,11 @@ function formatQuantity(quantity: string): string {
   } catch {
     return quantity;
   }
+}
+
+/** Unique key for a holding row, combining asset symbol and optional chain */
+function holdingKey(h: AssetHolding): string {
+  return h.chain ? `${h.asset}:${h.chain}` : h.asset;
 }
 
 export default function HoldingsTable({ holdings, allocation }: HoldingsTableProps) {
@@ -195,20 +204,28 @@ export default function HoldingsTable({ holdings, allocation }: HoldingsTablePro
           </thead>
           <tbody className="divide-y divide-slate-800/50">
             {sortedHoldings.map((holding, index) => {
-              const allocationItem = allocation.find(a => a.asset === holding.asset);
-              const isExpanded = expandedAsset === holding.asset;
+              const key = holdingKey(holding);
+              const allocationItem = allocation.find(
+                a => a.asset === holding.asset && a.chain === holding.chain
+              );
+              const isExpanded = expandedAsset === key;
               return (
                 <>
                   <tr
-                    key={holding.asset}
+                    key={key}
                     className="hover:bg-slate-900/30 transition-colors cursor-pointer"
-                    onClick={() => setExpandedAsset(isExpanded ? null : holding.asset)}
+                    onClick={() => setExpandedAsset(isExpanded ? null : key)}
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-fuchsia-300 drop-shadow-[0_0_6px_rgba(232,121,249,0.4)]">
                           {holding.asset}
                         </span>
+                        {holding.chain && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 text-xs rounded bg-blue-900/50 text-blue-300 border border-blue-600/50 capitalize">
+                            {holding.chain}
+                          </span>
+                        )}
                         {index < 3 && (
                           <span className="inline-flex items-center px-2 py-0.5 text-xs font-bold rounded bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white shadow-[0_0_10px_rgba(217,70,239,0.4)]">
                             Top {index + 1}
@@ -254,7 +271,7 @@ export default function HoldingsTable({ holdings, allocation }: HoldingsTablePro
                     </td>
                   </tr>
                   {isExpanded && holding.accounts.length > 0 && (
-                    <tr key={`${holding.asset}-detail`} className="bg-slate-900/40">
+                    <tr key={`${key}-detail`} className="bg-slate-900/40">
                       <td colSpan={6} className="px-6 py-3">
                         <div className="ml-4 border-l-2 border-cyan-500/30 pl-4">
                           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">

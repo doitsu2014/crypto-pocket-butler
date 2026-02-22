@@ -36,6 +36,9 @@ export interface AccountHoldingDetail {
 /** Aggregated holding for a single asset across all accounts */
 export interface AssetHolding {
   asset: string;
+  /** Chain label when asset is chain-specific (e.g. "ethereum", "bsc", "solana").
+   *  Absent for exchange accounts (OKX) where no chain context applies. */
+  chain?: string;
   /** Normalized (human-readable) total quantity, e.g. "1.5" for 1.5 ETH */
   total_quantity: string;
   /** Normalized total available quantity */
@@ -56,6 +59,8 @@ export interface AssetHolding {
 
 export interface AllocationItem {
   asset: string;
+  /** Chain label – mirrors AssetHolding.chain for per-(asset, chain) percentage lookup */
+  chain?: string;
   value_usd: number;
   percentage: number;
 }

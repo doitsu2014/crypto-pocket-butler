@@ -161,6 +161,10 @@ impl From<accounts::Model> for AccountInPortfolioResponse {
 pub struct AssetHolding {
     /// Asset symbol (e.g., BTC, ETH, USDT)
     pub asset: String,
+    /// Chain label when asset is chain-specific (e.g., "ethereum", "bsc", "solana").
+    /// None for exchange accounts (OKX) where no chain context applies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain: Option<String>,
     /// Total normalized (human-readable) quantity across all accounts
     pub total_quantity: String,
     /// Total available normalized quantity
@@ -203,6 +207,9 @@ pub struct AccountHoldingDetail {
 pub struct AllocationItem {
     /// Asset symbol
     pub asset: String,
+    /// Chain label when asset is chain-specific (mirrors AssetHolding.chain)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain: Option<String>,
     /// Value in USD
     pub value_usd: f64,
     /// Percentage of total portfolio
@@ -750,6 +757,18 @@ pub async fn get_portfolio_holdings(
         .all(&db)
         .await?;
 
+    // Helper: extract the chain from a raw asset string like "ETH-ethereum" → Some("ethereum")
+    fn extract_chain_suffix(raw: &str) -> Option<String> {
+        const KNOWN_CHAINS: &[&str] = &["ethereum", "arbitrum", "optimism", "base", "bsc", "solana"];
+        if let Some((_, suffix)) = raw.rsplit_once('-') {
+            let lower = suffix.to_lowercase();
+            if KNOWN_CHAINS.contains(&lower.as_str()) {
+                return Some(lower);
+            }
+        }
+        None
+    }
+
     // Step 1: Aggregate holdings by asset symbol, collecting account details
     // Use a temporary structure that stores per-account details
     #[derive(Debug, Clone)]
@@ -870,6 +889,9 @@ pub async fn get_portfolio_holdings(
             }
         };
 
+        // Extract chain label from the raw symbol (e.g., "ETH-ethereum" → Some("ethereum"))
+        let chain = extract_chain_suffix(&symbol);
+
         // quantity is already normalized; calculate value_usd = normalized_quantity * price
         let qty_f64 = aggregate.total_quantity.to_f64().unwrap_or(0.0);
         let value_usd = qty_f64 * price_usd;
@@ -877,6 +899,7 @@ pub async fn get_portfolio_holdings(
 
         holdings.push(AssetHolding {
             asset: canonical_symbol,
+            chain,
             total_quantity: total_quantity_str.clone(),
             total_available: aggregate.total_available.to_string(),
             total_frozen: aggregate.total_frozen.to_string(),
@@ -903,6 +926,7 @@ pub async fn get_portfolio_holdings(
         .iter()
         .map(|h| AllocationItem {
             asset: h.asset.clone(),
+            chain: h.chain.clone(),
             value_usd: h.value_usd,
             percentage: if total_value_usd > 0.0 {
                 (h.value_usd / total_value_usd) * 100.0

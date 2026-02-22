@@ -157,6 +157,24 @@ impl From<accounts::Model> for AccountInPortfolioResponse {
     }
 }
 
+/// Extract the chain name from a raw asset string that was stored with a chain suffix.
+///
+/// Examples:
+/// - `"ETH-ethereum"` → `Some("ethereum")`
+/// - `"USDT-bsc"`     → `Some("bsc")`
+/// - `"SOL-solana"`   → `Some("solana")`
+/// - `"BTC"`          → `None`  (OKX exchange asset, no chain suffix)
+fn extract_chain_suffix(raw: &str) -> Option<String> {
+    const KNOWN_CHAINS: &[&str] = &["ethereum", "arbitrum", "optimism", "base", "bsc", "solana"];
+    if let Some((_, suffix)) = raw.rsplit_once('-') {
+        let lower = suffix.to_lowercase();
+        if KNOWN_CHAINS.contains(&lower.as_str()) {
+            return Some(lower);
+        }
+    }
+    None
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AssetHolding {
     /// Asset symbol (e.g., BTC, ETH, USDT)
@@ -757,18 +775,6 @@ pub async fn get_portfolio_holdings(
         .all(&db)
         .await?;
 
-    // Helper: extract the chain from a raw asset string like "ETH-ethereum" → Some("ethereum")
-    fn extract_chain_suffix(raw: &str) -> Option<String> {
-        const KNOWN_CHAINS: &[&str] = &["ethereum", "arbitrum", "optimism", "base", "bsc", "solana"];
-        if let Some((_, suffix)) = raw.rsplit_once('-') {
-            let lower = suffix.to_lowercase();
-            if KNOWN_CHAINS.contains(&lower.as_str()) {
-                return Some(lower);
-            }
-        }
-        None
-    }
-
     // Step 1: Aggregate holdings by asset symbol, collecting account details
     // Use a temporary structure that stores per-account details
     #[derive(Debug, Clone)]
@@ -1092,8 +1098,12 @@ pub async fn construct_portfolio_allocation(
             0.0
         };
 
+        // Extract chain label from the raw symbol (e.g., "ETH-ethereum" → Some("ethereum"))
+        let chain = extract_chain_suffix(symbol);
+
         allocation_holdings.push(AllocationHolding {
             asset: canonical_symbol,
+            chain,
             quantity: quantity.to_string(),
             value_usd,
             weight: 0.0, // Will be computed after we know total

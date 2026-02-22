@@ -2,6 +2,8 @@
 
 export interface AllocationItem {
   asset: string;
+  /** Chain label when asset is chain-specific (e.g. "ethereum", "bsc", "solana") */
+  chain?: string;
   value_usd: number;
   percentage: number;
 }
@@ -45,12 +47,19 @@ export default function AllocationBar({ allocation, maxItems = 10 }: AllocationB
       
       <div className="space-y-3">
         {allocation.slice(0, maxItems).map((item) => (
-          <div key={item.asset} className="flex items-center gap-4">
+          <div key={item.chain ? `${item.asset}:${item.chain}` : item.asset} className="flex items-center gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-fuchsia-300 truncate drop-shadow-[0_0_6px_rgba(232,121,249,0.4)]">
-                  {item.asset}
-                </span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm font-bold text-fuchsia-300 truncate drop-shadow-[0_0_6px_rgba(232,121,249,0.4)]">
+                    {item.asset}
+                  </span>
+                  {item.chain && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 text-xs rounded bg-blue-900/50 text-blue-300 border border-blue-600/50 capitalize shrink-0">
+                      {item.chain}
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-slate-400 tabular-nums">
                     {formatCurrency(item.value_usd)}

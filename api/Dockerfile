@@ -7,7 +7,7 @@ RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static curl
 WORKDIR /app
 
 # Copy manifests and lock file
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 
 # Copy actual source code
 COPY . .

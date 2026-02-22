@@ -16,7 +16,12 @@
       "Bash(timeout:*)",
       "Bash(head:*)",
       "Bash(git -C \"D:\\\\Workspace\\\\doitsu-technology\\\\crypto-pocket-butler\" branch --show-current)",
-      "Bash(git -C \"D:\\\\Workspace\\\\doitsu-technology\\\\crypto-pocket-butler\" checkout -b feat/consolidate-price-fetch-to-fetch-all-coins)"
+      "Bash(git -C \"D:\\\\Workspace\\\\doitsu-technology\\\\crypto-pocket-butler\" checkout -b feat/consolidate-price-fetch-to-fetch-all-coins)",
+      "Bash(git -C \"D:\\\\Workspace\\\\doitsu-technology\\\\crypto-pocket-butler\" status)",
+      "Bash(git -C \"D:\\\\Workspace\\\\doitsu-technology\\\\crypto-pocket-butler\" diff)",
+      "Bash(git -C \"D:\\\\Workspace\\\\doitsu-technology\\\\crypto-pocket-butler\" log --oneline -10)",
+      "Bash(git -C \"D:\\\\Workspace\\\\doitsu-technology\\\\crypto-pocket-butler\" add web/app/accounts/components/AccountsClient.tsx web/app/accounts/[id]/components/AccountDetailClient.tsx)",
+      "Bash(git -C:*)"
     ]
   }
 }

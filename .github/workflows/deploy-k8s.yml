@@ -1,0 +1,132 @@
+# Deploy the application to a Kubernetes cluster using Helm.
+#
+# This workflow handles deployment of both the API and Web Helm charts.
+# It is intended to run after the build-api, build-web, and build-helm workflows
+# have successfully published their artifacts.
+#
+# Triggers:
+#   - Manual dispatch (recommended for production deployments).
+#   - After the Build Helm Charts workflow completes successfully on main.
+#
+# Required secrets:
+#   - KUBE_CONFIG: Base64-encoded kubeconfig for the target cluster.
+#
+# Optional secrets / variables (configure in repository settings):
+#   - HELM_RELEASE_NAMESPACE: Kubernetes namespace (default: crypto-pocket-butler).
+
+name: Deploy to Kubernetes
+
+on:
+  workflow_run:
+    workflows:
+      - "Build and Publish Helm Charts"
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      chart_version:
+        description: "Helm chart version to deploy"
+        required: true
+        default: "0.1.0"
+      image_tag:
+        description: "Docker image tag to deploy"
+        required: true
+        default: "latest"
+      namespace:
+        description: "Kubernetes namespace"
+        required: false
+        default: "crypto-pocket-butler"
+
+env:
+  REGISTRY: ghcr.io
+  REGISTRY_OWNER: ${{ github.repository_owner }}
+  NAMESPACE: ${{ github.event.inputs.namespace || vars.HELM_RELEASE_NAMESPACE || 'crypto-pocket-butler' }}
+
+jobs:
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    # Only run on success when triggered by workflow_run.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.17.0"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Determine deployment parameters
+        id: params
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "chart_version=${{ github.event.inputs.chart_version }}" >> "$GITHUB_OUTPUT"
+            echo "image_tag=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            # When triggered by workflow_run, derive the chart version from Chart.yaml
+            CHART_VERSION=$(grep '^version:' helm/api/Chart.yaml | awk '{print $2}')
+            echo "chart_version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "image_tag=sha-$(echo '${{ github.event.workflow_run.head_sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} \
+            --username ${{ github.actor }} \
+            --password-stdin
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy API Helm chart
+        run: |
+          helm upgrade --install crypto-pocket-butler-api \
+            oci://${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/crypto-pocket-butler-api \
+            --version ${{ steps.params.outputs.chart_version }} \
+            --namespace ${{ env.NAMESPACE }} \
+            --set image.tag=${{ steps.params.outputs.image_tag }} \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/crypto-pocket-butler-api \
+            --atomic \
+            --timeout 5m \
+            --wait
+
+      - name: Deploy Web Helm chart
+        run: |
+          helm upgrade --install crypto-pocket-butler-web \
+            oci://${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/crypto-pocket-butler-web \
+            --version ${{ steps.params.outputs.chart_version }} \
+            --namespace ${{ env.NAMESPACE }} \
+            --set image.tag=${{ steps.params.outputs.image_tag }} \
+            --set image.repository=${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/crypto-pocket-butler-web \
+            --atomic \
+            --timeout 5m \
+            --wait
+
+      - name: Log out from GHCR
+        if: always()
+        run: helm registry logout ${{ env.REGISTRY }}
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/crypto-pocket-butler-api \
+            --namespace ${{ env.NAMESPACE }} --timeout=120s
+          kubectl rollout status deployment/crypto-pocket-butler-web \
+            --namespace ${{ env.NAMESPACE }} --timeout=120s

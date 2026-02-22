@@ -1,0 +1,93 @@
+# Package and publish Helm charts to GitHub Container Registry (GHCR) as OCI artifacts.
+#
+# Triggers:
+#   - Push to main that modifies the helm/ directory.
+#   - Manual dispatch (allows specifying a custom chart version).
+#
+# Outputs:
+#   - OCI artifacts published to:
+#     - oci://ghcr.io/<owner>/crypto-pocket-butler-api-chart:<version>
+#     - oci://ghcr.io/<owner>/crypto-pocket-butler-web-chart:<version>
+#
+# The chart version is taken from Chart.yaml by default, but can be overridden
+# with the `chart_version` input when dispatching manually.
+
+name: Build and Publish Helm Charts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "helm/**"
+      - ".github/workflows/build-helm.yml"
+  workflow_dispatch:
+    inputs:
+      chart_version:
+        description: "Override chart version (leave blank to use Chart.yaml version)"
+        required: false
+        default: ""
+
+env:
+  REGISTRY: ghcr.io
+  REGISTRY_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  publish:
+    name: Package and Push Helm Charts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.17.0"
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} \
+            --username ${{ github.actor }} \
+            --password-stdin
+
+      - name: Determine chart version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.chart_version }}" ]; then
+            echo "version=${{ github.event.inputs.chart_version }}" >> "$GITHUB_OUTPUT"
+          else
+            # Extract version from the api Chart.yaml (both charts share the same version)
+            VERSION=$(grep '^version:' helm/api/Chart.yaml | awk '{print $2}')
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package API Helm chart
+        run: |
+          helm package helm/api \
+            --version ${{ steps.version.outputs.version }} \
+            --destination /tmp/helm-packages
+
+      - name: Package Web Helm chart
+        run: |
+          helm package helm/web \
+            --version ${{ steps.version.outputs.version }} \
+            --destination /tmp/helm-packages
+
+      - name: Push API Helm chart to GHCR
+        run: |
+          helm push /tmp/helm-packages/crypto-pocket-butler-api-${{ steps.version.outputs.version }}.tgz \
+            oci://${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}
+
+      - name: Push Web Helm chart to GHCR
+        run: |
+          helm push /tmp/helm-packages/crypto-pocket-butler-web-${{ steps.version.outputs.version }}.tgz \
+            oci://${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}
+
+      - name: Log out from GHCR
+        if: always()
+        run: helm registry logout ${{ env.REGISTRY }}

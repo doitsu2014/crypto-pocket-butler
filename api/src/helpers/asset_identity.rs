@@ -35,7 +35,10 @@ use uuid::Uuid;
 /// This constant is used when parsing symbols in the format "SYMBOL-CHAIN"
 /// to distinguish chain suffixes from legitimate hyphenated asset symbols.
 /// Includes both EVM chains and other supported chains (e.g. Solana).
-const KNOWN_CHAIN_SUFFIXES: &[&str] = &["ethereum", "arbitrum", "optimism", "base", "bsc", "solana"];
+const KNOWN_CHAIN_SUFFIXES: &[&str] = &[
+    "ethereum", "arbitrum", "optimism", "base", "bsc", "solana",
+    "hyper_liquid", "mantle",
+];
 
 /// Represents a canonical asset identity
 #[derive(Debug, Clone, Serialize, Deserialize)]

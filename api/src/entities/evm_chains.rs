@@ -12,6 +12,8 @@ pub struct Model {
     pub name: String,
     /// RPC URL used to connect to this chain
     pub rpc_url: String,
+    /// Native token symbol, e.g. "ETH", "BNB", "HYPE"
+    pub native_symbol: String,
     /// Whether this chain is active for account sync
     pub is_active: bool,
     pub created_at: DateTimeWithTimeZone,

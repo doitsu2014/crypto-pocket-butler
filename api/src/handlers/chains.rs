@@ -1,6 +1,9 @@
-use axum::{routing::get, Json, Router};
+use axum::{extract::State, routing::get, Json, Router};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::entities::evm_chains;
 
 /// Supported chain information
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
@@ -22,59 +25,47 @@ pub struct ListChainsResponse {
 
 /// List all supported chains
 ///
-/// Returns a list of chains that can be selected for wallet accounts.
+/// Returns a list of active chains from the database that can be selected for wallet accounts.
 /// EVM chains are used in the `enabled_chains` field when creating or updating wallet accounts.
 /// Solana wallets use `exchange_name: "solana"` with no `enabled_chains` needed.
 #[utoipa::path(
     get,
     path = "/v1/chains",
     responses(
-        (status = 200, description = "List of supported EVM chains", body = ListChainsResponse),
+        (status = 200, description = "List of supported chains", body = ListChainsResponse),
     ),
     tag = "chains"
 )]
-pub async fn list_supported_chains() -> Json<ListChainsResponse> {
-    let chains = vec![
-        ChainInfo {
-            id: "ethereum".to_string(),
-            name: "Ethereum".to_string(),
-            native_symbol: "ETH".to_string(),
-        },
-        ChainInfo {
-            id: "arbitrum".to_string(),
-            name: "Arbitrum".to_string(),
-            native_symbol: "ETH".to_string(),
-        },
-        ChainInfo {
-            id: "optimism".to_string(),
-            name: "Optimism".to_string(),
-            native_symbol: "ETH".to_string(),
-        },
-        ChainInfo {
-            id: "base".to_string(),
-            name: "Base".to_string(),
-            native_symbol: "ETH".to_string(),
-        },
-        ChainInfo {
-            id: "bsc".to_string(),
-            name: "BNB Smart Chain".to_string(),
-            native_symbol: "BNB".to_string(),
-        },
-        ChainInfo {
-            id: "solana".to_string(),
-            name: "Solana".to_string(),
-            native_symbol: "SOL".to_string(),
-        },
-    ];
+pub async fn list_supported_chains(
+    State(db): State<DatabaseConnection>,
+) -> Json<ListChainsResponse> {
+    let evm_rows = evm_chains::Entity::find()
+        .filter(evm_chains::Column::IsActive.eq(true))
+        .all(&db)
+        .await
+        .unwrap_or_default();
+
+    let mut chains: Vec<ChainInfo> = evm_rows
+        .into_iter()
+        .map(|r| ChainInfo {
+            id: r.chain_id,
+            name: r.name,
+            native_symbol: r.native_symbol,
+        })
+        .collect();
+
+    // Solana is not stored in the evm_chains table; append it here
+    chains.push(ChainInfo {
+        id: "solana".to_string(),
+        name: "Solana".to_string(),
+        native_symbol: "SOL".to_string(),
+    });
 
     Json(ListChainsResponse { chains })
 }
 
 /// Create router for chains endpoints
-pub fn create_router<S>() -> Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
+pub fn create_router() -> Router<DatabaseConnection> {
     Router::new().route("/v1/chains", get(list_supported_chains))
 }
 
@@ -82,30 +73,15 @@ where
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_list_supported_chains() {
-        let response = list_supported_chains().await;
-        let chains_response = response.0;
-        
-        // Should return 6 chains (5 EVM + Solana)
-        assert_eq!(chains_response.chains.len(), 6);
-
-        // Verify all expected chains are present
-        let chain_ids: Vec<String> = chains_response.chains.iter().map(|c| c.id.clone()).collect();
-        assert!(chain_ids.contains(&"ethereum".to_string()));
-        assert!(chain_ids.contains(&"arbitrum".to_string()));
-        assert!(chain_ids.contains(&"optimism".to_string()));
-        assert!(chain_ids.contains(&"base".to_string()));
-        assert!(chain_ids.contains(&"bsc".to_string()));
-        assert!(chain_ids.contains(&"solana".to_string()));
-        
-        // Verify specific chain details
-        let ethereum = chains_response.chains.iter().find(|c| c.id == "ethereum").unwrap();
-        assert_eq!(ethereum.name, "Ethereum");
-        assert_eq!(ethereum.native_symbol, "ETH");
-        
-        let bsc = chains_response.chains.iter().find(|c| c.id == "bsc").unwrap();
-        assert_eq!(bsc.name, "BNB Smart Chain");
-        assert_eq!(bsc.native_symbol, "BNB");
+    #[test]
+    fn test_chain_info_serialization() {
+        let info = ChainInfo {
+            id: "ethereum".to_string(),
+            name: "Ethereum".to_string(),
+            native_symbol: "ETH".to_string(),
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("ethereum"));
+        assert!(json.contains("ETH"));
     }
 }

@@ -27,6 +27,8 @@ pub struct EvmChainResponse {
     pub name: String,
     /// RPC URL used to connect to this chain
     pub rpc_url: String,
+    /// Native token symbol, e.g. "ETH", "BNB", "HYPE"
+    pub native_symbol: String,
     /// Whether this chain is active for account sync
     pub is_active: bool,
     pub created_at: String,
@@ -40,6 +42,7 @@ impl From<evm_chains::Model> for EvmChainResponse {
             chain_id: m.chain_id,
             name: m.name,
             rpc_url: m.rpc_url,
+            native_symbol: m.native_symbol,
             is_active: m.is_active,
             created_at: m.created_at.to_rfc3339(),
             updated_at: m.updated_at.to_rfc3339(),
@@ -55,6 +58,8 @@ pub struct CreateEvmChainRequest {
     pub name: String,
     /// RPC endpoint URL
     pub rpc_url: String,
+    /// Native token symbol (e.g. "ETH", "BNB", "HYPE")
+    pub native_symbol: String,
     /// Whether to include this chain during account sync (default: true)
     #[serde(default = "default_true")]
     pub is_active: bool,
@@ -68,6 +73,9 @@ pub struct UpdateEvmChainRequest {
     /// RPC endpoint URL
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rpc_url: Option<String>,
+    /// Native token symbol
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_symbol: Option<String>,
     /// Whether this chain is active for account sync
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_active: Option<bool>,
@@ -176,6 +184,7 @@ pub async fn create_evm_chain_handler(
         chain_id: Set(req.chain_id),
         name: Set(req.name),
         rpc_url: Set(req.rpc_url),
+        native_symbol: Set(req.native_symbol),
         is_active: Set(req.is_active),
         created_at: Set(Utc::now().into()),
         updated_at: Set(Utc::now().into()),
@@ -221,6 +230,9 @@ pub async fn update_evm_chain_handler(
     }
     if let Some(rpc_url) = req.rpc_url {
         active.rpc_url = Set(rpc_url);
+    }
+    if let Some(native_symbol) = req.native_symbol {
+        active.native_symbol = Set(native_symbol);
     }
     if let Some(is_active) = req.is_active {
         active.is_active = Set(is_active);
@@ -285,16 +297,18 @@ mod tests {
 
     #[test]
     fn test_create_request_default_is_active() {
-        let json = r#"{"chain_id":"mychain","name":"My Chain","rpc_url":"https://rpc.example.com"}"#;
+        let json = r#"{"chain_id":"mychain","name":"My Chain","rpc_url":"https://rpc.example.com","native_symbol":"ETH"}"#;
         let req: CreateEvmChainRequest = serde_json::from_str(json).unwrap();
         assert!(req.is_active, "is_active should default to true");
+        assert_eq!(req.native_symbol, "ETH");
     }
 
     #[test]
     fn test_create_request_explicit_inactive() {
-        let json = r#"{"chain_id":"mychain","name":"My Chain","rpc_url":"https://rpc.example.com","is_active":false}"#;
+        let json = r#"{"chain_id":"mychain","name":"My Chain","rpc_url":"https://rpc.example.com","native_symbol":"HYPE","is_active":false}"#;
         let req: CreateEvmChainRequest = serde_json::from_str(json).unwrap();
         assert!(!req.is_active);
+        assert_eq!(req.native_symbol, "HYPE");
     }
 
     #[test]

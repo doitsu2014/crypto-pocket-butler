@@ -1,16 +1,67 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ApiError } from "@/lib/api-client";
+import { apiClient, ApiError } from "@/lib/api-client";
 import { useToast } from "@/contexts/ToastContext";
 import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
 import { useAccounts, useCreateAccount, useSyncAccount, useDeleteAccount } from "@/hooks";
 import type { CreateAccountInput } from "@/types/api";
+import AllocationBar from "@/components/portfolio/AllocationBar";
+import AllocationPie from "@/components/portfolio/AllocationPie";
+import HoldingsTable from "@/components/portfolio/HoldingsTable";
+
+const MAX_ALLOCATION_ITEMS = 10;
 
 type AccountFormType = "wallet" | "solana" | "exchange" | null;
+type ActiveTab = "accounts" | "analysis";
+
+// Types for Account Analysis tab
+interface AnalysisPortfolio {
+  id: string;
+  name: string;
+  is_default: boolean;
+}
+
+interface AllocationItem {
+  asset: string;
+  chain?: string;
+  value_usd: number;
+  percentage: number;
+}
+
+interface AccountHoldingDetail {
+  account_id: string;
+  account_name: string;
+  quantity: string;
+  available: string;
+  frozen: string;
+  decimals?: number;
+  normalized_quantity?: string;
+}
+
+interface AssetHolding {
+  asset: string;
+  chain?: string;
+  total_quantity: string;
+  total_available: string;
+  total_frozen: string;
+  decimals?: number;
+  normalized_quantity?: string;
+  price_usd: number;
+  value_usd: number;
+  accounts: AccountHoldingDetail[];
+}
+
+interface PortfolioHoldingsResponse {
+  portfolio_id: string;
+  total_value_usd: number;
+  holdings: AssetHolding[];
+  allocation: AllocationItem[];
+  as_of: string;
+}
 
 // Helper function to get user-friendly chain name
 function getChainDisplayName(chainId: string): string {
@@ -40,6 +91,7 @@ function formatDate(dateString: string | undefined): string {
 
 export default function AccountsClient() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<ActiveTab>("accounts");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formType, setFormType] = useState<AccountFormType>(null);
   const [deletingAccount, setDeletingAccount] = useState<string | null>(null);
@@ -59,6 +111,15 @@ export default function AccountsClient() {
     api_secret: "",
     passphrase: "",
   });
+
+  // Account Analysis state
+  const [portfolios, setPortfolios] = useState<AnalysisPortfolio[]>([]);
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
+  const [analysisHoldings, setAnalysisHoldings] = useState<PortfolioHoldingsResponse | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [portfoliosLoaded, setPortfoliosLoaded] = useState(false);
+
   const toast = useToast();
 
   // Use TanStack Query hooks
@@ -68,8 +129,57 @@ export default function AccountsClient() {
   const deleteAccount = useDeleteAccount();
 
   // Convert query error to string for display
-  const error = queryError instanceof ApiError ? queryError.message : 
+  const error = queryError instanceof ApiError ? queryError.message :
                 queryError ? "Failed to load accounts" : null;
+
+  // --- Account Analysis data loading ---
+
+  const loadPortfolios = useCallback(async () => {
+    try {
+      const data = await apiClient<AnalysisPortfolio[]>("/v1/portfolios");
+      setPortfolios(data);
+      setPortfoliosLoaded(true);
+      // Auto-select the default portfolio, or the first one
+      const defaultPort = data.find(p => p.is_default) || data[0];
+      if (defaultPort) {
+        setSelectedPortfolioId(defaultPort.id);
+      }
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to load portfolios";
+      setAnalysisError(message);
+      setPortfoliosLoaded(true);
+    }
+  }, []);
+
+  const loadAnalysisHoldings = useCallback(async (portfolioId: string) => {
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    try {
+      const data = await apiClient<PortfolioHoldingsResponse>(`/v1/portfolios/${portfolioId}/holdings`);
+      setAnalysisHoldings(data);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to load portfolio analysis";
+      setAnalysisError(message);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }, []);
+
+  // Load portfolios the first time the analysis tab becomes active
+  useEffect(() => {
+    if (activeTab === "analysis" && !portfoliosLoaded) {
+      loadPortfolios();
+    }
+  }, [activeTab, portfoliosLoaded, loadPortfolios]);
+
+  // Load holdings whenever the selected portfolio changes
+  useEffect(() => {
+    if (selectedPortfolioId) {
+      loadAnalysisHoldings(selectedPortfolioId);
+    }
+  }, [selectedPortfolioId, loadAnalysisHoldings]);
+
+  // --- Account management handlers ---
 
   async function handleCreateWallet(e: React.FormEvent) {
     e.preventDefault();
@@ -90,9 +200,9 @@ export default function AccountsClient() {
         wallet_address: walletFormData.wallet_address.trim(),
         enabled_chains: walletFormData.enabled_chains,
       });
-      
+
       toast.success("Wallet created successfully!");
-      
+
       setWalletFormData({ name: "", wallet_address: "", enabled_chains: [] });
       setShowCreateForm(false);
       setFormType(null);
@@ -144,9 +254,9 @@ export default function AccountsClient() {
         api_secret: exchangeFormData.api_secret.trim(),
         passphrase: exchangeFormData.passphrase.trim() || undefined,
       } as CreateAccountInput);
-      
+
       toast.success("Exchange account created successfully!");
-      
+
       setExchangeFormData({ name: "", exchange_name: "okx", api_key: "", api_secret: "", passphrase: "" });
       setShowCreateForm(false);
       setFormType(null);
@@ -171,7 +281,6 @@ export default function AccountsClient() {
   }
 
   async function handleSyncAll() {
-    // Sync all accounts sequentially and track results
     let successCount = 0;
     let failCount = 0;
 
@@ -191,7 +300,6 @@ export default function AccountsClient() {
       }
     }
 
-    // Show summary
     if (failCount === 0) {
       toast.success(`All ${successCount} accounts synced successfully!`);
     } else if (successCount > 0) {
@@ -258,484 +366,595 @@ export default function AccountsClient() {
             Accounts
           </h2>
         </div>
-        <div className="flex gap-3">
-          <LoadingButton
-            onClick={handleSyncAll}
-            loading={syncAccount.isPending}
-            disabled={syncAccount.isPending || accounts.length === 0}
-            className="inline-flex items-center px-4 py-2 border-2 border-cyan-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transition-all duration-300 transform hover:scale-105"
-          >
-            <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            {syncAccount.isPending ? "Syncing..." : "Sync All"}
-          </LoadingButton>
+        {activeTab === "accounts" && (
+          <div className="flex gap-3">
+            <LoadingButton
+              onClick={handleSyncAll}
+              loading={syncAccount.isPending}
+              disabled={syncAccount.isPending || accounts.length === 0}
+              className="inline-flex items-center px-4 py-2 border-2 border-cyan-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] transition-all duration-300 transform hover:scale-105"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {syncAccount.isPending ? "Syncing..." : "Sync All"}
+            </LoadingButton>
+            <button
+              onClick={() => openCreateForm(null)}
+              className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300 transform hover:scale-105"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Account
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="mb-6 border-b-2 border-slate-700/50">
+        <div className="flex gap-0">
           <button
-            onClick={() => openCreateForm(null)}
-            className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300 transform hover:scale-105"
+            onClick={() => setActiveTab("accounts")}
+            className={`px-6 py-3 text-sm font-semibold transition-all ${
+              activeTab === "accounts"
+                ? "text-fuchsia-300 border-b-2 border-fuchsia-500 -mb-[2px] drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]"
+                : "text-slate-400 hover:text-slate-300"
+            }`}
           >
-            <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Account
+            Management Accounts
+          </button>
+          <button
+            onClick={() => setActiveTab("analysis")}
+            className={`px-6 py-3 text-sm font-semibold transition-all ${
+              activeTab === "analysis"
+                ? "text-cyan-300 border-b-2 border-cyan-500 -mb-[2px] drop-shadow-[0_0_8px_rgba(34,211,238,0.4)]"
+                : "text-slate-400 hover:text-slate-300"
+            }`}
+          >
+            Account Analysis
           </button>
         </div>
       </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="mb-6">
-          <ErrorAlert 
-            message={error} 
-            onRetry={() => refetch()}
-            type="banner"
-          />
-        </div>
-      )}
-
-      {/* Account Type Selection or Create Form */}
-      {showCreateForm && (
-        <div className="mb-6 bg-slate-950/70 backdrop-blur-sm border-2 border-fuchsia-500/40 shadow-[0_0_25px_rgba(217,70,239,0.3)] rounded-2xl p-6">
-          {formType === null ? (
-            <>
-              <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
-                Select Account Type
-              </h3>
-              <div className="grid grid-cols-3 gap-4">
-                <button
-                  onClick={() => setFormType("wallet")}
-                  className="p-6 bg-slate-900/50 border-2 border-violet-500/50 rounded-xl hover:border-fuchsia-500 hover:bg-slate-800/70 transition-all group"
-                >
-                  <svg className="w-12 h-12 mx-auto mb-3 text-violet-400 group-hover:text-fuchsia-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                  </svg>
-                  <h4 className="text-lg font-bold text-fuchsia-300 mb-1">EVM Wallet</h4>
-                  <p className="text-sm text-slate-400">Ethereum, BSC, Arbitrum, etc.</p>
-                </button>
-                <button
-                  onClick={() => setFormType("solana")}
-                  className="p-6 bg-slate-900/50 border-2 border-violet-500/50 rounded-xl hover:border-fuchsia-500 hover:bg-slate-800/70 transition-all group"
-                >
-                  <svg className="w-12 h-12 mx-auto mb-3 text-violet-400 group-hover:text-fuchsia-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  <h4 className="text-lg font-bold text-fuchsia-300 mb-1">Solana Wallet</h4>
-                  <p className="text-sm text-slate-400">SOL &amp; SPL tokens</p>
-                </button>
-                <button
-                  onClick={() => setFormType("exchange")}
-                  className="p-6 bg-slate-900/50 border-2 border-violet-500/50 rounded-xl hover:border-fuchsia-500 hover:bg-slate-800/70 transition-all group"
-                >
-                  <svg className="w-12 h-12 mx-auto mb-3 text-violet-400 group-hover:text-fuchsia-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                  </svg>
-                  <h4 className="text-lg font-bold text-fuchsia-300 mb-1">Exchange</h4>
-                  <p className="text-sm text-slate-400">OKX API credentials</p>
-                </button>
-              </div>
-              <div className="mt-4">
-                <button
-                  onClick={closeForm}
-                  className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </>
-          ) : formType === "wallet" ? (
-            <>
-              <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
-                Add EVM Wallet
-              </h3>
-              <form onSubmit={handleCreateWallet} className="space-y-4">
-                <div>
-                  <label htmlFor="wallet-name" className="block text-sm font-medium text-slate-300 mb-2">
-                    Wallet Name <span className="text-fuchsia-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="wallet-name"
-                    value={walletFormData.name}
-                    onChange={(e) => setWalletFormData({ ...walletFormData, name: e.target.value })}
-                    placeholder="e.g., My Main Wallet"
-                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="wallet-address" className="block text-sm font-medium text-slate-300 mb-2">
-                    Wallet Address <span className="text-fuchsia-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="wallet-address"
-                    value={walletFormData.wallet_address}
-                    onChange={(e) => setWalletFormData({ ...walletFormData, wallet_address: e.target.value })}
-                    placeholder="0x..."
-                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-3">
-                    Enabled Chains <span className="text-fuchsia-400">*</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { id: 'ethereum', name: 'Ethereum', symbol: 'ETH' },
-                      { id: 'arbitrum', name: 'Arbitrum', symbol: 'ARB' },
-                      { id: 'optimism', name: 'Optimism', symbol: 'OP' },
-                      { id: 'base', name: 'Base', symbol: 'BASE' },
-                      { id: 'bsc', name: 'BNB Chain', symbol: 'BNB' },
-                    ].map((chain) => (
-                      <button
-                        key={chain.id}
-                        type="button"
-                        onClick={() => toggleChain(chain.id)}
-                        className={`p-3 rounded-lg border-2 text-left transition-all ${
-                          walletFormData.enabled_chains.includes(chain.id)
-                            ? 'border-fuchsia-500 bg-fuchsia-900/30 text-fuchsia-300'
-                            : 'border-violet-500/50 bg-slate-900/50 text-slate-400 hover:border-violet-400 hover:bg-slate-800/70'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-bold text-sm">{chain.name}</div>
-                            <div className="text-xs opacity-75">{chain.symbol}</div>
-                          </div>
-                          {walletFormData.enabled_chains.includes(chain.id) && (
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <LoadingButton
-                    type="submit"
-                    loading={createAccount.isPending}
-                    disabled={createAccount.isPending}
-                    className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
-                  >
-                    {createAccount.isPending ? "Creating..." : "Create Wallet"}
-                  </LoadingButton>
-                  <button
-                    type="button"
-                    onClick={closeForm}
-                    className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </>
-          ) : formType === "solana" ? (
-            <>
-              <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
-                Add Solana Wallet
-              </h3>
-              <form onSubmit={handleCreateSolana} className="space-y-4">
-                <div>
-                  <label htmlFor="solana-name" className="block text-sm font-medium text-slate-300 mb-2">
-                    Wallet Name <span className="text-fuchsia-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="solana-name"
-                    value={solanaFormData.name}
-                    onChange={(e) => setSolanaFormData({ ...solanaFormData, name: e.target.value })}
-                    placeholder="e.g., My Solana Wallet"
-                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="solana-address" className="block text-sm font-medium text-slate-300 mb-2">
-                    Wallet Address <span className="text-fuchsia-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="solana-address"
-                    value={solanaFormData.wallet_address}
-                    onChange={(e) => setSolanaFormData({ ...solanaFormData, wallet_address: e.target.value })}
-                    placeholder="e.g. 5YNmS1R9nNSCDzb5a7mMJ1dwK9uHeAAF4CmPEwKgVWr8"
-                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
-                    required
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <LoadingButton
-                    type="submit"
-                    loading={createAccount.isPending}
-                    disabled={createAccount.isPending}
-                    className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
-                  >
-                    {createAccount.isPending ? "Creating..." : "Create Solana Wallet"}
-                  </LoadingButton>
-                  <button
-                    type="button"
-                    onClick={closeForm}
-                    className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </>
-          ) : (
-            <>
-              <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
-                Add Exchange Account
-              </h3>
-              <form onSubmit={handleCreateExchange} className="space-y-4">
-                <div>
-                  <label htmlFor="exchange-name" className="block text-sm font-medium text-slate-300 mb-2">
-                    Account Name <span className="text-fuchsia-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="exchange-name"
-                    value={exchangeFormData.name}
-                    onChange={(e) => setExchangeFormData({ ...exchangeFormData, name: e.target.value })}
-                    placeholder="e.g., My OKX Account"
-                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="exchange-type" className="block text-sm font-medium text-slate-300 mb-2">
-                    Exchange <span className="text-fuchsia-400">*</span>
-                  </label>
-                  <select
-                    id="exchange-type"
-                    value={exchangeFormData.exchange_name}
-                    onChange={(e) => setExchangeFormData({ ...exchangeFormData, exchange_name: e.target.value })}
-                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
-                  >
-                    <option value="okx">OKX</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="api-key" className="block text-sm font-medium text-slate-300 mb-2">
-                    API Key <span className="text-fuchsia-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="api-key"
-                    value={exchangeFormData.api_key}
-                    onChange={(e) => setExchangeFormData({ ...exchangeFormData, api_key: e.target.value })}
-                    placeholder="Enter API key"
-                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="api-secret" className="block text-sm font-medium text-slate-300 mb-2">
-                    API Secret <span className="text-fuchsia-400">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    id="api-secret"
-                    value={exchangeFormData.api_secret}
-                    onChange={(e) => setExchangeFormData({ ...exchangeFormData, api_secret: e.target.value })}
-                    placeholder="Enter API secret"
-                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="passphrase" className="block text-sm font-medium text-slate-300 mb-2">
-                    Passphrase (Optional for OKX)
-                  </label>
-                  <input
-                    type="password"
-                    id="passphrase"
-                    value={exchangeFormData.passphrase}
-                    onChange={(e) => setExchangeFormData({ ...exchangeFormData, passphrase: e.target.value })}
-                    placeholder="Enter passphrase if required"
-                    className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <LoadingButton
-                    type="submit"
-                    loading={createAccount.isPending}
-                    disabled={createAccount.isPending}
-                    className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
-                  >
-                    {createAccount.isPending ? "Creating..." : "Create Exchange Account"}
-                  </LoadingButton>
-                  <button
-                    type="button"
-                    onClick={closeForm}
-                    className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </>
+      {/* ── Tab 1: Management Accounts ── */}
+      {activeTab === "accounts" && (
+        <>
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6">
+              <ErrorAlert
+                message={error}
+                onRetry={() => refetch()}
+                type="banner"
+              />
+            </div>
           )}
-        </div>
-      )}
 
-      {/* Loading State */}
-      {loading && <LoadingSkeleton count={3} type="card" />}
-
-      {/* Empty State */}
-      {!loading && accounts.length === 0 && (
-        <EmptyState
-          icon="account"
-          title="No accounts yet"
-          description="Add a wallet or exchange account to get started"
-          action={{
-            label: "New Account",
-            onClick: () => openCreateForm(null),
-          }}
-        />
-      )}
-
-      {!loading && accounts.length > 0 && (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {accounts.map((account) => (
-            <div
-              key={account.id}
-              className="group bg-slate-900/60 backdrop-blur-sm rounded-xl border-2 border-fuchsia-500/50 hover:border-fuchsia-400 p-6 transition-all duration-300 shadow-[0_0_20px_rgba(217,70,239,0.25)] hover:shadow-[0_0_35px_rgba(217,70,239,0.45)] hover:transform hover:scale-[1.03]"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div 
-                  className="flex-1 cursor-pointer"
-                  onClick={() => router.push(`/accounts/${account.id}`)}
-                >
-                  <h3 className="text-lg font-bold text-fuchsia-300 group-hover:text-fuchsia-200 transition-colors drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
-                    {account.name}
-                  </h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
-                      account.account_type === "wallet" 
-                        ? "bg-violet-900/50 text-violet-300 border border-violet-500/50" 
-                        : "bg-cyan-900/50 text-cyan-300 border border-cyan-500/50"
-                    }`}>
-                      {account.account_type === "wallet" ? "Wallet" : "Exchange"}
-                    </span>
-                    {!account.is_active && (
-                      <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-slate-800/50 text-slate-400 border border-slate-600/50">
-                        Inactive
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-fuchsia-500 to-purple-600 flex items-center justify-center shadow-[0_0_15px_rgba(217,70,239,0.4)] group-hover:shadow-[0_0_20px_rgba(217,70,239,0.6)] transition-all">
-                  <svg className="w-5 h-5 text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.5)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    {account.account_type === "wallet" ? (
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                    ) : (
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                    )}
-                  </svg>
-                </div>
-              </div>
-              
-              {account.account_type === "wallet" && account.wallet_address && (
+          {/* Account Type Selection or Create Form */}
+          {showCreateForm && (
+            <div className="mb-6 bg-slate-950/70 backdrop-blur-sm border-2 border-fuchsia-500/40 shadow-[0_0_25px_rgba(217,70,239,0.3)] rounded-2xl p-6">
+              {formType === null ? (
                 <>
-                  <p className="text-slate-400 text-xs mb-2 font-mono break-all">
-                    {account.wallet_address.length > 18
-                      ? `${account.wallet_address.slice(0, 10)}...${account.wallet_address.slice(-8)}`
-                      : account.wallet_address
-                    }
-                  </p>
-                  {account.exchange_name === "solana" && (
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      <span className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-500/40">
-                        Solana
-                      </span>
-                    </div>
-                  )}
-                  {account.enabled_chains && account.enabled_chains.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {account.enabled_chains.map((chain) => (
-                        <span
-                          key={chain}
-                          className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-500/40"
-                        >
-                          {getChainDisplayName(chain)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-              
-              {account.account_type === "exchange" && account.exchange_name && (
-                <p className="text-slate-400 text-xs mb-3 uppercase">
-                  {account.exchange_name}
-                </p>
-              )}
-              
-              <div className="text-xs text-slate-500 space-y-1 mb-4">
-                <p className="flex items-center gap-2">
-                  <span>Last sync:</span>
-                  <span className={account.last_synced_at ? "text-cyan-400" : "text-slate-500"}>
-                    {formatDate(account.last_synced_at)}
-                  </span>
-                </p>
-              </div>
-
-              <button
-                onClick={() => router.push(`/accounts/${account.id}`)}
-                className="w-full mb-2 inline-flex items-center justify-center px-3 py-2 border border-violet-500/50 text-xs font-medium rounded-lg text-violet-300 bg-violet-950/30 hover:bg-violet-900/50 hover:border-violet-400 transition-all"
-              >
-                <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-                View Details
-              </button>
-
-              <div className="flex gap-2">
-                <LoadingButton
-                  onClick={() => handleSyncAccount(account.id)}
-                  loading={syncAccount.isPending}
-                  disabled={syncAccount.isPending}
-                  className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-cyan-500/50 text-xs font-medium rounded-lg text-cyan-300 bg-cyan-950/30 hover:bg-cyan-900/50 hover:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  {syncAccount.isPending ? "Syncing..." : "Sync"}
-                </LoadingButton>
-                {deletingAccount === account.id ? (
-                  <>
+                  <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
+                    Select Account Type
+                  </h3>
+                  <div className="grid grid-cols-3 gap-4">
                     <button
-                      onClick={() => handleDeleteAccount(account.id)}
-                      className="px-3 py-2 border border-red-500 text-xs font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 transition-all"
+                      onClick={() => setFormType("wallet")}
+                      className="p-6 bg-slate-900/50 border-2 border-violet-500/50 rounded-xl hover:border-fuchsia-500 hover:bg-slate-800/70 transition-all group"
                     >
-                      Confirm
+                      <svg className="w-12 h-12 mx-auto mb-3 text-violet-400 group-hover:text-fuchsia-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                      </svg>
+                      <h4 className="text-lg font-bold text-fuchsia-300 mb-1">EVM Wallet</h4>
+                      <p className="text-sm text-slate-400">Ethereum, BSC, Arbitrum, etc.</p>
                     </button>
                     <button
-                      onClick={cancelDelete}
-                      className="px-3 py-2 border border-slate-600 text-xs font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 transition-all"
+                      onClick={() => setFormType("solana")}
+                      className="p-6 bg-slate-900/50 border-2 border-violet-500/50 rounded-xl hover:border-fuchsia-500 hover:bg-slate-800/70 transition-all group"
+                    >
+                      <svg className="w-12 h-12 mx-auto mb-3 text-violet-400 group-hover:text-fuchsia-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      <h4 className="text-lg font-bold text-fuchsia-300 mb-1">Solana Wallet</h4>
+                      <p className="text-sm text-slate-400">SOL &amp; SPL tokens</p>
+                    </button>
+                    <button
+                      onClick={() => setFormType("exchange")}
+                      className="p-6 bg-slate-900/50 border-2 border-violet-500/50 rounded-xl hover:border-fuchsia-500 hover:bg-slate-800/70 transition-all group"
+                    >
+                      <svg className="w-12 h-12 mx-auto mb-3 text-violet-400 group-hover:text-fuchsia-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                      </svg>
+                      <h4 className="text-lg font-bold text-fuchsia-300 mb-1">Exchange</h4>
+                      <p className="text-sm text-slate-400">OKX API credentials</p>
+                    </button>
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      onClick={closeForm}
+                      className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
                     >
                       Cancel
                     </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => confirmDelete(account.id)}
-                    className="px-3 py-2 border border-red-500/50 text-xs font-medium rounded-lg text-red-300 bg-red-950/30 hover:bg-red-900/50 hover:border-red-400 transition-all"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                )}
-              </div>
+                  </div>
+                </>
+              ) : formType === "wallet" ? (
+                <>
+                  <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
+                    Add EVM Wallet
+                  </h3>
+                  <form onSubmit={handleCreateWallet} className="space-y-4">
+                    <div>
+                      <label htmlFor="wallet-name" className="block text-sm font-medium text-slate-300 mb-2">
+                        Wallet Name <span className="text-fuchsia-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="wallet-name"
+                        value={walletFormData.name}
+                        onChange={(e) => setWalletFormData({ ...walletFormData, name: e.target.value })}
+                        placeholder="e.g., My Main Wallet"
+                        className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="wallet-address" className="block text-sm font-medium text-slate-300 mb-2">
+                        Wallet Address <span className="text-fuchsia-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="wallet-address"
+                        value={walletFormData.wallet_address}
+                        onChange={(e) => setWalletFormData({ ...walletFormData, wallet_address: e.target.value })}
+                        placeholder="0x..."
+                        className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-3">
+                        Enabled Chains <span className="text-fuchsia-400">*</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { id: 'ethereum', name: 'Ethereum', symbol: 'ETH' },
+                          { id: 'arbitrum', name: 'Arbitrum', symbol: 'ARB' },
+                          { id: 'optimism', name: 'Optimism', symbol: 'OP' },
+                          { id: 'base', name: 'Base', symbol: 'BASE' },
+                          { id: 'bsc', name: 'BNB Chain', symbol: 'BNB' },
+                        ].map((chain) => (
+                          <button
+                            key={chain.id}
+                            type="button"
+                            onClick={() => toggleChain(chain.id)}
+                            className={`p-3 rounded-lg border-2 text-left transition-all ${
+                              walletFormData.enabled_chains.includes(chain.id)
+                                ? 'border-fuchsia-500 bg-fuchsia-900/30 text-fuchsia-300'
+                                : 'border-violet-500/50 bg-slate-900/50 text-slate-400 hover:border-violet-400 hover:bg-slate-800/70'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="font-bold text-sm">{chain.name}</div>
+                                <div className="text-xs opacity-75">{chain.symbol}</div>
+                              </div>
+                              {walletFormData.enabled_chains.includes(chain.id) && (
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <LoadingButton
+                        type="submit"
+                        loading={createAccount.isPending}
+                        disabled={createAccount.isPending}
+                        className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
+                      >
+                        {createAccount.isPending ? "Creating..." : "Create Wallet"}
+                      </LoadingButton>
+                      <button
+                        type="button"
+                        onClick={closeForm}
+                        className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : formType === "solana" ? (
+                <>
+                  <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
+                    Add Solana Wallet
+                  </h3>
+                  <form onSubmit={handleCreateSolana} className="space-y-4">
+                    <div>
+                      <label htmlFor="solana-name" className="block text-sm font-medium text-slate-300 mb-2">
+                        Wallet Name <span className="text-fuchsia-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="solana-name"
+                        value={solanaFormData.name}
+                        onChange={(e) => setSolanaFormData({ ...solanaFormData, name: e.target.value })}
+                        placeholder="e.g., My Solana Wallet"
+                        className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="solana-address" className="block text-sm font-medium text-slate-300 mb-2">
+                        Wallet Address <span className="text-fuchsia-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="solana-address"
+                        value={solanaFormData.wallet_address}
+                        onChange={(e) => setSolanaFormData({ ...solanaFormData, wallet_address: e.target.value })}
+                        placeholder="e.g. 5YNmS1R9nNSCDzb5a7mMJ1dwK9uHeAAF4CmPEwKgVWr8"
+                        className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                        required
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <LoadingButton
+                        type="submit"
+                        loading={createAccount.isPending}
+                        disabled={createAccount.isPending}
+                        className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
+                      >
+                        {createAccount.isPending ? "Creating..." : "Create Solana Wallet"}
+                      </LoadingButton>
+                      <button
+                        type="button"
+                        onClick={closeForm}
+                        className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-xl font-bold text-fuchsia-300 mb-4 drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
+                    Add Exchange Account
+                  </h3>
+                  <form onSubmit={handleCreateExchange} className="space-y-4">
+                    <div>
+                      <label htmlFor="exchange-name" className="block text-sm font-medium text-slate-300 mb-2">
+                        Account Name <span className="text-fuchsia-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="exchange-name"
+                        value={exchangeFormData.name}
+                        onChange={(e) => setExchangeFormData({ ...exchangeFormData, name: e.target.value })}
+                        placeholder="e.g., My OKX Account"
+                        className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="exchange-type" className="block text-sm font-medium text-slate-300 mb-2">
+                        Exchange <span className="text-fuchsia-400">*</span>
+                      </label>
+                      <select
+                        id="exchange-type"
+                        value={exchangeFormData.exchange_name}
+                        onChange={(e) => setExchangeFormData({ ...exchangeFormData, exchange_name: e.target.value })}
+                        className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                      >
+                        <option value="okx">OKX</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="api-key" className="block text-sm font-medium text-slate-300 mb-2">
+                        API Key <span className="text-fuchsia-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="api-key"
+                        value={exchangeFormData.api_key}
+                        onChange={(e) => setExchangeFormData({ ...exchangeFormData, api_key: e.target.value })}
+                        placeholder="Enter API key"
+                        className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="api-secret" className="block text-sm font-medium text-slate-300 mb-2">
+                        API Secret <span className="text-fuchsia-400">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        id="api-secret"
+                        value={exchangeFormData.api_secret}
+                        onChange={(e) => setExchangeFormData({ ...exchangeFormData, api_secret: e.target.value })}
+                        placeholder="Enter API secret"
+                        className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="passphrase" className="block text-sm font-medium text-slate-300 mb-2">
+                        Passphrase (Optional for OKX)
+                      </label>
+                      <input
+                        type="password"
+                        id="passphrase"
+                        value={exchangeFormData.passphrase}
+                        onChange={(e) => setExchangeFormData({ ...exchangeFormData, passphrase: e.target.value })}
+                        placeholder="Enter passphrase if required"
+                        className="w-full px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] focus:shadow-[0_0_20px_rgba(217,70,239,0.3)] transition-all"
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <LoadingButton
+                        type="submit"
+                        loading={createAccount.isPending}
+                        disabled={createAccount.isPending}
+                        className="inline-flex items-center px-6 py-2 border-2 border-fuchsia-500 text-sm font-bold rounded-lg text-white bg-gradient-to-r from-fuchsia-600 via-purple-600 to-violet-600 hover:from-fuchsia-500 hover:via-purple-500 hover:to-violet-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_30px_rgba(217,70,239,0.6)] transition-all duration-300"
+                      >
+                        {createAccount.isPending ? "Creating..." : "Create Exchange Account"}
+                      </LoadingButton>
+                      <button
+                        type="button"
+                        onClick={closeForm}
+                        className="inline-flex items-center px-6 py-2 border-2 border-slate-600 text-sm font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 hover:border-slate-500 transition-all duration-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
             </div>
-          ))}
-        </div>
+          )}
+
+          {/* Loading State */}
+          {loading && <LoadingSkeleton count={3} type="card" />}
+
+          {/* Empty State */}
+          {!loading && accounts.length === 0 && (
+            <EmptyState
+              icon="account"
+              title="No accounts yet"
+              description="Add a wallet or exchange account to get started"
+              action={{
+                label: "New Account",
+                onClick: () => openCreateForm(null),
+              }}
+            />
+          )}
+
+          {!loading && accounts.length > 0 && (
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {accounts.map((account) => (
+                <div
+                  key={account.id}
+                  className="group bg-slate-900/60 backdrop-blur-sm rounded-xl border-2 border-fuchsia-500/50 hover:border-fuchsia-400 p-6 transition-all duration-300 shadow-[0_0_20px_rgba(217,70,239,0.25)] hover:shadow-[0_0_35px_rgba(217,70,239,0.45)] hover:transform hover:scale-[1.03]"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div
+                      className="flex-1 cursor-pointer"
+                      onClick={() => router.push(`/accounts/${account.id}`)}
+                    >
+                      <h3 className="text-lg font-bold text-fuchsia-300 group-hover:text-fuchsia-200 transition-colors drop-shadow-[0_0_8px_rgba(232,121,249,0.4)]">
+                        {account.name}
+                      </h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
+                          account.account_type === "wallet"
+                            ? "bg-violet-900/50 text-violet-300 border border-violet-500/50"
+                            : "bg-cyan-900/50 text-cyan-300 border border-cyan-500/50"
+                        }`}>
+                          {account.account_type === "wallet" ? "Wallet" : "Exchange"}
+                        </span>
+                        {!account.is_active && (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-slate-800/50 text-slate-400 border border-slate-600/50">
+                            Inactive
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-fuchsia-500 to-purple-600 flex items-center justify-center shadow-[0_0_15px_rgba(217,70,239,0.4)] group-hover:shadow-[0_0_20px_rgba(217,70,239,0.6)] transition-all">
+                      <svg className="w-5 h-5 text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.5)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        {account.account_type === "wallet" ? (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                        ) : (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        )}
+                      </svg>
+                    </div>
+                  </div>
+
+                  {account.account_type === "wallet" && account.wallet_address && (
+                    <>
+                      <p className="text-slate-400 text-xs mb-2 font-mono break-all">
+                        {account.wallet_address.length > 18
+                          ? `${account.wallet_address.slice(0, 10)}...${account.wallet_address.slice(-8)}`
+                          : account.wallet_address
+                        }
+                      </p>
+                      {account.exchange_name === "solana" && (
+                        <div className="flex flex-wrap gap-1 mb-3">
+                          <span className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-500/40">
+                            Solana
+                          </span>
+                        </div>
+                      )}
+                      {account.enabled_chains && account.enabled_chains.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-3">
+                          {account.enabled_chains.map((chain) => (
+                            <span
+                              key={chain}
+                              className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-500/40"
+                            >
+                              {getChainDisplayName(chain)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {account.account_type === "exchange" && account.exchange_name && (
+                    <p className="text-slate-400 text-xs mb-3 uppercase">
+                      {account.exchange_name}
+                    </p>
+                  )}
+
+                  <div className="text-xs text-slate-500 space-y-1 mb-4">
+                    <p className="flex items-center gap-2">
+                      <span>Last sync:</span>
+                      <span className={account.last_synced_at ? "text-cyan-400" : "text-slate-500"}>
+                        {formatDate(account.last_synced_at)}
+                      </span>
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => router.push(`/accounts/${account.id}`)}
+                    className="w-full mb-2 inline-flex items-center justify-center px-3 py-2 border border-violet-500/50 text-xs font-medium rounded-lg text-violet-300 bg-violet-950/30 hover:bg-violet-900/50 hover:border-violet-400 transition-all"
+                  >
+                    <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    View Details
+                  </button>
+
+                  <div className="flex gap-2">
+                    <LoadingButton
+                      onClick={() => handleSyncAccount(account.id)}
+                      loading={syncAccount.isPending}
+                      disabled={syncAccount.isPending}
+                      className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-cyan-500/50 text-xs font-medium rounded-lg text-cyan-300 bg-cyan-950/30 hover:bg-cyan-900/50 hover:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    >
+                      <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      {syncAccount.isPending ? "Syncing..." : "Sync"}
+                    </LoadingButton>
+                    {deletingAccount === account.id ? (
+                      <>
+                        <button
+                          onClick={() => handleDeleteAccount(account.id)}
+                          className="px-3 py-2 border border-red-500 text-xs font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 transition-all"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={cancelDelete}
+                          className="px-3 py-2 border border-slate-600 text-xs font-medium rounded-lg text-slate-300 bg-slate-900/50 hover:bg-slate-800/70 transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => confirmDelete(account.id)}
+                        className="px-3 py-2 border border-red-500/50 text-xs font-medium rounded-lg text-red-300 bg-red-950/30 hover:bg-red-900/50 hover:border-red-400 transition-all"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Tab 2: Account Analysis ── */}
+      {activeTab === "analysis" && (
+        <>
+          {/* Portfolio Selector */}
+          {portfoliosLoaded && portfolios.length > 1 && (
+            <div className="mb-6 flex items-center gap-4">
+              <label className="text-sm font-medium text-slate-300">Portfolio:</label>
+              <select
+                value={selectedPortfolioId ?? ""}
+                onChange={(e) => setSelectedPortfolioId(e.target.value)}
+                className="px-4 py-2 bg-slate-900/50 border-2 border-violet-500/50 rounded-lg text-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/40 shadow-[0_0_10px_rgba(139,92,246,0.15)] transition-all"
+              >
+                {portfolios.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.is_default ? " (Default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Error */}
+          {analysisError && (
+            <div className="mb-6">
+              <ErrorAlert
+                message={analysisError}
+                onRetry={() => selectedPortfolioId ? loadAnalysisHoldings(selectedPortfolioId) : loadPortfolios()}
+                onDismiss={() => setAnalysisError(null)}
+              />
+            </div>
+          )}
+
+          {/* Loading */}
+          {(analysisLoading || (!portfoliosLoaded && !analysisError)) && (
+            <LoadingSkeleton count={3} type="card" />
+          )}
+
+          {/* No portfolios */}
+          {portfoliosLoaded && portfolios.length === 0 && !analysisError && (
+            <EmptyState
+              icon="portfolio"
+              title="No portfolios yet"
+              description="Create a portfolio and link your accounts to see analysis here"
+            />
+          )}
+
+          {/* Analysis Content */}
+          {!analysisLoading && analysisHoldings && (
+            <>
+              {analysisHoldings.allocation.length === 0 ? (
+                <EmptyState
+                  icon="portfolio"
+                  title="No holdings to display"
+                  description="Sync your accounts and construct the portfolio allocation to see analysis"
+                />
+              ) : (
+                <>
+                  {/* Asset Allocation Bar Chart */}
+                  <div className="mb-8">
+                    <AllocationBar allocation={analysisHoldings.allocation} maxItems={MAX_ALLOCATION_ITEMS} />
+                  </div>
+
+                  {/* Top Holdings Table */}
+                  <div className="mb-8">
+                    <HoldingsTable holdings={analysisHoldings.holdings} allocation={analysisHoldings.allocation} />
+                  </div>
+
+                  {/* Allocation Distribution Pie Chart */}
+                  <div className="mb-8">
+                    <AllocationPie allocation={analysisHoldings.allocation} maxItems={MAX_ALLOCATION_ITEMS} />
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </>
       )}
     </>
   );

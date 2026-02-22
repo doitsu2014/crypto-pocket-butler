@@ -3,18 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { useToast } from "@/contexts/ToastContext";
-import { useCreateSnapshot, DEFAULT_SNAPSHOT_TYPE } from "@/hooks/useSnapshots";
 import Link from "next/link";
 import PortfolioCompositionEditor from "./PortfolioCompositionEditor";
 import { LoadingSkeleton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
-import HoldingsTable from "@/components/portfolio/HoldingsTable";
-import AllocationBar from "@/components/portfolio/AllocationBar";
-import AllocationPie from "@/components/portfolio/AllocationPie";
-import DriftBadge from "@/components/portfolio/DriftBadge";
-
-const MAX_ALLOCATION_ITEMS = 10;
 
 interface Portfolio {
   id: string;
@@ -33,47 +26,11 @@ interface Portfolio {
   updated_at: string;
 }
 
-interface AccountHoldingDetail {
-  account_id: string;
-  account_name: string;
-  /** Normalized (human-readable) quantity */
-  quantity: string;
-  available: string;
-  frozen: string;
-  /** Token decimal places metadata */
-  decimals?: number;
-  /** Same as quantity – backwards-compat alias */
-  normalized_quantity?: string;
-}
-
-interface AssetHolding {
-  asset: string;
-  chain?: string;
-  /** Normalized (human-readable) total quantity */
-  total_quantity: string;
-  total_available: string;
-  total_frozen: string;
-  /** Token decimal places metadata */
-  decimals?: number;
-  /** Same as total_quantity – backwards-compat alias */
-  normalized_quantity?: string;
-  price_usd: number;
-  value_usd: number;
-  accounts: AccountHoldingDetail[];
-}
-
-interface AllocationItem {
-  asset: string;
-  chain?: string;
-  value_usd: number;
-  percentage: number;
-}
-
 interface PortfolioHoldingsResponse {
   portfolio_id: string;
   total_value_usd: number;
-  holdings: AssetHolding[];
-  allocation: AllocationItem[];
+  holdings: unknown[];
+  allocation: unknown[];
   as_of: string;
 }
 
@@ -137,20 +94,17 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
   const [error, setError] = useState<string | null>(null);
   const [constructing, setConstructing] = useState(false);
 
-  // Snapshot creation mutation
-  const createSnapshotMutation = useCreateSnapshot(portfolioId);
-
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Load portfolio details and holdings in parallel
       const [portfolioData, holdingsData] = await Promise.all([
         apiClient<Portfolio>(`/v1/portfolios/${portfolioId}`),
         apiClient<PortfolioHoldingsResponse>(`/v1/portfolios/${portfolioId}/holdings`),
       ]);
-      
+
       setPortfolio(portfolioData);
       setHoldings(holdingsData);
 
@@ -192,23 +146,6 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
     }
   };
 
-  const createSnapshot = async () => {
-    try {
-      const result = await createSnapshotMutation.mutateAsync({
-        snapshot_type: DEFAULT_SNAPSHOT_TYPE,
-      });
-      
-      if (result.success) {
-        toast.success("Snapshot created successfully!");
-      } else {
-        toast.error(result.error || "Failed to create snapshot");
-      }
-    } catch (err) {
-      const errorMessage = err instanceof ApiError ? err.message : "Failed to create snapshot";
-      toast.error(errorMessage);
-    }
-  };
-
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -219,7 +156,7 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
 
   if (error) {
     return (
-      <ErrorAlert 
+      <ErrorAlert
         message={error}
         onRetry={loadData}
         onDismiss={() => setError(null)}
@@ -272,18 +209,9 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
         {portfolio.description && (
           <p className="text-slate-400 text-sm">{portfolio.description}</p>
         )}
-        
+
         {/* Quick Actions */}
         <div className="mt-4 flex gap-3">
-          <Link
-            href={`/portfolios/${portfolioId}/snapshots`}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-semibold rounded-lg border-2 border-fuchsia-500 shadow-[0_0_20px_rgba(217,70,239,0.5)] hover:shadow-[0_0_25px_rgba(217,70,239,0.7)] hover:scale-105 transition-all"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            View Snapshots
-          </Link>
           <Link
             href={`/portfolios/${portfolioId}/recommendations`}
             className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-semibold rounded-lg border-2 border-cyan-500 shadow-[0_0_20px_rgba(34,211,238,0.5)] hover:shadow-[0_0_25px_rgba(34,211,238,0.7)] hover:scale-105 transition-all"
@@ -339,53 +267,28 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
               Portfolio Allocation
             </h3>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={constructAllocation}
-              disabled={constructing}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-lg border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)] hover:shadow-[0_0_25px_rgba(16,185,129,0.7)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            >
-              {constructing ? (
-                <>
-                  <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Constructing...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Construct Portfolio
-                </>
-              )}
-            </button>
-            <button
-              onClick={createSnapshot}
-              disabled={createSnapshotMutation.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-semibold rounded-lg border-2 border-fuchsia-500 shadow-[0_0_20px_rgba(217,70,239,0.5)] hover:shadow-[0_0_25px_rgba(217,70,239,0.7)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            >
-              {createSnapshotMutation.isPending ? (
-                <>
-                  <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  Create Snapshot
-                </>
-              )}
-            </button>
-          </div>
+          <button
+            onClick={constructAllocation}
+            disabled={constructing}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold rounded-lg border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)] hover:shadow-[0_0_25px_rgba(16,185,129,0.7)] hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+          >
+            {constructing ? (
+              <>
+                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Constructing...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Construct Portfolio
+              </>
+            )}
+          </button>
         </div>
 
         {constructedAllocation ? (
@@ -467,88 +370,6 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
           </div>
         )}
       </div>
-
-      {/* Allocation Breakdown - Bar Chart */}
-      {holdings.allocation.length === 0 ? (
-        <div className="mb-8">
-          <EmptyState
-            icon="portfolio"
-            title="No holdings to display"
-            description="This portfolio doesn't have any assets yet"
-          />
-        </div>
-      ) : (
-        <>
-          <div className="mb-8">
-            <AllocationBar allocation={holdings.allocation} maxItems={MAX_ALLOCATION_ITEMS} />
-          </div>
-          
-          {/* Allocation Pie Chart */}
-          <div className="mb-8">
-            <AllocationPie allocation={holdings.allocation} maxItems={MAX_ALLOCATION_ITEMS} />
-          </div>
-        </>
-      )}
-
-      {/* Holdings Table */}
-      {holdings.holdings.length > 0 ? (
-        <div className="mb-8">
-          <HoldingsTable holdings={holdings.holdings} allocation={holdings.allocation} />
-        </div>
-      ) : (
-        <div className="mb-8">
-          <EmptyState
-            icon="portfolio"
-            title="No holdings found"
-            description="This portfolio doesn't have any assets yet"
-          />
-        </div>
-      )}
-
-      {/* Drift Indicators */}
-      {portfolio.target_allocation && Object.keys(portfolio.target_allocation).length > 0 && (
-        <div className="bg-slate-950/70 backdrop-blur-sm border-2 border-yellow-500/40 shadow-[0_0_25px_rgba(234,179,8,0.3)] rounded-2xl p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center shadow-[0_0_15px_rgba(234,179,8,0.5)]">
-              <svg className="w-5 h-5 text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.5)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-yellow-300 drop-shadow-[0_0_8px_rgba(234,179,8,0.4)]">
-              Portfolio Drift Indicators
-            </h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {holdings.allocation.map((item) => {
-              const targetPercentage = portfolio.target_allocation?.[item.asset];
-              if (targetPercentage === undefined) return null;
-              
-              return (
-                <div key={item.asset} className="bg-slate-900/50 rounded-lg p-4 border border-slate-700/50">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-fuchsia-300 drop-shadow-[0_0_6px_rgba(232,121,249,0.4)]">
-                      {item.asset}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm">
-                      <div className="text-slate-400">Current:</div>
-                      <div className="text-cyan-300 font-bold">
-                        {formatPercentage(item.percentage)}
-                      </div>
-                    </div>
-                    <DriftBadge
-                      currentPercentage={item.percentage}
-                      targetPercentage={targetPercentage}
-                      asset={item.asset}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </>
   );
 }

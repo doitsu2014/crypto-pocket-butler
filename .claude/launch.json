@@ -10,7 +10,7 @@
     {
       "name": "backend",
       "runtimeExecutable": "cargo",
-      "runtimeArgs": ["run"],
+      "runtimeArgs": ["run", "--manifest-path", "api/Cargo.toml"],
       "port": 3001
     }
   ],

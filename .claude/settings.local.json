@@ -14,7 +14,9 @@
       "Bash(gh pr create:*)",
       "Bash(cargo check:*)",
       "Bash(timeout:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(git -C \"D:\\\\Workspace\\\\doitsu-technology\\\\crypto-pocket-butler\" branch --show-current)",
+      "Bash(git -C \"D:\\\\Workspace\\\\doitsu-technology\\\\crypto-pocket-butler\" checkout -b feat/consolidate-price-fetch-to-fetch-all-coins)"
     ]
   }
 }

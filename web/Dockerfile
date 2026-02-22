@@ -8,7 +8,8 @@ COPY package*.json ./
 COPY pnpm-lock.yaml* ./
 
 # Install dependencies
-RUN npm ci --omit=dev
+RUN npm ci
+RUN npm install pnpm
 
 # Builder stage
 FROM node:20-alpine AS builder
@@ -43,9 +44,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 USER nextjs
 
 # Expose the application port
-EXPOSE 3001
+EXPOSE 3000
 
-ENV PORT=3001
+ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]

@@ -1,25 +1,12 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useAccount, useSyncAccount } from "@/hooks";
+import { useAccount, useSyncAccount, useEvmChains } from "@/hooks";
 import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
 import { useToast } from "@/contexts/ToastContext";
 import { ApiError } from "@/lib/api-client";
-
-// Helper function to get user-friendly chain name
-function getChainDisplayName(chainId: string): string {
-  const chainMap: Record<string, string> = {
-    ethereum: 'Ethereum',
-    arbitrum: 'Arbitrum',
-    optimism: 'Optimism',
-    base: 'Base',
-    bsc: 'BNB Chain',
-    solana: 'Solana',
-  };
-  return chainMap[chainId] || chainId;
-}
 
 function formatDate(dateString: string | undefined): string {
   if (!dateString) return 'Never';
@@ -42,6 +29,10 @@ export default function AccountDetailClient() {
 
   const { data: account, isLoading, error: queryError, refetch } = useAccount(accountId);
   const syncAccount = useSyncAccount();
+
+  // Fetch EVM chains from database configuration for dynamic name lookup
+  const { data: evmChains = [] } = useEvmChains();
+  const chainNameMap = Object.fromEntries(evmChains.map((c) => [c.chain_id, c.name]));
 
   // Convert query error to string for display
   const error = queryError instanceof ApiError ? queryError.message : 
@@ -181,7 +172,7 @@ export default function AccountDetailClient() {
                     key={chain}
                     className="inline-flex items-center text-xs px-3 py-1 rounded-full bg-violet-900/40 text-violet-300 border border-violet-500/40"
                   >
-                    {getChainDisplayName(chain)}
+                    {chainNameMap[chain] ?? chain}
                   </span>
                 ))}
               </div>

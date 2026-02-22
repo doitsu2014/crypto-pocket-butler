@@ -15,7 +15,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::connectors::coinpaprika::CoinPaprikaConnector;
-use crate::entities::{asset_contracts, evm_tokens};
+use crate::entities::{asset_contracts, evm_chains, evm_tokens};
 use super::error::ApiError;
 
 // === Request / Response DTOs ===
@@ -319,10 +319,14 @@ pub async fn sync_tokens_from_contracts_handler(
     State(db): State<DatabaseConnection>,
     Extension(_token): Extension<axum_keycloak_auth::decode::KeycloakToken<String>>,
 ) -> Result<Json<SyncFromContractsResponse>, ApiError> {
-    use crate::connectors::evm::EvmChain;
-
-    // Derive the supported chain names from EvmChain::all() – single source of truth
-    let supported_chains: Vec<String> = EvmChain::all().iter().map(|c| c.name().to_string()).collect();
+    // Derive the supported chain names from the evm_chains DB table – the single source of truth
+    let supported_chains: Vec<String> = evm_chains::Entity::find()
+        .filter(evm_chains::Column::IsActive.eq(true))
+        .all(&db)
+        .await?
+        .into_iter()
+        .map(|r| r.chain_id)
+        .collect();
 
     // Build an OR filter for all supported chains
     let chain_condition = supported_chains.iter().fold(Condition::any(), |cond, chain| {

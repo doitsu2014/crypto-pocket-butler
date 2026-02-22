@@ -22,61 +22,60 @@ sol! {
     }
 }
 
-/// Supported EVM chains
+/// A supported EVM chain, loaded from the `evm_chains` database table.
+///
+/// Using a struct instead of an enum makes the set of supported chains fully
+/// data-driven: adding a new chain only requires inserting a row in `evm_chains`
+/// — no code change needed.
 #[derive(Debug, Clone)]
-pub enum EvmChain {
-    Ethereum,
-    Arbitrum,
-    Optimism,
-    Base,
-    BinanceSmartChain,
+pub struct EvmChain {
+    chain_id: String,
+    default_rpc_url: String,
+    native_symbol: String,
 }
 
 impl EvmChain {
-    /// Get the default public RPC URL for this chain
-    pub fn rpc_url(&self) -> &'static str {
-        match self {
-            EvmChain::Ethereum => "https://eth.llamarpc.com",
-            EvmChain::Arbitrum => "https://arbitrum.llamarpc.com",
-            EvmChain::Optimism => "https://optimism.llamarpc.com",
-            EvmChain::Base => "https://base.llamarpc.com",
-            EvmChain::BinanceSmartChain => "https://bsc-dataseed.bnbchain.org",
+    /// Construct an [`EvmChain`] from raw parts (e.g. loaded from the database).
+    pub fn new(
+        chain_id: impl Into<String>,
+        rpc_url: impl Into<String>,
+        native_symbol: impl Into<String>,
+    ) -> Self {
+        Self {
+            chain_id: chain_id.into(),
+            default_rpc_url: rpc_url.into(),
+            native_symbol: native_symbol.into(),
         }
     }
 
-    /// Get the chain name
-    pub fn name(&self) -> &'static str {
-        match self {
-            EvmChain::Ethereum => "ethereum",
-            EvmChain::Arbitrum => "arbitrum",
-            EvmChain::Optimism => "optimism",
-            EvmChain::Base => "base",
-            EvmChain::BinanceSmartChain => "bsc",
-        }
+    /// Chain identifier, matching the `chain_id` column in the `evm_chains` table
+    /// (e.g. `"ethereum"`, `"hyper_liquid"`).
+    pub fn name(&self) -> &str {
+        &self.chain_id
     }
 
-    /// Get the native asset symbol for this chain
-    pub fn native_symbol(&self) -> &'static str {
-        match self {
-            EvmChain::Ethereum => "ETH",
-            EvmChain::Arbitrum => "ETH",
-            EvmChain::Optimism => "ETH",
-            EvmChain::Base => "ETH",
-            EvmChain::BinanceSmartChain => "BNB",
-        }
+    /// Default RPC URL for this chain.  May be overridden per-connector via
+    /// `EvmConnector::new_with_tokens`'s `custom_rpc_urls` argument.
+    pub fn rpc_url(&self) -> &str {
+        &self.default_rpc_url
     }
 
-    /// Returns all supported EVM chains.
+    /// Symbol of the chain's native token (e.g. `"ETH"`, `"BNB"`, `"HYPE"`).
+    pub fn native_symbol(&self) -> &str {
+        &self.native_symbol
+    }
+
+    /// Hardcoded fallback chain list used when the database is unreachable.
     ///
-    /// This is the single source of truth used by `account_sync` (default chain list)
-    /// and the `evm-tokens` handler (supported-chains filter).
-    pub fn all() -> Vec<EvmChain> {
+    /// Callers should prefer loading chains from the `evm_chains` DB table so that
+    /// any chain added at runtime is automatically supported.
+    pub fn defaults() -> Vec<EvmChain> {
         vec![
-            EvmChain::Ethereum,
-            EvmChain::Arbitrum,
-            EvmChain::Optimism,
-            EvmChain::Base,
-            EvmChain::BinanceSmartChain,
+            EvmChain::new("ethereum", "https://eth.llamarpc.com", "ETH"),
+            EvmChain::new("arbitrum", "https://arbitrum.llamarpc.com", "ETH"),
+            EvmChain::new("optimism", "https://optimism.llamarpc.com", "ETH"),
+            EvmChain::new("base", "https://base.llamarpc.com", "ETH"),
+            EvmChain::new("bsc", "https://bsc-dataseed.bnbchain.org", "BNB"),
         ]
     }
 }
@@ -107,16 +106,16 @@ impl EvmChain {
 /// 
 /// To add more tokens, simply add them to the appropriate chain's vector:
 /// 
-/// ```rust
-/// EvmChain::Ethereum => vec![
+/// ```text
+/// "ethereum" => vec![
 ///     ("USDT", "0xdAC17F958D2ee523a2206206994597C13D831ec7"),
 ///     ("USDC", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
 ///     // Add more tokens here
 /// ],
 /// ```
 pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> {
-    match chain {
-        EvmChain::Ethereum => vec![
+    match chain.name() {
+        "ethereum" => vec![
             // Stablecoins
             ("USDT",  "0xdAC17F958D2ee523a2206206994597C13D831ec7"),
             ("USDC",  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
@@ -144,7 +143,7 @@ pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> 
             ("1INCH", "0x111111111117dC0aa78b770fA6A738034120C302"),
             ("ENS",   "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72"),
         ],
-        EvmChain::Arbitrum => vec![
+        "arbitrum" => vec![
             // Stablecoins
             ("USDT",  "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"),
             ("USDC",  "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"),
@@ -165,7 +164,7 @@ pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> 
             ("GMX",   "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a"),
             ("ARB",   "0x912CE59144191C1204E64559FE8253a0e49E6548"),
         ],
-        EvmChain::Optimism => vec![
+        "optimism" => vec![
             // Stablecoins
             ("USDT",  "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"),
             ("USDC",  "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"),
@@ -186,7 +185,7 @@ pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> 
             ("OP",    "0x4200000000000000000000000000000000000042"),
             ("SNX",   "0x8700dAec35aF8Ff88c16BdF0418774CB3D7599B4"),
         ],
-        EvmChain::Base => vec![
+        "base" => vec![
             // Stablecoins
             ("USDC",  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
             ("DAI",   "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb"),
@@ -201,7 +200,7 @@ pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> 
             // DeFi tokens on Base
             ("AERO",  "0x940181a94A35A4569E4529A3CDfB74e38FD98631"),
         ],
-        EvmChain::BinanceSmartChain => vec![
+        "bsc" => vec![
             // Stablecoins
             ("USDT",  "0x55d398326f99059fF775485246999027B3197955"),
             ("USDC",  "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d"),
@@ -218,6 +217,9 @@ pub fn get_common_tokens(chain: &EvmChain) -> Vec<(&'static str, &'static str)> 
             ("ALPACA","0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F"),
             ("LINK",  "0xF8A0BF9cF54Bb92F17374d9e9A321E6a111a51bD"),
         ],
+        // For chains not yet in the built-in list, return an empty set.
+        // Token discovery for those chains relies entirely on the `evm_tokens` DB table.
+        _ => vec![],
     }
 }
 
@@ -268,7 +270,7 @@ impl EvmConnector {
             .map_err(|e| format!("Invalid wallet address: {}", e))?;
 
         let chains = if chains.is_empty() {
-            vec![EvmChain::Ethereum]
+            EvmChain::defaults()
         } else {
             chains
         };
@@ -478,30 +480,37 @@ mod tests {
 
     #[test]
     fn test_chain_properties() {
-        let eth = EvmChain::Ethereum;
+        let eth = EvmChain::new("ethereum", "https://eth.llamarpc.com", "ETH");
         assert_eq!(eth.name(), "ethereum");
         assert_eq!(eth.native_symbol(), "ETH");
         assert!(!eth.rpc_url().is_empty());
-        
-        let bsc = EvmChain::BinanceSmartChain;
+
+        let bsc = EvmChain::new("bsc", "https://bsc-dataseed.bnbchain.org", "BNB");
         assert_eq!(bsc.name(), "bsc");
         assert_eq!(bsc.native_symbol(), "BNB");
         assert!(!bsc.rpc_url().is_empty());
+
+        let hl = EvmChain::new("hyper_liquid", "https://rpc.hyperliquid.xyz/evm", "HYPE");
+        assert_eq!(hl.name(), "hyper_liquid");
+        assert_eq!(hl.native_symbol(), "HYPE");
+        assert!(!hl.rpc_url().is_empty());
     }
 
     #[test]
     fn test_connector_creation() {
+        let eth = EvmChain::new("ethereum", "https://eth.llamarpc.com", "ETH");
+
         // Valid address – default (built-in) token list
         let result = EvmConnector::new(
             "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045".to_string(),
-            vec![EvmChain::Ethereum],
+            vec![eth],
         );
         assert!(result.is_ok());
 
         // Invalid address
         let result = EvmConnector::new(
             "invalid-address".to_string(),
-            vec![EvmChain::Ethereum],
+            vec![EvmChain::new("ethereum", "https://eth.llamarpc.com", "ETH")],
         );
         assert!(result.is_err());
     }
@@ -516,13 +525,12 @@ mod tests {
 
         let result = EvmConnector::new_with_tokens(
             "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045".to_string(),
-            vec![EvmChain::Ethereum],
+            vec![EvmChain::new("ethereum", "https://eth.llamarpc.com", "ETH")],
             Some(custom),
             None,
         );
         assert!(result.is_ok());
         let connector = result.unwrap();
-        // Custom tokens should be stored
         let custom_ref = connector.custom_tokens.as_ref().unwrap();
         assert!(custom_ref.contains_key("ethereum"));
         assert_eq!(custom_ref["ethereum"][0].0, "MYTOKEN");
@@ -530,7 +538,8 @@ mod tests {
 
     #[test]
     fn test_common_tokens() {
-        let eth_tokens = get_common_tokens(&EvmChain::Ethereum);
+        let eth = EvmChain::new("ethereum", "", "ETH");
+        let eth_tokens = get_common_tokens(&eth);
         assert!(!eth_tokens.is_empty());
         assert!(eth_tokens.iter().any(|(symbol, _)| *symbol == "USDC"));
         assert!(eth_tokens.iter().any(|(symbol, _)| *symbol == "WBTC"));
@@ -539,24 +548,28 @@ mod tests {
         assert!(eth_tokens.iter().any(|(symbol, _)| *symbol == "AAVE"));
         assert!(eth_tokens.iter().any(|(symbol, _)| *symbol == "WSTETH"));
 
-        let arb_tokens = get_common_tokens(&EvmChain::Arbitrum);
+        let arb_tokens = get_common_tokens(&EvmChain::new("arbitrum", "", "ETH"));
         assert!(!arb_tokens.is_empty());
         assert!(arb_tokens.iter().any(|(symbol, _)| *symbol == "ARB"));
         assert!(arb_tokens.iter().any(|(symbol, _)| *symbol == "GMX"));
 
-        let op_tokens = get_common_tokens(&EvmChain::Optimism);
+        let op_tokens = get_common_tokens(&EvmChain::new("optimism", "", "ETH"));
         assert!(!op_tokens.is_empty());
         assert!(op_tokens.iter().any(|(symbol, _)| *symbol == "OP"));
 
-        let base_tokens = get_common_tokens(&EvmChain::Base);
+        let base_tokens = get_common_tokens(&EvmChain::new("base", "", "ETH"));
         assert!(!base_tokens.is_empty());
         assert!(base_tokens.iter().any(|(symbol, _)| *symbol == "CBETH"));
 
-        let bsc_tokens = get_common_tokens(&EvmChain::BinanceSmartChain);
+        let bsc_tokens = get_common_tokens(&EvmChain::new("bsc", "", "BNB"));
         assert!(!bsc_tokens.is_empty());
         assert!(bsc_tokens.iter().any(|(symbol, _)| *symbol == "USDT"));
         assert!(bsc_tokens.iter().any(|(symbol, _)| *symbol == "WBNB"));
         assert!(bsc_tokens.iter().any(|(symbol, _)| *symbol == "CAKE"));
         assert!(bsc_tokens.iter().any(|(symbol, _)| *symbol == "BTCB"));
+
+        // Chains not in the built-in list return an empty vec; token data comes from DB
+        let hl_tokens = get_common_tokens(&EvmChain::new("hyper_liquid", "", "HYPE"));
+        assert!(hl_tokens.is_empty());
     }
 }

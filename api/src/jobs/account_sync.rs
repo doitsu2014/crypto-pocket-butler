@@ -120,51 +120,43 @@ pub async fn sync_account(
                     ))
                 }
                 _ => {
-                    // Default to EVM chains (Ethereum, Arbitrum, Optimism, Base, BSC)
-                    // Use enabled_chains from account if specified, otherwise use all chains
+                    // Load all active EVM chains from DB (carries chain_id, rpc_url, native_symbol)
+                    let all_chains = load_evm_chains_from_db(db).await;
+
+                    // Filter to the account's enabled_chains subset, or use all if unset
                     let chains = if let Some(enabled_chains_json) = &account.enabled_chains {
-                        // Parse enabled_chains from JSON
                         match serde_json::from_value::<Vec<String>>(enabled_chains_json.clone()) {
                             Ok(chain_names) => {
-                                // Convert chain names to EvmChain enums
-                                let mut chains = Vec::new();
-                                for name in chain_names {
-                                    match name.as_str() {
-                                        "ethereum" => chains.push(EvmChain::Ethereum),
-                                        "arbitrum" => chains.push(EvmChain::Arbitrum),
-                                        "optimism" => chains.push(EvmChain::Optimism),
-                                        "base" => chains.push(EvmChain::Base),
-                                        "bsc" => chains.push(EvmChain::BinanceSmartChain),
-                                        _ => {
-                                            tracing::warn!("Unknown chain name: {}", name);
-                                        }
-                                    }
-                                }
-                                if chains.is_empty() {
-                                    // If no valid chains were found, use all chains
-                                    EvmChain::all()
+                                let filtered: Vec<EvmChain> = all_chains
+                                    .iter()
+                                    .filter(|c| chain_names.contains(&c.name().to_string()))
+                                    .cloned()
+                                    .collect();
+                                if filtered.is_empty() {
+                                    tracing::warn!(
+                                        "None of enabled_chains {:?} matched active DB chains; using all",
+                                        chain_names
+                                    );
+                                    all_chains
                                 } else {
-                                    chains
+                                    filtered
                                 }
                             }
                             Err(e) => {
                                 tracing::warn!("Failed to parse enabled_chains: {}, using all chains", e);
-                                EvmChain::all()
+                                all_chains
                             }
                         }
                     } else {
-                        // No enabled_chains specified, use all chains
-                        EvmChain::all()
+                        all_chains
                     };
 
                     // Load token list from DB; fall back to built-in list on error
                     let db_tokens = load_tokens_from_db(db).await;
 
-                    // Load RPC URLs from DB; fall back to hardcoded defaults on error
-                    let db_rpc_urls = load_rpc_urls_from_db(db).await;
-
-                    // Create EVM connector with DB-sourced token list and RPC URLs
-                    match EvmConnector::new_with_tokens(wallet_address.clone(), chains, db_tokens, db_rpc_urls) {
+                    // RPC URLs are already embedded in each EvmChain struct (loaded from DB above).
+                    // No separate rpc_url override map is needed.
+                    match EvmConnector::new_with_tokens(wallet_address.clone(), chains, db_tokens, None) {
                         Ok(connector) => Box::new(connector),
                         Err(e) => {
                             return Ok(SyncResult {
@@ -336,39 +328,32 @@ async fn load_tokens_from_db(
     }
 }
 
-/// Load active EVM chain RPC URLs from the database.
+/// Load all active EVM chains from the database as [`EvmChain`] structs.
 ///
-/// Returns `Some(map)` where key = `chain_id` (e.g. "ethereum") and value = RPC URL string.
-/// Falls back to `None` on any DB error so the EVM connector uses its hardcoded defaults.
-async fn load_rpc_urls_from_db(
-    db: &DatabaseConnection,
-) -> Option<HashMap<String, String>> {
+/// Each returned struct carries the chain's `chain_id`, `rpc_url`, and `native_symbol`
+/// directly from the `evm_chains` table, so no separate RPC URL map is needed.
+///
+/// Falls back to a small hardcoded set when the database is unreachable, ensuring
+/// the sync job can still operate in degraded-DB conditions.
+async fn load_evm_chains_from_db(db: &DatabaseConnection) -> Vec<EvmChain> {
     match evm_chains::Entity::find()
         .filter(evm_chains::Column::IsActive.eq(true))
         .all(db)
         .await
     {
         Ok(rows) if !rows.is_empty() => {
-            let map: HashMap<String, String> = rows
-                .into_iter()
-                .map(|row| (row.chain_id, row.rpc_url))
-                .collect();
-            tracing::info!(
-                "Loaded RPC URLs for {} active EVM chains from DB",
-                map.len()
-            );
-            Some(map)
+            tracing::info!("Loaded {} active EVM chains from DB", rows.len());
+            rows.into_iter()
+                .map(|r| EvmChain::new(r.chain_id, r.rpc_url, r.native_symbol))
+                .collect()
         }
         Ok(_) => {
-            tracing::warn!("evm_chains table is empty, using hardcoded RPC URLs");
-            None
+            tracing::warn!("evm_chains table is empty, using hardcoded defaults");
+            EvmChain::defaults()
         }
         Err(e) => {
-            tracing::warn!(
-                "Failed to load EVM chain RPC URLs from DB: {}, using hardcoded defaults",
-                e
-            );
-            None
+            tracing::warn!("Failed to load EVM chains from DB: {}, using hardcoded defaults", e);
+            EvmChain::defaults()
         }
     }
 }

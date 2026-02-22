@@ -10,6 +10,8 @@
 #
 # Required secrets:
 #   - KUBE_CONFIG: Base64-encoded kubeconfig for the target cluster.
+#   - DOCKERHUB_USERNAME: Your Docker Hub username.
+#   - DOCKERHUB_TOKEN: A Docker Hub access token.
 #
 # Optional secrets / variables (configure in repository settings):
 #   - HELM_RELEASE_NAMESPACE: Kubernetes namespace (default: crypto-pocket-butler).
@@ -40,8 +42,10 @@ on:
         default: "crypto-pocket-butler"
 
 env:
-  REGISTRY: ghcr.io
-  REGISTRY_OWNER: ${{ github.repository_owner }}
+  # Docker Hub OCI registry endpoint for Helm
+  HELM_REGISTRY: registry-1.docker.io
+  # Docker Hub image registry
+  IMAGE_REGISTRY: docker.io
   NAMESPACE: ${{ github.event.inputs.namespace || vars.HELM_RELEASE_NAMESPACE || 'crypto-pocket-butler' }}
 
 jobs:
@@ -53,7 +57,6 @@ jobs:
     environment: production
     permissions:
       contents: read
-      packages: read
 
     steps:
       - name: Checkout repository
@@ -86,10 +89,10 @@ jobs:
             echo "image_tag=sha-$(echo '${{ github.event.workflow_run.head_sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to Docker Hub
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} \
-            --username ${{ github.actor }} \
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | helm registry login ${{ env.HELM_REGISTRY }} \
+            --username ${{ secrets.DOCKERHUB_USERNAME }} \
             --password-stdin
 
       - name: Create namespace if not exists
@@ -99,11 +102,11 @@ jobs:
       - name: Deploy API Helm chart
         run: |
           helm upgrade --install crypto-pocket-butler-api \
-            oci://${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/crypto-pocket-butler-api \
+            oci://${{ env.HELM_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/crypto-pocket-butler-api \
             --version ${{ steps.params.outputs.chart_version }} \
             --namespace ${{ env.NAMESPACE }} \
             --set image.tag=${{ steps.params.outputs.image_tag }} \
-            --set image.repository=${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/crypto-pocket-butler-api \
+            --set image.repository=${{ env.IMAGE_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/crypto-pocket-butler-api \
             --atomic \
             --timeout 5m \
             --wait
@@ -111,18 +114,18 @@ jobs:
       - name: Deploy Web Helm chart
         run: |
           helm upgrade --install crypto-pocket-butler-web \
-            oci://${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/crypto-pocket-butler-web \
+            oci://${{ env.HELM_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/crypto-pocket-butler-web \
             --version ${{ steps.params.outputs.chart_version }} \
             --namespace ${{ env.NAMESPACE }} \
             --set image.tag=${{ steps.params.outputs.image_tag }} \
-            --set image.repository=${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/crypto-pocket-butler-web \
+            --set image.repository=${{ env.IMAGE_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/crypto-pocket-butler-web \
             --atomic \
             --timeout 5m \
             --wait
 
-      - name: Log out from GHCR
+      - name: Log out from Docker Hub
         if: always()
-        run: helm registry logout ${{ env.REGISTRY }}
+        run: helm registry logout ${{ env.HELM_REGISTRY }}
 
       - name: Verify deployment
         run: |
@@ -130,3 +133,4 @@ jobs:
             --namespace ${{ env.NAMESPACE }} --timeout=120s
           kubectl rollout status deployment/crypto-pocket-butler-web \
             --namespace ${{ env.NAMESPACE }} --timeout=120s
+

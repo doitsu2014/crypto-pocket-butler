@@ -1,13 +1,17 @@
-# Package and publish Helm charts to GitHub Container Registry (GHCR) as OCI artifacts.
+# Package and publish Helm charts to Docker Hub as public OCI artifacts.
 #
 # Triggers:
 #   - Push to main that modifies the helm/ directory.
 #   - Manual dispatch (allows specifying a custom chart version).
 #
+# Required secrets:
+#   - DOCKERHUB_USERNAME: Your Docker Hub username.
+#   - DOCKERHUB_TOKEN: A Docker Hub access token (Settings → Security → New Access Token).
+#
 # Outputs:
 #   - OCI artifacts published to:
-#     - oci://ghcr.io/<owner>/crypto-pocket-butler-api-chart:<version>
-#     - oci://ghcr.io/<owner>/crypto-pocket-butler-web-chart:<version>
+#     - oci://registry-1.docker.io/<DOCKERHUB_USERNAME>/crypto-pocket-butler-api:<version>
+#     - oci://registry-1.docker.io/<DOCKERHUB_USERNAME>/crypto-pocket-butler-web:<version>
 #
 # The chart version is taken from Chart.yaml by default, but can be overridden
 # with the `chart_version` input when dispatching manually.
@@ -29,8 +33,8 @@ on:
         default: ""
 
 env:
-  REGISTRY: ghcr.io
-  REGISTRY_OWNER: ${{ github.repository_owner }}
+  # Docker Hub OCI registry endpoint for Helm
+  REGISTRY: registry-1.docker.io
 
 jobs:
   publish:
@@ -38,7 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
       - name: Checkout repository
@@ -49,10 +52,10 @@ jobs:
         with:
           version: "3.17.0"
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to Docker Hub
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} \
-            --username ${{ github.actor }} \
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} \
+            --username ${{ secrets.DOCKERHUB_USERNAME }} \
             --password-stdin
 
       - name: Determine chart version
@@ -78,16 +81,17 @@ jobs:
             --version ${{ steps.version.outputs.version }} \
             --destination /tmp/helm-packages
 
-      - name: Push API Helm chart to GHCR
+      - name: Push API Helm chart to Docker Hub
         run: |
           helm push /tmp/helm-packages/crypto-pocket-butler-api-${{ steps.version.outputs.version }}.tgz \
-            oci://${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}
+            oci://${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}
 
-      - name: Push Web Helm chart to GHCR
+      - name: Push Web Helm chart to Docker Hub
         run: |
           helm push /tmp/helm-packages/crypto-pocket-butler-web-${{ steps.version.outputs.version }}.tgz \
-            oci://${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}
+            oci://${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}
 
-      - name: Log out from GHCR
+      - name: Log out from Docker Hub
         if: always()
         run: helm registry logout ${{ env.REGISTRY }}
+

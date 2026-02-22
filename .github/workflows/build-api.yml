@@ -1,12 +1,16 @@
-# Build and push the API Docker image to GitHub Container Registry (GHCR).
+# Build and push the API Docker image to Docker Hub as a public image.
 #
 # Triggers:
 #   - Push to main or develop branches that modify the api/ directory.
 #   - Pull requests targeting main or develop that modify the api/ directory.
 #   - Manual dispatch.
 #
+# Required secrets:
+#   - DOCKERHUB_USERNAME: Your Docker Hub username.
+#   - DOCKERHUB_TOKEN: A Docker Hub access token (Settings → Security → New Access Token).
+#
 # Outputs:
-#   - Docker image published to ghcr.io/<owner>/crypto-pocket-butler-api:<tag>
+#   - Docker image published to docker.io/<DOCKERHUB_USERNAME>/crypto-pocket-butler-api:<tag>
 #   - Tags: branch name, short SHA, and `latest` (main only).
 
 name: Build API
@@ -29,8 +33,8 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/crypto-pocket-butler-api
+  REGISTRY: docker.io
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/crypto-pocket-butler-api
 
 jobs:
   build:
@@ -38,7 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
       - name: Checkout repository
@@ -47,13 +50,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to Docker Hub
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract Docker metadata
         id: meta
@@ -76,3 +79,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+

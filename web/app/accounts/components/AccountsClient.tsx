@@ -7,7 +7,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { LoadingSkeleton, LoadingButton } from "@/components/Loading";
 import EmptyState from "@/components/EmptyState";
 import ErrorAlert from "@/components/ErrorAlert";
-import { useAccounts, useCreateAccount, useSyncAccount, useDeleteAccount } from "@/hooks";
+import { useAccounts, useCreateAccount, useSyncAccount, useDeleteAccount, useEvmChains } from "@/hooks";
 import type { CreateAccountInput } from "@/types/api";
 import AllocationBar from "@/components/portfolio/AllocationBar";
 import AllocationPie from "@/components/portfolio/AllocationPie";
@@ -63,19 +63,6 @@ interface PortfolioHoldingsResponse {
   as_of: string;
 }
 
-// Helper function to get user-friendly chain name
-function getChainDisplayName(chainId: string): string {
-  const chainMap: Record<string, string> = {
-    ethereum: 'Ethereum',
-    arbitrum: 'Arbitrum',
-    optimism: 'Optimism',
-    base: 'Base',
-    bsc: 'BNB Chain',
-    solana: 'Solana',
-  };
-  return chainMap[chainId] || chainId;
-}
-
 function formatDate(dateString: string | undefined): string {
   if (!dateString) return 'Never';
   try {
@@ -127,6 +114,14 @@ export default function AccountsClient() {
   const createAccount = useCreateAccount();
   const syncAccount = useSyncAccount();
   const deleteAccount = useDeleteAccount();
+
+  // Fetch EVM chains from database configuration
+  const { data: evmChains = [], isLoading: evmChainsLoading } = useEvmChains();
+  const activeEvmChains = evmChains.filter((c) => c.is_active);
+  // Build a lookup map: chain_id → display name (used in account cards)
+  const chainNameMap = Object.fromEntries(
+    evmChains.map((c) => [c.chain_id, c.name])
+  );
 
   // Convert query error to string for display
   const error = queryError instanceof ApiError ? queryError.message :
@@ -520,36 +515,40 @@ export default function AccountsClient() {
                         Enabled Chains <span className="text-fuchsia-400">*</span>
                       </label>
                       <div className="grid grid-cols-2 gap-3">
-                        {[
-                          { id: 'ethereum', name: 'Ethereum', symbol: 'ETH' },
-                          { id: 'arbitrum', name: 'Arbitrum', symbol: 'ARB' },
-                          { id: 'optimism', name: 'Optimism', symbol: 'OP' },
-                          { id: 'base', name: 'Base', symbol: 'BASE' },
-                          { id: 'bsc', name: 'BNB Chain', symbol: 'BNB' },
-                        ].map((chain) => (
-                          <button
-                            key={chain.id}
-                            type="button"
-                            onClick={() => toggleChain(chain.id)}
-                            className={`p-3 rounded-lg border-2 text-left transition-all ${
-                              walletFormData.enabled_chains.includes(chain.id)
-                                ? 'border-fuchsia-500 bg-fuchsia-900/30 text-fuchsia-300'
-                                : 'border-violet-500/50 bg-slate-900/50 text-slate-400 hover:border-violet-400 hover:bg-slate-800/70'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <div className="font-bold text-sm">{chain.name}</div>
-                                <div className="text-xs opacity-75">{chain.symbol}</div>
+                        {evmChainsLoading ? (
+                          <div className="col-span-2 py-4 text-center text-slate-400 text-sm">
+                            Loading chains…
+                          </div>
+                        ) : activeEvmChains.length === 0 ? (
+                          <div className="col-span-2 py-4 text-center text-slate-500 text-sm">
+                            No active EVM chains configured.
+                          </div>
+                        ) : (
+                          activeEvmChains.map((chain) => (
+                            <button
+                              key={chain.chain_id}
+                              type="button"
+                              onClick={() => toggleChain(chain.chain_id)}
+                              className={`p-3 rounded-lg border-2 text-left transition-all ${
+                                walletFormData.enabled_chains.includes(chain.chain_id)
+                                  ? 'border-fuchsia-500 bg-fuchsia-900/30 text-fuchsia-300'
+                                  : 'border-violet-500/50 bg-slate-900/50 text-slate-400 hover:border-violet-400 hover:bg-slate-800/70'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-bold text-sm">{chain.name}</div>
+                                  <div className="text-xs opacity-75 font-mono">{chain.chain_id}</div>
+                                </div>
+                                {walletFormData.enabled_chains.includes(chain.chain_id) && (
+                                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                )}
                               </div>
-                              {walletFormData.enabled_chains.includes(chain.id) && (
-                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                              )}
-                            </div>
-                          </button>
-                        ))}
+                            </button>
+                          ))
+                        )}
                       </div>
                     </div>
                     <div className="flex gap-3">
@@ -800,7 +799,7 @@ export default function AccountsClient() {
                               key={chain}
                               className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 border border-violet-500/40"
                             >
-                              {getChainDisplayName(chain)}
+                              {chainNameMap[chain] ?? chain}
                             </span>
                           ))}
                         </div>

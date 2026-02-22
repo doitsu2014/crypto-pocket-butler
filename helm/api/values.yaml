@@ -1,0 +1,111 @@
+# Default values for crypto-pocket-butler-api.
+# Override these values in your deployment-specific values file.
+
+replicaCount: 1
+
+image:
+  repository: <DOCKERHUB_USERNAME>/crypto-pocket-butler-api
+  pullPolicy: IfNotPresent
+  # Overridden by the image tag at deploy time (e.g., a Git SHA or semver tag).
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created.
+  create: true
+  # Annotations to add to the service account.
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template.
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 3000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: api.crypto-pocket-butler.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Environment variables written to a .env file and mounted in the container.
+# These values are rendered into a ConfigMap and mounted at /app/.env.
+env:
+  DATABASE_URL: "postgres://postgres:postgres@postgres:5432/crypto_pocket_butler"
+  KEYCLOAK_SERVER: "http://keycloak:8080"
+  KEYCLOAK_REALM: "myrealm"
+  KEYCLOAK_AUDIENCE: "crypto-pocket-butler"
+  SERVER_HOST: "0.0.0.0"
+  SERVER_PORT: "3000"
+  RUST_LOG: "crypto_pocket_butler_backend=info"
+  TOP_COINS_COLLECTION_ENABLED: "true"
+  TOP_COINS_COLLECTION_SCHEDULE: "0 0 0 * * *"
+  TOP_COINS_COLLECTION_LIMIT: "100"
+  PRICE_COLLECTION_ENABLED: "true"
+  PRICE_COLLECTION_SCHEDULE: "0 */15 * * * *"
+  PRICE_COLLECTION_LIMIT: "100"
+  CONTRACT_ADDRESSES_COLLECTION_ENABLED: "true"
+  CONTRACT_ADDRESSES_COLLECTION_SCHEDULE: "0 0 1 * * *"
+  EOD_SNAPSHOT_ENABLED: "true"
+  EOD_SNAPSHOT_SCHEDULE: "0 0 23 * * *"
+
+# Sensitive values that should be provided via Kubernetes Secrets rather than
+# stored in values.yaml (e.g., via --set or an external secrets manager).
+# Set these keys in a Secret and reference the secret name below.
+#
+# Example: create the secret before deploying:
+#   kubectl create secret generic crypto-pocket-butler-api-secrets \
+#     --namespace crypto-pocket-butler \
+#     --from-literal=DATABASE_URL="postgres://user:password@host:5432/db"
+#
+# Then set existingSecret: "crypto-pocket-butler-api-secrets" in your
+# environment-specific values override file.
+existingSecret: ""

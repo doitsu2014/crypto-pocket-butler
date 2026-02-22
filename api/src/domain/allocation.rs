@@ -28,7 +28,12 @@ use utoipa::ToSchema;
 pub struct AllocationItem {
     /// Asset symbol
     pub asset: String,
-    
+
+    /// Chain label when asset is chain-specific (e.g. "ethereum", "bsc", "solana").
+    /// None for exchange accounts (OKX) where no chain context applies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain: Option<String>,
+
     /// Total quantity across all accounts (decimal string)
     pub quantity: String,
     

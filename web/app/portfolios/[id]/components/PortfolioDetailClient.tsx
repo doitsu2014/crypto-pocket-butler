@@ -48,6 +48,7 @@ interface AccountHoldingDetail {
 
 interface AssetHolding {
   asset: string;
+  chain?: string;
   /** Normalized (human-readable) total quantity */
   total_quantity: string;
   total_available: string;
@@ -63,6 +64,7 @@ interface AssetHolding {
 
 interface AllocationItem {
   asset: string;
+  chain?: string;
   value_usd: number;
   percentage: number;
 }
@@ -77,6 +79,8 @@ interface PortfolioHoldingsResponse {
 
 interface AllocationHolding {
   asset: string;
+  /** Chain label when asset is chain-specific (e.g. "ethereum", "bsc", "solana") */
+  chain?: string;
   quantity: string;
   value_usd: number;
   weight: number;
@@ -405,14 +409,19 @@ export default function PortfolioDetailClient({ portfolioId }: { portfolioId: st
               <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Asset Breakdown</h4>
               <div className="grid grid-cols-1 gap-2">
                 {constructedAllocation.holdings.map((holding) => (
-                  <div 
-                    key={holding.asset}
+                  <div
+                    key={holding.chain ? `${holding.asset}:${holding.chain}` : holding.asset}
                     className="flex items-center justify-between bg-slate-900/50 rounded-lg p-3 border border-slate-700/50"
                   >
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-fuchsia-300 drop-shadow-[0_0_6px_rgba(232,121,249,0.4)]">
                         {holding.asset}
                       </span>
+                      {holding.chain && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 text-xs rounded bg-blue-900/50 text-blue-300 border border-blue-600/50 capitalize">
+                          {holding.chain}
+                        </span>
+                      )}
                       {holding.unpriced && (
                         <span className="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded border border-yellow-500/50">
                           Unpriced

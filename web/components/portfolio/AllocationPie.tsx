@@ -4,6 +4,8 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recha
 
 export interface AllocationItem {
   asset: string;
+  /** Chain label when asset is chain-specific (e.g. "ethereum", "bsc", "solana") */
+  chain?: string;
   value_usd: number;
   percentage: number;
 }
@@ -80,7 +82,7 @@ function CustomLegend({ payload }: { payload?: Array<{ value: string; color: str
 
 export default function AllocationPie({ allocation, maxItems = 10 }: AllocationPieProps) {
   const displayData = allocation.slice(0, maxItems).map((item) => ({
-    name: item.asset,
+    name: item.chain ? `${item.asset} · ${item.chain}` : item.asset,
     value: item.percentage,
     valueUsd: item.value_usd,
   }));

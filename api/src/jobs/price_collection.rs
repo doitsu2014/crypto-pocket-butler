@@ -498,6 +498,7 @@ async fn store_prices(
             id: ActiveValue::Set(Uuid::new_v4()),
             asset_id: ActiveValue::Set(data.asset_id),
             timestamp: ActiveValue::Set(rounded_timestamp.into()),
+            date: ActiveValue::Set(rounded_timestamp.date_naive()),
             price_usd: ActiveValue::Set(price_usd),
             volume_24h_usd: ActiveValue::Set(volume_24h_usd),
             market_cap_usd: ActiveValue::Set(market_cap_usd),

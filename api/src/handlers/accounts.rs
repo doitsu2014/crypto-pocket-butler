@@ -6,12 +6,12 @@ use axum::{
     Router,
 };
 use axum_keycloak_auth::decode::KeycloakToken;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::accounts;
+use crate::entities::{accounts, holdings, holding_transactions};
 use crate::helpers::auth::get_or_create_user;
 use crate::jobs::account_sync;
 use super::error::ApiError;
@@ -547,6 +547,154 @@ async fn sync_all_accounts_handler(
     ))
 }
 
+// === Holdings & Transactions Response DTOs ===
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct HoldingResponse {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub asset_symbol: String,
+    pub quantity: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<holdings::Model> for HoldingResponse {
+    fn from(h: holdings::Model) -> Self {
+        Self {
+            id: h.id,
+            account_id: h.account_id,
+            asset_symbol: h.asset_symbol,
+            quantity: h.quantity,
+            created_at: h.created_at.to_rfc3339(),
+            updated_at: h.updated_at.to_rfc3339(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct HoldingTransactionResponse {
+    pub id: Uuid,
+    pub holding_id: Uuid,
+    pub quantity_before: String,
+    pub quantity_after: String,
+    pub quantity_change: String,
+    pub transaction_type: String,
+    pub source: String,
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<holding_transactions::Model> for HoldingTransactionResponse {
+    fn from(tx: holding_transactions::Model) -> Self {
+        Self {
+            id: tx.id,
+            holding_id: tx.holding_id,
+            quantity_before: tx.quantity_before,
+            quantity_after: tx.quantity_after,
+            quantity_change: tx.quantity_change,
+            transaction_type: tx.transaction_type,
+            source: tx.source,
+            metadata: tx.metadata,
+            created_at: tx.created_at.to_rfc3339(),
+            updated_at: tx.updated_at.to_rfc3339(),
+        }
+    }
+}
+
+/// List structured holdings for an account (from the holdings table)
+#[utoipa::path(
+    get,
+    path = "/api/v1/accounts/{account_id}/holdings",
+    params(
+        ("account_id" = Uuid, Path, description = "Account ID")
+    ),
+    responses(
+        (status = 200, description = "List of holdings", body = Vec<HoldingResponse>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Account not found")
+    ),
+    tag = "accounts"
+)]
+async fn list_account_holdings_handler(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path(account_id): Path<Uuid>,
+) -> Result<Json<Vec<HoldingResponse>>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
+
+    let account = accounts::Entity::find_by_id(account_id)
+        .one(&db)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    if account.user_id != user.id {
+        return Err(ApiError::Forbidden);
+    }
+
+    let rows = holdings::Entity::find()
+        .filter(holdings::Column::AccountId.eq(account_id))
+        .order_by_asc(holdings::Column::AssetSymbol)
+        .all(&db)
+        .await?;
+
+    Ok(Json(rows.into_iter().map(HoldingResponse::from).collect()))
+}
+
+/// List all transactions for a specific holding (audit trail)
+#[utoipa::path(
+    get,
+    path = "/api/v1/accounts/{account_id}/holdings/{holding_id}/transactions",
+    params(
+        ("account_id" = Uuid, Path, description = "Account ID"),
+        ("holding_id" = Uuid, Path, description = "Holding ID")
+    ),
+    responses(
+        (status = 200, description = "List of holding transactions", body = Vec<HoldingTransactionResponse>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Account or holding not found")
+    ),
+    tag = "accounts"
+)]
+async fn list_holding_transactions_handler(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path((account_id, holding_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Vec<HoldingTransactionResponse>>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
+
+    // Verify account belongs to user
+    let account = accounts::Entity::find_by_id(account_id)
+        .one(&db)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    if account.user_id != user.id {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Verify holding belongs to this account
+    let holding = holdings::Entity::find_by_id(holding_id)
+        .one(&db)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    if holding.account_id != account_id {
+        return Err(ApiError::Forbidden);
+    }
+
+    let txs = holding_transactions::Entity::find()
+        .filter(holding_transactions::Column::HoldingId.eq(holding_id))
+        .order_by_desc(holding_transactions::Column::CreatedAt)
+        .all(&db)
+        .await?;
+
+    Ok(Json(txs.into_iter().map(HoldingTransactionResponse::from).collect()))
+}
+
 /// Create router for account endpoints
 /// 
 /// Note: Axum uses curly braces for path parameters {param}, not colon notation :param
@@ -557,4 +705,6 @@ pub fn create_router() -> Router<DatabaseConnection> {
         .route("/api/v1/accounts/{account_id}", get(get_account_handler).put(update_account_handler).delete(delete_account_handler))
         .route("/api/v1/accounts/{account_id}/sync", post(sync_account_handler))
         .route("/api/v1/accounts/sync-all", post(sync_all_accounts_handler))
+        .route("/api/v1/accounts/{account_id}/holdings", get(list_account_holdings_handler))
+        .route("/api/v1/accounts/{account_id}/holdings/{holding_id}/transactions", get(list_holding_transactions_handler))
 }

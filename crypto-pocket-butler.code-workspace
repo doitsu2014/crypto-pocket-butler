@@ -1,0 +1,126 @@
+{
+  "folders": [
+    {
+      "name": "crypto-pocket-butler",
+      "path": ".",
+    },
+    {
+      "name": "web (Next.js)",
+      "path": "web",
+    },
+    {
+      "name": "api (Rust)",
+      "path": "api",
+    },
+  ],
+  "settings": {
+    // --- General editor settings ---
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "editor.rulers": [100],
+
+    // --- File search/watcher exclusions ---
+    "files.watcherExclude": {
+      "**/node_modules/**": true,
+      "**/.next/**": true,
+      "**/api/target/**": true,
+      "**/target/debug/**": true,
+      "**/target/release/**": true,
+    },
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/api/target": true,
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/api/target": true,
+      "**/pnpm-lock.yaml": true,
+      "**/package-lock.json": true,
+      "**/Cargo.lock": true,
+    },
+
+    // --- TypeScript / JavaScript (web) ---
+    "typescript.tsdk": "web/node_modules/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true,
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.tabSize": 2,
+    },
+    "[typescriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.tabSize": 2,
+    },
+    "[javascript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.tabSize": 2,
+    },
+    "[javascriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.tabSize": 2,
+    },
+    "[json]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.tabSize": 2,
+    },
+    "[css]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.tabSize": 2,
+    },
+
+    // --- ESLint ---
+    "eslint.workingDirectories": [
+      { "directory": "web", "changeProcessCWD": true },
+    ],
+    "eslint.validate": [
+      "javascript",
+      "javascriptreact",
+      "typescript",
+      "typescriptreact",
+    ],
+
+    // --- Rust / rust-analyzer ---
+    "rust-analyzer.linkedProjects": [
+      "api/Cargo.toml",
+      "api/migration/Cargo.toml",
+    ],
+    "rust-analyzer.cargo.buildScripts.enable": true,
+    "rust-analyzer.procMacro.enable": true,
+    "rust-analyzer.checkOnSave": true,
+    "rust-analyzer.check.command": "clippy",
+    "[rust]": {
+      "editor.defaultFormatter": "rust-lang.rust-analyzer",
+      "editor.tabSize": 4,
+      "editor.formatOnSave": true,
+    },
+
+    // --- Tailwind CSS (web) ---
+    "tailwindCSS.includeLanguages": {
+      "typescript": "javascript",
+      "typescriptreact": "javascriptreact",
+    },
+    "tailwindCSS.experimental.classRegex": [
+      ["clsx\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"],
+      ["cn\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"],
+    ],
+  },
+  "extensions": {
+    "recommendations": [
+      // Rust
+      "rust-lang.rust-analyzer",
+      "tamasfe.even-better-toml",
+      "serayuzgur.crates",
+      // TypeScript / Next.js
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "bradlc.vscode-tailwindcss",
+      "dsznajder.es7-react-js-snippets",
+      // General
+      "eamodio.gitlens",
+      "usernamehw.errorlens",
+      "ms-azuretools.vscode-docker",
+      "mikestead.dotenv",
+    ],
+  },
+}

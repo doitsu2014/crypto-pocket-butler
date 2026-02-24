@@ -8,6 +8,9 @@ pub struct Model {
     pub id: Uuid,
     pub asset_id: Uuid,
     pub timestamp: DateTimeWithTimeZone,
+    /// Calendar date (UTC) of the price record – derived from `timestamp`.
+    /// Enables efficient daily grouping and range queries without full timestamp scans.
+    pub date: Date,
     pub price_usd: Decimal,
     pub volume_24h_usd: Option<Decimal>,
     pub market_cap_usd: Option<Decimal>,

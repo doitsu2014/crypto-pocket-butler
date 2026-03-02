@@ -6,7 +6,6 @@ use axum_keycloak_auth::{
 use crypto_pocket_butler_backend::{db::DbConfig, handlers, jobs};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
-use tokio_cron_scheduler::{JobScheduler, Job};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
@@ -312,121 +311,15 @@ async fn main() {
         .expect("Failed to connect to database");
     tracing::info!("Database connection pool established");
 
-    // Initialize job scheduler
-    tracing::info!("Initializing job scheduler...");
-    let scheduler = JobScheduler::new().await.expect("Failed to create job scheduler");
-    
-    // Configure fetch all coins job (replaces top_coins_collection and contract_addresses_collection)
-    let fetch_all_coins_enabled = std::env::var("FETCH_ALL_COINS_ENABLED")
-        .unwrap_or_else(|_| "true".to_string())
-        .parse::<bool>()
-        .unwrap_or(true);
-    
-    if fetch_all_coins_enabled {
-        let fetch_all_coins_schedule = std::env::var("FETCH_ALL_COINS_SCHEDULE")
-            .unwrap_or_else(|_| "0 */15 * * * *".to_string()); // Default: every 15 minutes
-        
-        tracing::info!(
-            "Scheduling fetch all coins job: schedule='{}'",
-            fetch_all_coins_schedule
-        );
-
-        let db_clone = db.clone();
-        let job = Job::new_async(fetch_all_coins_schedule.as_str(), move |_job_id, _scheduler| {
-            let db = db_clone.clone();
-            Box::pin(async move {
-                tracing::info!("Running scheduled fetch all coins job");
-                match jobs::fetch_all_coins::fetch_all_coins(&db).await {
-                    Ok(result) => {
-                        if result.success {
-                            tracing::info!(
-                                "Fetch all coins job completed successfully: {} coins fetched, {} assets created, {} updated, {} prices stored",
-                                result.coins_fetched,
-                                result.assets_created,
-                                result.assets_updated,
-                                result.prices_stored
-                            );
-                        } else {
-                            tracing::error!(
-                                "Fetch all coins job failed: {}",
-                                result.error.unwrap_or_else(|| "Unknown error".to_string())
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Fetch all coins job failed with error: {}", e);
-                    }
-                }
-            })
-        })
-        .expect("Failed to create fetch all coins job");
-
-        scheduler.add(job).await.expect("Failed to add fetch all coins job to scheduler");
-        tracing::info!("Fetch all coins job scheduled successfully");
-    } else {
-        tracing::info!("Fetch all coins job is disabled");
-    }
-
-    // Configure EOD snapshot job
-    let eod_snapshot_enabled = std::env::var("EOD_SNAPSHOT_ENABLED")
-        .unwrap_or_else(|_| "true".to_string())
-        .parse::<bool>()
-        .unwrap_or(true);
-    
-    if eod_snapshot_enabled {
-        let eod_snapshot_schedule = std::env::var("EOD_SNAPSHOT_SCHEDULE")
-            .unwrap_or_else(|_| "0 0 23 * * *".to_string()); // Default: daily at 23:00 UTC
-        
-        tracing::info!(
-            "Scheduling EOD snapshot job: schedule='{}'",
-            eod_snapshot_schedule
-        );
-
-        let db_clone = db.clone();
-        let job = Job::new_async(eod_snapshot_schedule.as_str(), move |_job_id, _scheduler| {
-            let db = db_clone.clone();
-            Box::pin(async move {
-                tracing::info!("Running scheduled EOD snapshot job");
-                match jobs::portfolio_snapshot::create_all_portfolio_snapshots(&db, None).await {
-                    Ok(results) => {
-                        let successful = results.iter().filter(|r| r.success).count();
-                        let failed = results.iter().filter(|r| !r.success).count();
-                        
-                        tracing::info!(
-                            "EOD snapshot job completed: {} portfolios processed, {} successful, {} failed",
-                            results.len(),
-                            successful,
-                            failed
-                        );
-                        
-                        // Log failures
-                        for result in results.iter().filter(|r| !r.success) {
-                            if let Some(error) = &result.error {
-                                tracing::error!(
-                                    "Failed to create EOD snapshot for portfolio {}: {}",
-                                    result.portfolio_id,
-                                    error
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("EOD snapshot job failed with error: {}", e);
-                    }
-                }
-            })
-        })
-        .expect("Failed to create EOD snapshot job");
-
-        scheduler.add(job).await.expect("Failed to add EOD snapshot job to scheduler");
-        tracing::info!("EOD snapshot job scheduled successfully");
-    } else {
-        tracing::info!("EOD snapshot job is disabled");
-    }
-
-    // Start the scheduler
-    scheduler.start().await.expect("Failed to start job scheduler");
-    tracing::info!("Job scheduler started");
+    // Initialize and start Apalis job workers
+    tracing::info!("Initializing Apalis job workers...");
+    let monitor = jobs::apalis_runner::build_monitor(db.clone());
+    tokio::spawn(async move {
+        if let Err(e) = monitor.run().await {
+            tracing::error!("Apalis job monitor stopped with error: {}", e);
+        }
+    });
+    tracing::info!("Apalis job workers started");
 
     // Keycloak configuration from environment variables
     let server_url = std::env::var("KEYCLOAK_SERVER")

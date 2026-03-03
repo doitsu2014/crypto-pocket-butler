@@ -3,6 +3,8 @@ use axum_keycloak_auth::{
     decode::KeycloakToken, instance::KeycloakAuthInstance, instance::KeycloakConfig,
     layer::KeycloakAuthLayer, PassthroughMode,
 };
+use apalis_board_api::ui::ServeUI;
+use apalis_postgres::PostgresStorage;
 use crypto_pocket_butler_backend::{db::DbConfig, handlers, jobs};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
@@ -314,11 +316,27 @@ async fn main() {
         .expect("Failed to connect to database");
     tracing::info!("Database connection pool established");
 
+    // Extract the underlying sqlx PgPool from the sea-orm DatabaseConnection.
+    // apalis-postgres uses sqlx directly for its own migrations and storage.
+    let pg_pool = db.get_postgres_connection_pool().clone();
+
+    // Run apalis-postgres schema migrations (creates the `apalis_jobs` table
+    // and supporting objects if they don't already exist).
+    tracing::info!("Running apalis-postgres schema setup...");
+    PostgresStorage::setup(&pg_pool)
+        .await
+        .expect("Failed to run apalis-postgres migrations");
+    tracing::info!("apalis-postgres schema ready");
+
     // Initialize and start Apalis job workers
     tracing::info!("Initializing Apalis job workers...");
-    let monitor = jobs::apalis_runner::build_monitor(db.clone());
+    let components = jobs::apalis_runner::build_monitor(db.clone(), pg_pool);
+    let board_router = jobs::apalis_runner::build_board_router(
+        components.fetch_storage,
+        components.snapshot_storage,
+    );
     tokio::spawn(async move {
-        if let Err(e) = monitor.run().await {
+        if let Err(e) = components.monitor.run().await {
             tracing::error!("Apalis job monitor stopped with error: {}", e);
         }
     });
@@ -382,6 +400,10 @@ async fn main() {
         .layer(auth_layer);
 
     // Build admin-only routes — require the "administrator" Keycloak realm role
+    // Clone the layer so we can apply it to the board routes separately
+    // (board routes are Router<()> while other admin routes are Router<DatabaseConnection>)
+    let admin_auth_layer_board = admin_auth_layer.clone();
+
     let admin_routes = Router::new()
         // Job management API routes (admin only)
         .merge(handlers::jobs::create_router())
@@ -392,6 +414,26 @@ async fn main() {
         // Solana token registry API routes (admin only)
         .merge(handlers::solana_tokens::create_router())
         .layer(admin_auth_layer);
+
+    // apalis-board routes are Router<()> (they don't use axum State extractor)
+    // so they must be built separately and merged into the app after .with_state(db).
+    //
+    // Board API is mounted at /api/v1 so the pre-built board SPA (which hard-codes
+    // /api/v1 as its API base URL) can reach these routes:
+    //   GET /api/v1/queues            — list queues
+    //   GET /api/v1/overview          — aggregate stats
+    //   GET /api/v1/workers           — all workers
+    //   GET /api/v1/tasks             — all tasks
+    //   GET /api/v1/events            — SSE tracing stream
+    //   GET /api/v1/queues/{q}/*      — per-queue routes
+    //
+    // The board SPA's static assets (JS/WASM/CSS) are loaded via absolute paths
+    // (/apalis-board-web-*.js etc.) so a fallback_service catches those requests.
+    let board_admin_routes = Router::new()
+        .nest("/api/v1", board_router)
+        .route("/admin/jobs", get(|| async { axum::response::Redirect::permanent("/admin/jobs/") }))
+        .fallback_service(ServeUI::new())
+        .layer(admin_auth_layer_board);
 
     // Build application with public and protected routes
     // Axum handles concurrent requests efficiently using Tokio's async runtime
@@ -409,7 +451,9 @@ async fn main() {
         // Merge admin-only routes
         .merge(admin_routes)
         // Apply database state to all routes
-        .with_state(db);
+        .with_state(db)
+        // Merge board admin routes (Router<()>) AFTER .with_state() so types align
+        .merge(board_admin_routes);
 
     // Run the server
     let port_str = std::env::var("SERVER_PORT")

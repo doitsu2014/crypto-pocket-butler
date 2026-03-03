@@ -31,6 +31,8 @@ dotenvy = "0.15"
 tokio-cron-scheduler = "0.13"
 apalis-core = "1.0.0-rc.4"
 apalis-cron = { version = "1.0.0-rc.4", features = ["cron"] }
+apalis-postgres = { version = "1.0.0-rc.4", default-features = false, features = ["migrate", "tokio-comp", "time"] }
+apalis-board-api = { version = "1.0.0-rc.4", features = ["axum", "ui"] }
 cron = "0.15"
 moka = { version = "0.12", features = ["future"] }
 futures = "0.3"

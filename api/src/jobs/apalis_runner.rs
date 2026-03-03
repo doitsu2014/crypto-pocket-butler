@@ -1,58 +1,37 @@
-//! Apalis-based job runner.
+//! Apalis-based job runner (apalis v1.0.0-rc.4).
 //!
-//! Provides Apalis-compatible job type definitions and handler functions that
-//! wrap the existing business logic from [`crate::jobs::fetch_all_coins`] and
-//! [`crate::jobs::portfolio_snapshot`].  The job scheduler is replaced by an
-//! Apalis [`Monitor`] running a [`CronStream`] per job; all business logic and
+//! Provides cron worker definitions and handler functions that wrap the
+//! existing business logic from [`crate::jobs::fetch_all_coins`] and
+//! [`crate::jobs::portfolio_snapshot`].  The scheduler is an Apalis
+//! [`Monitor`] running a [`CronStream`] per job; all business logic and
 //! logging remain identical to the previous `tokio-cron-scheduler` integration.
 
 use crate::jobs::{fetch_all_coins, portfolio_snapshot};
 use apalis_core::{
-    builder::{WorkerBuilder, WorkerFactory},
-    context::JobContext,
-    executor::TokioExecutor,
-    job::Job,
-    job_fn::job_fn,
-    layers::extensions::Extension,
+    error::BoxDynError,
     monitor::Monitor,
-    utils::timer::TokioTimer,
+    task::data::Data,
+    worker::builder::WorkerBuilder,
 };
-use apalis_cron::{CronStream, Schedule};
-use chrono::{DateTime, Utc};
+use apalis_cron::{CronStream, Tick};
+use cron::Schedule;
 use sea_orm::DatabaseConnection;
 use std::str::FromStr;
 
 // ---------------------------------------------------------------------------
-// Job type: FetchAllCoins
+// Job handlers
 // ---------------------------------------------------------------------------
 
-/// Apalis job type for the periodic fetch-all-coins task.
-///
-/// Each scheduled firing receives the current UTC timestamp as its payload.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct FetchAllCoinsJob(pub DateTime<Utc>);
-
-impl From<DateTime<Utc>> for FetchAllCoinsJob {
-    fn from(t: DateTime<Utc>) -> Self {
-        FetchAllCoinsJob(t)
-    }
-}
-
-impl Job for FetchAllCoinsJob {
-    const NAME: &'static str = "jobs::FetchAllCoinsJob";
-}
-
-/// Handler executed by Apalis for every `FetchAllCoinsJob` firing.
+/// Handler executed by Apalis for every fetch-all-coins cron tick.
 ///
 /// Delegates to [`fetch_all_coins::fetch_all_coins`] and preserves all
 /// existing logging behaviour.
-pub async fn handle_fetch_all_coins(_job: FetchAllCoinsJob, ctx: JobContext) {
-    let db = ctx
-        .data_opt::<DatabaseConnection>()
-        .expect("DatabaseConnection extension must be registered with this worker");
-
-    tracing::info!("Running scheduled fetch all coins job");
-    match fetch_all_coins::fetch_all_coins(db).await {
+pub async fn handle_fetch_all_coins(
+    tick: Tick,
+    db: Data<DatabaseConnection>,
+) -> Result<(), BoxDynError> {
+    tracing::info!("Running scheduled fetch all coins job (tick: {})", tick.get_timestamp());
+    match fetch_all_coins::fetch_all_coins(&db).await {
         Ok(result) => {
             if result.success {
                 tracing::info!(
@@ -73,39 +52,19 @@ pub async fn handle_fetch_all_coins(_job: FetchAllCoinsJob, ctx: JobContext) {
             tracing::error!("Fetch all coins job failed with error: {}", e);
         }
     }
+    Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Job type: EodSnapshot
-// ---------------------------------------------------------------------------
-
-/// Apalis job type for the end-of-day portfolio snapshot task.
-///
-/// Each scheduled firing receives the current UTC timestamp as its payload.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct EodSnapshotJob(pub DateTime<Utc>);
-
-impl From<DateTime<Utc>> for EodSnapshotJob {
-    fn from(t: DateTime<Utc>) -> Self {
-        EodSnapshotJob(t)
-    }
-}
-
-impl Job for EodSnapshotJob {
-    const NAME: &'static str = "jobs::EodSnapshotJob";
-}
-
-/// Handler executed by Apalis for every `EodSnapshotJob` firing.
+/// Handler executed by Apalis for every EOD snapshot cron tick.
 ///
 /// Delegates to [`portfolio_snapshot::create_all_portfolio_snapshots`] and
 /// preserves all existing logging behaviour.
-pub async fn handle_eod_snapshot(_job: EodSnapshotJob, ctx: JobContext) {
-    let db = ctx
-        .data_opt::<DatabaseConnection>()
-        .expect("DatabaseConnection extension must be registered with this worker");
-
-    tracing::info!("Running scheduled EOD snapshot job");
-    match portfolio_snapshot::create_all_portfolio_snapshots(db, None).await {
+pub async fn handle_eod_snapshot(
+    tick: Tick,
+    db: Data<DatabaseConnection>,
+) -> Result<(), BoxDynError> {
+    tracing::info!("Running scheduled EOD snapshot job (tick: {})", tick.get_timestamp());
+    match portfolio_snapshot::create_all_portfolio_snapshots(&db, None).await {
         Ok(results) => {
             let successful = results.iter().filter(|r| r.success).count();
             let failed = results.iter().filter(|r| !r.success).count();
@@ -131,16 +90,17 @@ pub async fn handle_eod_snapshot(_job: EodSnapshotJob, ctx: JobContext) {
             tracing::error!("EOD snapshot job failed with error: {}", e);
         }
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// Worker / Monitor construction
+// Monitor construction
 // ---------------------------------------------------------------------------
 
 /// Build and return an Apalis [`Monitor`] containing all enabled cron workers.
 ///
-/// Each worker is wired with the supplied `db` as an [`Extension`] so that job
-/// handlers can retrieve it via [`JobContext::data_opt`].
+/// Each worker is wired with the supplied `db` as [`Data`] so that job
+/// handlers can retrieve it via the `Data<DatabaseConnection>` extractor.
 ///
 /// # Cron format
 ///
@@ -152,7 +112,7 @@ pub async fn handle_eod_snapshot(_job: EodSnapshotJob, ctx: JobContext) {
 /// Examples:
 /// - `"0 */15 * * * *"` – every 15 minutes (on the 0-second mark)
 /// - `"0 0 23 * * *"` – daily at 23:00 UTC
-pub fn build_monitor(db: DatabaseConnection) -> Monitor<TokioExecutor> {
+pub fn build_monitor(db: DatabaseConnection) -> Monitor {
     let mut monitor = Monitor::new();
 
     // -----------------------------------------------------------------------
@@ -175,16 +135,13 @@ pub fn build_monitor(db: DatabaseConnection) -> Monitor<TokioExecutor> {
         let schedule = Schedule::from_str(&fetch_cron)
             .unwrap_or_else(|_| panic!("Invalid cron expression for APALIS_FETCH_ALL_COINS_CRON: '{}'", fetch_cron));
 
-        let worker = WorkerBuilder::new("apalis-fetch-all-coins")
-            .layer(Extension(db.clone()))
-            .stream(
-                CronStream::<FetchAllCoinsJob, _>::new(schedule)
-                    .timer(TokioTimer)
-                    .to_stream(),
-            )
-            .build(job_fn(handle_fetch_all_coins));
-
-        monitor = monitor.register(worker);
+        let db_clone = db.clone();
+        monitor = monitor.register(move |_| {
+            WorkerBuilder::new("apalis-fetch-all-coins")
+                .backend(CronStream::new(schedule.clone()))
+                .data(db_clone.clone())
+                .build(handle_fetch_all_coins)
+        });
         tracing::info!("Apalis fetch-all-coins worker registered");
     } else {
         tracing::info!("Apalis fetch-all-coins worker is disabled");
@@ -210,16 +167,13 @@ pub fn build_monitor(db: DatabaseConnection) -> Monitor<TokioExecutor> {
         let schedule = Schedule::from_str(&snapshot_cron)
             .unwrap_or_else(|_| panic!("Invalid cron expression for APALIS_EOD_SNAPSHOT_CRON: '{}'", snapshot_cron));
 
-        let worker = WorkerBuilder::new("apalis-eod-snapshot")
-            .layer(Extension(db.clone()))
-            .stream(
-                CronStream::<EodSnapshotJob, _>::new(schedule)
-                    .timer(TokioTimer)
-                    .to_stream(),
-            )
-            .build(job_fn(handle_eod_snapshot));
-
-        monitor = monitor.register(worker);
+        let db_clone = db.clone();
+        monitor = monitor.register(move |_| {
+            WorkerBuilder::new("apalis-eod-snapshot")
+                .backend(CronStream::new(schedule.clone()))
+                .data(db_clone.clone())
+                .build(handle_eod_snapshot)
+        });
         tracing::info!("Apalis EOD snapshot worker registered");
     } else {
         tracing::info!("Apalis EOD snapshot worker is disabled");

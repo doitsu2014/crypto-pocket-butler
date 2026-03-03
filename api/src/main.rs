@@ -3,10 +3,11 @@ use axum_keycloak_auth::{
     decode::KeycloakToken, instance::KeycloakAuthInstance, instance::KeycloakConfig,
     layer::KeycloakAuthLayer, PassthroughMode,
 };
+use apalis_board_api::ui::ServeUI;
+use apalis_postgres::PostgresStorage;
 use crypto_pocket_butler_backend::{db::DbConfig, handlers, jobs};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
-use tokio_cron_scheduler::{JobScheduler, Job};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
@@ -80,6 +81,7 @@ struct HealthResponse {
         handlers::recommendations::generate_mock_recommendations,
         handlers::migrations::migrate_handler,
         handlers::jobs::fetch_all_coins_handler,
+        handlers::jobs::get_jobs_status_handler,
         handlers::evm_tokens::list_evm_tokens_handler,
         handlers::evm_tokens::get_evm_token_handler,
         handlers::evm_tokens::create_evm_token_handler,
@@ -132,6 +134,8 @@ struct HealthResponse {
             handlers::recommendations::CreateRecommendationRequest,
             handlers::migrations::MigrationResponse,
             handlers::jobs::FetchAllCoinsResponse,
+            handlers::jobs::ApalisWorkerStatus,
+            handlers::jobs::ApalisJobsStatusResponse,
             handlers::evm_tokens::EvmTokenResponse,
             handlers::evm_tokens::CreateEvmTokenRequest,
             handlers::evm_tokens::UpdateEvmTokenRequest,
@@ -312,121 +316,31 @@ async fn main() {
         .expect("Failed to connect to database");
     tracing::info!("Database connection pool established");
 
-    // Initialize job scheduler
-    tracing::info!("Initializing job scheduler...");
-    let scheduler = JobScheduler::new().await.expect("Failed to create job scheduler");
-    
-    // Configure fetch all coins job (replaces top_coins_collection and contract_addresses_collection)
-    let fetch_all_coins_enabled = std::env::var("FETCH_ALL_COINS_ENABLED")
-        .unwrap_or_else(|_| "true".to_string())
-        .parse::<bool>()
-        .unwrap_or(true);
-    
-    if fetch_all_coins_enabled {
-        let fetch_all_coins_schedule = std::env::var("FETCH_ALL_COINS_SCHEDULE")
-            .unwrap_or_else(|_| "0 */15 * * * *".to_string()); // Default: every 15 minutes
-        
-        tracing::info!(
-            "Scheduling fetch all coins job: schedule='{}'",
-            fetch_all_coins_schedule
-        );
+    // Extract the underlying sqlx PgPool from the sea-orm DatabaseConnection.
+    // apalis-postgres uses sqlx directly for its own migrations and storage.
+    let pg_pool = db.get_postgres_connection_pool().clone();
 
-        let db_clone = db.clone();
-        let job = Job::new_async(fetch_all_coins_schedule.as_str(), move |_job_id, _scheduler| {
-            let db = db_clone.clone();
-            Box::pin(async move {
-                tracing::info!("Running scheduled fetch all coins job");
-                match jobs::fetch_all_coins::fetch_all_coins(&db).await {
-                    Ok(result) => {
-                        if result.success {
-                            tracing::info!(
-                                "Fetch all coins job completed successfully: {} coins fetched, {} assets created, {} updated, {} prices stored",
-                                result.coins_fetched,
-                                result.assets_created,
-                                result.assets_updated,
-                                result.prices_stored
-                            );
-                        } else {
-                            tracing::error!(
-                                "Fetch all coins job failed: {}",
-                                result.error.unwrap_or_else(|| "Unknown error".to_string())
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Fetch all coins job failed with error: {}", e);
-                    }
-                }
-            })
-        })
-        .expect("Failed to create fetch all coins job");
+    // Run apalis-postgres schema migrations (creates the `apalis_jobs` table
+    // and supporting objects if they don't already exist).
+    tracing::info!("Running apalis-postgres schema setup...");
+    PostgresStorage::setup(&pg_pool)
+        .await
+        .expect("Failed to run apalis-postgres migrations");
+    tracing::info!("apalis-postgres schema ready");
 
-        scheduler.add(job).await.expect("Failed to add fetch all coins job to scheduler");
-        tracing::info!("Fetch all coins job scheduled successfully");
-    } else {
-        tracing::info!("Fetch all coins job is disabled");
-    }
-
-    // Configure EOD snapshot job
-    let eod_snapshot_enabled = std::env::var("EOD_SNAPSHOT_ENABLED")
-        .unwrap_or_else(|_| "true".to_string())
-        .parse::<bool>()
-        .unwrap_or(true);
-    
-    if eod_snapshot_enabled {
-        let eod_snapshot_schedule = std::env::var("EOD_SNAPSHOT_SCHEDULE")
-            .unwrap_or_else(|_| "0 0 23 * * *".to_string()); // Default: daily at 23:00 UTC
-        
-        tracing::info!(
-            "Scheduling EOD snapshot job: schedule='{}'",
-            eod_snapshot_schedule
-        );
-
-        let db_clone = db.clone();
-        let job = Job::new_async(eod_snapshot_schedule.as_str(), move |_job_id, _scheduler| {
-            let db = db_clone.clone();
-            Box::pin(async move {
-                tracing::info!("Running scheduled EOD snapshot job");
-                match jobs::portfolio_snapshot::create_all_portfolio_snapshots(&db, None).await {
-                    Ok(results) => {
-                        let successful = results.iter().filter(|r| r.success).count();
-                        let failed = results.iter().filter(|r| !r.success).count();
-                        
-                        tracing::info!(
-                            "EOD snapshot job completed: {} portfolios processed, {} successful, {} failed",
-                            results.len(),
-                            successful,
-                            failed
-                        );
-                        
-                        // Log failures
-                        for result in results.iter().filter(|r| !r.success) {
-                            if let Some(error) = &result.error {
-                                tracing::error!(
-                                    "Failed to create EOD snapshot for portfolio {}: {}",
-                                    result.portfolio_id,
-                                    error
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("EOD snapshot job failed with error: {}", e);
-                    }
-                }
-            })
-        })
-        .expect("Failed to create EOD snapshot job");
-
-        scheduler.add(job).await.expect("Failed to add EOD snapshot job to scheduler");
-        tracing::info!("EOD snapshot job scheduled successfully");
-    } else {
-        tracing::info!("EOD snapshot job is disabled");
-    }
-
-    // Start the scheduler
-    scheduler.start().await.expect("Failed to start job scheduler");
-    tracing::info!("Job scheduler started");
+    // Initialize and start Apalis job workers
+    tracing::info!("Initializing Apalis job workers...");
+    let components = jobs::apalis_runner::build_monitor(db.clone(), pg_pool);
+    let board_router = jobs::apalis_runner::build_board_router(
+        components.fetch_storage,
+        components.snapshot_storage,
+    );
+    tokio::spawn(async move {
+        if let Err(e) = components.monitor.run().await {
+            tracing::error!("Apalis job monitor stopped with error: {}", e);
+        }
+    });
+    tracing::info!("Apalis job workers started");
 
     // Keycloak configuration from environment variables
     let server_url = std::env::var("KEYCLOAK_SERVER")
@@ -486,6 +400,10 @@ async fn main() {
         .layer(auth_layer);
 
     // Build admin-only routes — require the "administrator" Keycloak realm role
+    // Clone the layer so we can apply it to the board routes separately
+    // (board routes are Router<()> while other admin routes are Router<DatabaseConnection>)
+    let admin_auth_layer_board = admin_auth_layer.clone();
+
     let admin_routes = Router::new()
         // Job management API routes (admin only)
         .merge(handlers::jobs::create_router())
@@ -496,6 +414,26 @@ async fn main() {
         // Solana token registry API routes (admin only)
         .merge(handlers::solana_tokens::create_router())
         .layer(admin_auth_layer);
+
+    // apalis-board routes are Router<()> (they don't use axum State extractor)
+    // so they must be built separately and merged into the app after .with_state(db).
+    //
+    // Board API is mounted at /api/v1 so the pre-built board SPA (which hard-codes
+    // /api/v1 as its API base URL) can reach these routes:
+    //   GET /api/v1/queues            — list queues
+    //   GET /api/v1/overview          — aggregate stats
+    //   GET /api/v1/workers           — all workers
+    //   GET /api/v1/tasks             — all tasks
+    //   GET /api/v1/events            — SSE tracing stream
+    //   GET /api/v1/queues/{q}/*      — per-queue routes
+    //
+    // The board SPA's static assets (JS/WASM/CSS) are loaded via absolute paths
+    // (/apalis-board-web-*.js etc.) so a fallback_service catches those requests.
+    let board_admin_routes = Router::new()
+        .nest("/api/v1", board_router)
+        .route("/admin/jobs", get(|| async { axum::response::Redirect::temporary("/admin/jobs/") }))
+        .fallback_service(ServeUI::new())
+        .layer(admin_auth_layer_board);
 
     // Build application with public and protected routes
     // Axum handles concurrent requests efficiently using Tokio's async runtime
@@ -513,7 +451,9 @@ async fn main() {
         // Merge admin-only routes
         .merge(admin_routes)
         // Apply database state to all routes
-        .with_state(db);
+        .with_state(db)
+        // Merge board admin routes (Router<()>) AFTER .with_state() so types align
+        .merge(board_admin_routes);
 
     // Run the server
     let port_str = std::env::var("SERVER_PORT")

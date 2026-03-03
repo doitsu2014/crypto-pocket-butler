@@ -431,7 +431,7 @@ async fn main() {
     // (/apalis-board-web-*.js etc.) so a fallback_service catches those requests.
     let board_admin_routes = Router::new()
         .nest("/api/v1", board_router)
-        .route("/admin/jobs", get(|| async { axum::response::Redirect::permanent("/admin/jobs/") }))
+        .route("/admin/jobs", get(|| async { axum::response::Redirect::temporary("/admin/jobs/") }))
         .fallback_service(ServeUI::new())
         .layer(admin_auth_layer_board);
 

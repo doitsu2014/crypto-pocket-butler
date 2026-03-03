@@ -55,9 +55,7 @@ pub async fn schedule_fetch_all_coins(
     storage: Data<PostgresStorage<FetchAllCoinsJob>>,
 ) -> Result<(), BoxDynError> {
     let mut s = (*storage).clone();
-    s.push(FetchAllCoinsJob)
-        .await
-        .map_err(|e| -> BoxDynError { e.to_string().into() })?;
+    s.push(FetchAllCoinsJob).await?;
     Ok(())
 }
 
@@ -68,9 +66,7 @@ pub async fn schedule_eod_snapshot(
     storage: Data<PostgresStorage<EodSnapshotJob>>,
 ) -> Result<(), BoxDynError> {
     let mut s = (*storage).clone();
-    s.push(EodSnapshotJob)
-        .await
-        .map_err(|e| -> BoxDynError { e.to_string().into() })?;
+    s.push(EodSnapshotJob).await?;
     Ok(())
 }
 

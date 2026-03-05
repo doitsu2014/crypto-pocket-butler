@@ -1,9 +1,9 @@
 use crate::connectors::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, solana::SolanaConnector, ExchangeConnector};
-use crate::entities::{accounts, evm_chains, evm_tokens, holdings, holding_transactions, solana_tokens};
+use crate::entities::{accounts, account_transactions, evm_chains, evm_tokens, solana_tokens};
 use chrono::Utc;
 use rust_decimal::Decimal;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -229,7 +229,7 @@ pub async fn sync_account(
         .exchange_name
         .as_deref()
         .unwrap_or(&account.account_type);
-    upsert_holdings_with_transactions(db, account_id, &balances, source).await;
+    record_account_transactions(db, account_id, &balances, source).await;
 
     // Update account's last_synced_at and holdings (JSON kept for backward compatibility)
     let mut account_update: accounts::ActiveModel = account.into();
@@ -255,16 +255,21 @@ pub async fn sync_account(
     })
 }
 
-/// Upsert holdings rows and append a transaction record for each changed balance.
+/// Record an `account_transactions` row for every balance observation returned
+/// by the sync job.
 ///
-/// For every balance:
-/// 1. Look up (or create) the [`holdings::Model`] for `(account_id, asset_symbol)`.
-/// 2. If the quantity changed, write a [`holding_transactions::Model`] audit entry and
-///    update the `holdings.quantity`.
+/// For each balance:
+/// 1. Query the most-recent `account_transactions` row for `(account_id, asset_symbol)`
+///    to obtain the previous quantity.
+/// 2. If the quantity differs (or there is no previous row), insert a new
+///    `account_transactions` record.
 ///
-/// Errors are logged but do **not** fail the overall sync so that a partial DB
-/// issue cannot prevent the account JSON from being updated.
-async fn upsert_holdings_with_transactions(
+/// The current balance for an account asset is always the `quantity_after` of
+/// the latest row ordered by `created_at DESC`.
+///
+/// Errors are logged but do **not** fail the overall sync so that a DB issue
+/// cannot prevent the account JSON column from being updated.
+async fn record_account_transactions(
     db: &DatabaseConnection,
     account_id: Uuid,
     balances: &[crate::connectors::Balance],
@@ -275,72 +280,55 @@ async fn upsert_holdings_with_transactions(
     for balance in balances {
         let new_qty_str = balance.quantity.trim().to_string();
 
-        // Find or create the holdings row for this (account_id, asset_symbol)
-        let existing = holdings::Entity::find()
-            .filter(holdings::Column::AccountId.eq(account_id))
-            .filter(holdings::Column::AssetSymbol.eq(&balance.asset))
+        // Find the most-recent transaction for (account_id, asset_symbol)
+        let latest = account_transactions::Entity::find()
+            .filter(account_transactions::Column::AccountId.eq(account_id))
+            .filter(account_transactions::Column::AssetSymbol.eq(&balance.asset))
+            .order_by_desc(account_transactions::Column::CreatedAt)
             .one(db)
             .await;
 
-        let existing = match existing {
-            Ok(v) => v,
+        let prev_qty_str = match latest {
+            Ok(Some(ref row)) => row.quantity_after.clone(),
+            Ok(None) => "0".to_string(),
             Err(e) => {
                 tracing::warn!(
-                    "Failed to query holding for account {} asset {}: {}",
+                    "Failed to query account_transactions for account {} asset {}: {}",
                     account_id, balance.asset, e
                 );
                 continue;
             }
         };
 
-        let (holding_id, old_qty_str) = match existing {
-            Some(ref h) => (h.id, h.quantity.clone()),
-            None => {
-                // Create new holding row
-                let new_holding = holdings::ActiveModel {
-                    id: ActiveValue::Set(Uuid::new_v4()),
-                    account_id: ActiveValue::Set(account_id),
-                    asset_symbol: ActiveValue::Set(balance.asset.clone()),
-                    quantity: ActiveValue::Set(new_qty_str.clone()),
-                    created_at: ActiveValue::Set(now.into()),
-                    updated_at: ActiveValue::Set(now.into()),
-                };
-                match new_holding.insert(db).await {
-                    Ok(inserted) => (inserted.id, "0".to_string()),
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to insert holding for account {} asset {}: {}",
-                            account_id, balance.asset, e
-                        );
-                        continue;
-                    }
-                }
-            }
-        };
-
-        // Only write a transaction + update the row when the quantity has actually changed
-        let old_qty = Decimal::from_str(&old_qty_str).unwrap_or_else(|e| {
-            tracing::warn!("Failed to parse old quantity '{}' for holding {}: {}", old_qty_str, holding_id, e);
+        // Only write a new row when the quantity has actually changed
+        let prev_qty = Decimal::from_str(&prev_qty_str).unwrap_or_else(|e| {
+            tracing::warn!(
+                "Failed to parse previous quantity '{}' for account {} asset {}: {}",
+                prev_qty_str, account_id, balance.asset, e
+            );
             Decimal::ZERO
         });
         let new_qty = Decimal::from_str(&new_qty_str).unwrap_or_else(|e| {
-            tracing::warn!("Failed to parse new quantity '{}' for account {} asset {}: {}", new_qty_str, account_id, balance.asset, e);
+            tracing::warn!(
+                "Failed to parse new quantity '{}' for account {} asset {}: {}",
+                new_qty_str, account_id, balance.asset, e
+            );
             Decimal::ZERO
         });
 
-        if old_qty == new_qty && existing.is_some() {
+        if new_qty == prev_qty && latest.as_ref().ok().and_then(|o| o.as_ref()).is_some() {
             // No change – skip writing a redundant transaction
             continue;
         }
 
-        let qty_change = new_qty - old_qty;
+        let qty_change = new_qty - prev_qty;
 
-        // Append audit transaction
-        let tx = holding_transactions::ActiveModel {
+        let tx = account_transactions::ActiveModel {
             id: ActiveValue::Set(Uuid::new_v4()),
-            holding_id: ActiveValue::Set(holding_id),
-            quantity_before: ActiveValue::Set(old_qty_str),
-            quantity_after: ActiveValue::Set(new_qty_str.clone()),
+            account_id: ActiveValue::Set(account_id),
+            asset_symbol: ActiveValue::Set(balance.asset.clone()),
+            quantity_before: ActiveValue::Set(prev_qty_str),
+            quantity_after: ActiveValue::Set(new_qty_str),
             quantity_change: ActiveValue::Set(qty_change.to_string()),
             transaction_type: ActiveValue::Set("sync".to_string()),
             source: ActiveValue::Set(source.to_string()),
@@ -351,19 +339,9 @@ async fn upsert_holdings_with_transactions(
 
         if let Err(e) = tx.insert(db).await {
             tracing::warn!(
-                "Failed to insert holding transaction for holding {}: {}",
-                holding_id, e
+                "Failed to insert account_transaction for account {} asset {}: {}",
+                account_id, balance.asset, e
             );
-        }
-
-        // Update the holding's current quantity if it already existed
-        if let Some(h) = existing {
-            let mut h_update: holdings::ActiveModel = h.into();
-            h_update.quantity = ActiveValue::Set(new_qty_str);
-            h_update.updated_at = ActiveValue::Set(now.into());
-            if let Err(e) = h_update.update(db).await {
-                tracing::warn!("Failed to update holding {}: {}", holding_id, e);
-            }
         }
     }
 }

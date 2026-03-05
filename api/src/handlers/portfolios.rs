@@ -19,7 +19,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::domain::AccountHolding;
-use crate::entities::{accounts, portfolio_accounts, portfolios};
+use crate::entities::{accounts, portfolio_accounts, portfolio_holdings, holding_valuations, portfolios};
 use crate::helpers::auth::get_or_create_user;
 use super::error::ApiError;
 
@@ -1197,12 +1197,144 @@ pub async fn construct_portfolio_allocation(
     // Commit transaction
     txn.commit().await?;
 
+    // ── Persist portfolio_holdings + holding_valuations (domain tables) ──────
+    // Errors are logged but do not fail the response – the allocation JSON is
+    // the primary source of truth for current values.
+    let today = chrono::Utc::now().date_naive();
+    persist_portfolio_holdings_and_valuations(
+        &db,
+        id,
+        &allocation_holdings,
+        today,
+    )
+    .await;
+
     Ok(Json(ConstructAllocationResponse {
         portfolio_id: id,
         total_value_usd: total_value_f64,
         holdings: allocation_holdings,
         as_of: as_of.to_rfc3339(),
     }))
+}
+
+/// Upsert `portfolio_holdings` rows and insert daily `holding_valuations` rows.
+///
+/// For each allocation item:
+/// 1. Upsert the `portfolio_holdings` row for `(portfolio_id, asset_symbol)`.
+/// 2. Insert (or skip on conflict) a `holding_valuations` row for today.
+async fn persist_portfolio_holdings_and_valuations(
+    db: &DatabaseConnection,
+    portfolio_id: Uuid,
+    allocation: &[AllocationHolding],
+    today: chrono::NaiveDate,
+) {
+    use rust_decimal::Decimal;
+    use sea_orm::{sea_query::OnConflict, Insert};
+    use std::str::FromStr;
+
+    let now = chrono::Utc::now();
+
+    for item in allocation {
+        if item.unpriced {
+            continue; // Skip unpriced items – no price_usd to record
+        }
+
+        // Upsert portfolio_holdings (one row per portfolio/asset)
+        let ph_row = match portfolio_holdings::Entity::find()
+            .filter(portfolio_holdings::Column::PortfolioId.eq(portfolio_id))
+            .filter(portfolio_holdings::Column::AssetSymbol.eq(&item.asset))
+            .one(db)
+            .await
+        {
+            Ok(Some(existing)) => {
+                let mut active: portfolio_holdings::ActiveModel = existing.into();
+                active.quantity = ActiveValue::Set(item.quantity.clone());
+                active.updated_at = ActiveValue::Set(now.into());
+                match active.update(db).await {
+                    Ok(updated) => updated,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to update portfolio_holding for portfolio {} asset {}: {}",
+                            portfolio_id, item.asset, e
+                        );
+                        continue;
+                    }
+                }
+            }
+            Ok(None) => {
+                let new_ph = portfolio_holdings::ActiveModel {
+                    id: ActiveValue::Set(Uuid::new_v4()),
+                    portfolio_id: ActiveValue::Set(portfolio_id),
+                    asset_symbol: ActiveValue::Set(item.asset.clone()),
+                    quantity: ActiveValue::Set(item.quantity.clone()),
+                    created_at: ActiveValue::Set(now.into()),
+                    updated_at: ActiveValue::Set(now.into()),
+                };
+                match new_ph.insert(db).await {
+                    Ok(inserted) => inserted,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to insert portfolio_holding for portfolio {} asset {}: {}",
+                            portfolio_id, item.asset, e
+                        );
+                        continue;
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to query portfolio_holding for portfolio {} asset {}: {}",
+                    portfolio_id, item.asset, e
+                );
+                continue;
+            }
+        };
+
+        // Insert today's valuation (unique per holding/date – skip if already exists)
+        let price_dec = item.price_usd
+            .and_then(|p| Decimal::try_from(p).ok())
+            .unwrap_or(Decimal::ZERO);
+        let qty_dec = Decimal::from_str(&item.quantity).unwrap_or(Decimal::ZERO);
+        let value_dec = price_dec * qty_dec;
+
+        let valuation = holding_valuations::ActiveModel {
+            id: ActiveValue::Set(Uuid::new_v4()),
+            portfolio_holding_id: ActiveValue::Set(ph_row.id),
+            date: ActiveValue::Set(today),
+            price_usd: ActiveValue::Set(price_dec),
+            quantity: ActiveValue::Set(qty_dec),
+            value_usd: ActiveValue::Set(value_dec),
+            created_at: ActiveValue::Set(now.into()),
+        };
+
+        // ON CONFLICT DO NOTHING – daily valuation already recorded for this holding/date
+        match Insert::one(valuation)
+            .on_conflict(
+                OnConflict::columns([
+                    holding_valuations::Column::PortfolioHoldingId,
+                    holding_valuations::Column::Date,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec(db)
+            .await
+        {
+            Ok(_) => {}
+            Err(sea_orm::DbErr::RecordNotInserted) => {
+                tracing::debug!(
+                    "Holding valuation for holding {} on {} already exists – skipped",
+                    ph_row.id, today
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to insert holding_valuation for holding {} on {}: {}",
+                    ph_row.id, today, e
+                );
+            }
+        }
+    }
 }
 
 /// Get portfolio allocation
@@ -1287,4 +1419,151 @@ pub fn create_router() -> Router<DatabaseConnection> {
             "/api/v1/portfolios/{id}/allocation",
             get(get_portfolio_allocation),
         )
+        // Portfolio domain: structured holdings and daily valuations
+        .route(
+            "/api/v1/portfolios/{id}/portfolio-holdings",
+            get(list_portfolio_holdings_handler),
+        )
+        .route(
+            "/api/v1/portfolios/{id}/portfolio-holdings/{holding_id}/valuations",
+            get(list_holding_valuations_handler),
+        )
+}
+
+// === Portfolio Holdings & Valuations DTOs ===
+
+/// Structured portfolio holding from the `portfolio_holdings` table.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct PortfolioHoldingResponse {
+    pub id: Uuid,
+    pub portfolio_id: Uuid,
+    /// Canonical asset symbol (e.g. "BTC", "ETH").
+    pub asset_symbol: String,
+    /// Current aggregated quantity across all linked accounts.
+    pub quantity: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<portfolio_holdings::Model> for PortfolioHoldingResponse {
+    fn from(ph: portfolio_holdings::Model) -> Self {
+        Self {
+            id: ph.id,
+            portfolio_id: ph.portfolio_id,
+            asset_symbol: ph.asset_symbol,
+            quantity: ph.quantity,
+            created_at: ph.created_at.to_rfc3339(),
+            updated_at: ph.updated_at.to_rfc3339(),
+        }
+    }
+}
+
+/// Daily valuation snapshot from the `holding_valuations` table.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct HoldingValuationResponse {
+    pub id: Uuid,
+    pub portfolio_holding_id: Uuid,
+    /// Calendar date of this valuation (ISO 8601).
+    pub date: String,
+    pub price_usd: String,
+    pub quantity: String,
+    pub value_usd: String,
+    pub created_at: String,
+}
+
+impl From<holding_valuations::Model> for HoldingValuationResponse {
+    fn from(v: holding_valuations::Model) -> Self {
+        Self {
+            id: v.id,
+            portfolio_holding_id: v.portfolio_holding_id,
+            date: v.date.to_string(),
+            price_usd: v.price_usd.to_string(),
+            quantity: v.quantity.to_string(),
+            value_usd: v.value_usd.to_string(),
+            created_at: v.created_at.to_rfc3339(),
+        }
+    }
+}
+
+/// List structured portfolio holdings (Portfolios domain).
+///
+/// Returns the rows stored in `portfolio_holdings` for this portfolio, one per
+/// asset.  Each row reflects the aggregated quantity at the time the last
+/// allocation was constructed.
+#[utoipa::path(
+    get,
+    path = "/api/v1/portfolios/{id}/portfolio-holdings",
+    params(
+        ("id" = Uuid, Path, description = "Portfolio ID")
+    ),
+    responses(
+        (status = 200, description = "List of portfolio holdings", body = Vec<PortfolioHoldingResponse>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Portfolio not found")
+    ),
+    tag = "portfolios"
+)]
+pub async fn list_portfolio_holdings_handler(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<PortfolioHoldingResponse>>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
+    check_portfolio_ownership(&db, id, user.id).await?;
+
+    let rows = portfolio_holdings::Entity::find()
+        .filter(portfolio_holdings::Column::PortfolioId.eq(id))
+        .order_by_asc(portfolio_holdings::Column::AssetSymbol)
+        .all(&db)
+        .await?;
+
+    Ok(Json(rows.into_iter().map(PortfolioHoldingResponse::from).collect()))
+}
+
+/// List daily holding valuations for a specific portfolio holding.
+///
+/// Returns all `holding_valuations` rows for the given holding, ordered by date
+/// descending (most recent first).  Use these records to plot or analyse the
+/// USD value of a holding over time.
+#[utoipa::path(
+    get,
+    path = "/api/v1/portfolios/{id}/portfolio-holdings/{holding_id}/valuations",
+    params(
+        ("id" = Uuid, Path, description = "Portfolio ID"),
+        ("holding_id" = Uuid, Path, description = "Portfolio Holding ID")
+    ),
+    responses(
+        (status = 200, description = "List of daily holding valuations", body = Vec<HoldingValuationResponse>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Portfolio or holding not found")
+    ),
+    tag = "portfolios"
+)]
+pub async fn list_holding_valuations_handler(
+    State(db): State<DatabaseConnection>,
+    Extension(token): Extension<KeycloakToken<String>>,
+    Path((id, holding_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Vec<HoldingValuationResponse>>, ApiError> {
+    let user = get_or_create_user(&db, &token).await?;
+    check_portfolio_ownership(&db, id, user.id).await?;
+
+    // Verify the holding belongs to this portfolio
+    let holding = portfolio_holdings::Entity::find_by_id(holding_id)
+        .one(&db)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    if holding.portfolio_id != id {
+        return Err(ApiError::Forbidden);
+    }
+
+    let rows = holding_valuations::Entity::find()
+        .filter(holding_valuations::Column::PortfolioHoldingId.eq(holding_id))
+        .order_by_desc(holding_valuations::Column::Date)
+        .all(&db)
+        .await?;
+
+    Ok(Json(rows.into_iter().map(HoldingValuationResponse::from).collect()))
 }

@@ -1,4 +1,4 @@
-pub mod account_transactions;
+pub mod account_holdings;
 pub mod accounts;
 pub mod asset_contracts;
 pub mod asset_prices;
@@ -15,7 +15,7 @@ pub mod snapshots;
 pub mod solana_tokens;
 pub mod users;
 
-pub use account_transactions::Entity as AccountTransactions;
+pub use account_holdings::Entity as AccountHoldings;
 pub use accounts::Entity as Accounts;
 pub use asset_contracts::Entity as AssetContracts;
 pub use asset_prices::Entity as AssetPrices;

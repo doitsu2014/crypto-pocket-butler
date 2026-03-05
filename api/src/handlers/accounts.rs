@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::{accounts, account_transactions};
+use crate::entities::{accounts, account_holdings};
 use crate::helpers::auth::get_or_create_user;
 use crate::jobs::account_sync;
 use super::error::ApiError;
@@ -547,67 +547,64 @@ async fn sync_all_accounts_handler(
     ))
 }
 
-// === Account Transactions Response DTOs ===
+// === Account Holdings Response DTOs ===
 
-/// A single balance observation recorded in the Accounts domain during a sync.
+/// Current holding for a single asset in an account (Accounts domain).
+///
+/// Reflects the balance as of the most-recent sync.  One row exists per
+/// `(account_id, asset_symbol)` and is overwritten on every sync run.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct AccountTransactionResponse {
+pub struct AccountHoldingResponse {
     pub id: Uuid,
     pub account_id: Uuid,
     /// Asset symbol as reported by the exchange/chain (e.g. "BTC", "ETH-ethereum").
     pub asset_symbol: String,
-    pub quantity_before: String,
-    pub quantity_after: String,
-    pub quantity_change: String,
-    pub transaction_type: String,
+    /// Current normalized balance.
+    pub quantity: String,
+    /// Data source that produced the latest balance.
     pub source: String,
-    pub metadata: Option<serde_json::Value>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-impl From<account_transactions::Model> for AccountTransactionResponse {
-    fn from(tx: account_transactions::Model) -> Self {
+impl From<account_holdings::Model> for AccountHoldingResponse {
+    fn from(h: account_holdings::Model) -> Self {
         Self {
-            id: tx.id,
-            account_id: tx.account_id,
-            asset_symbol: tx.asset_symbol,
-            quantity_before: tx.quantity_before,
-            quantity_after: tx.quantity_after,
-            quantity_change: tx.quantity_change,
-            transaction_type: tx.transaction_type,
-            source: tx.source,
-            metadata: tx.metadata,
-            created_at: tx.created_at.to_rfc3339(),
-            updated_at: tx.updated_at.to_rfc3339(),
+            id: h.id,
+            account_id: h.account_id,
+            asset_symbol: h.asset_symbol,
+            quantity: h.quantity,
+            source: h.source,
+            created_at: h.created_at.to_rfc3339(),
+            updated_at: h.updated_at.to_rfc3339(),
         }
     }
 }
 
-/// List account transactions (balance history) for an account.
+/// List current holdings for an account (Accounts domain).
 ///
-/// Returns all balance observations recorded during syncs, ordered by creation
-/// time descending (most recent first).  The `quantity_after` of the first row
-/// for a given `asset_symbol` is the current balance for that asset.
+/// Returns the rows stored in `account_holdings` — one per asset, representing
+/// the **current** balance as of the most-recent sync.  The response is ordered
+/// by asset symbol ascending.
 #[utoipa::path(
     get,
-    path = "/api/v1/accounts/{account_id}/transactions",
+    path = "/api/v1/accounts/{account_id}/holdings",
     params(
         ("account_id" = Uuid, Path, description = "Account ID")
     ),
     responses(
-        (status = 200, description = "List of account transactions", body = Vec<AccountTransactionResponse>),
+        (status = 200, description = "List of current account holdings", body = Vec<AccountHoldingResponse>),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Account not found")
     ),
     tag = "accounts"
 )]
-async fn list_account_transactions_handler(
+async fn list_account_holdings_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
     Path(account_id): Path<Uuid>,
-) -> Result<Json<Vec<AccountTransactionResponse>>, ApiError> {
+) -> Result<Json<Vec<AccountHoldingResponse>>, ApiError> {
     let user = get_or_create_user(&db, &token).await?;
 
     let account = accounts::Entity::find_by_id(account_id)
@@ -619,13 +616,13 @@ async fn list_account_transactions_handler(
         return Err(ApiError::Forbidden);
     }
 
-    let rows = account_transactions::Entity::find()
-        .filter(account_transactions::Column::AccountId.eq(account_id))
-        .order_by_desc(account_transactions::Column::CreatedAt)
+    let rows = account_holdings::Entity::find()
+        .filter(account_holdings::Column::AccountId.eq(account_id))
+        .order_by_asc(account_holdings::Column::AssetSymbol)
         .all(&db)
         .await?;
 
-    Ok(Json(rows.into_iter().map(AccountTransactionResponse::from).collect()))
+    Ok(Json(rows.into_iter().map(AccountHoldingResponse::from).collect()))
 }
 
 /// Create router for account endpoints
@@ -638,5 +635,5 @@ pub fn create_router() -> Router<DatabaseConnection> {
         .route("/api/v1/accounts/{account_id}", get(get_account_handler).put(update_account_handler).delete(delete_account_handler))
         .route("/api/v1/accounts/{account_id}/sync", post(sync_account_handler))
         .route("/api/v1/accounts/sync-all", post(sync_all_accounts_handler))
-        .route("/api/v1/accounts/{account_id}/transactions", get(list_account_transactions_handler))
+        .route("/api/v1/accounts/{account_id}/holdings", get(list_account_holdings_handler))
 }

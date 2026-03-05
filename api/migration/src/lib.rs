@@ -10,6 +10,7 @@ mod m20260222_000001_add_native_symbol_to_evm_chains;
 mod m20260223_000001_add_date_to_asset_prices;
 mod m20260223_000002_create_holdings_and_transactions;
 mod m20260223_000003_restructure_holdings_domain;
+mod m20260223_000004_rename_account_transactions_to_holdings;
 
 pub struct Migrator;
 
@@ -27,6 +28,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260223_000001_add_date_to_asset_prices::Migration),
             Box::new(m20260223_000002_create_holdings_and_transactions::Migration),
             Box::new(m20260223_000003_restructure_holdings_domain::Migration),
+            Box::new(m20260223_000004_rename_account_transactions_to_holdings::Migration),
         ]
     }
 }

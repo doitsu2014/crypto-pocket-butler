@@ -557,3 +557,219 @@ mindmap
       normalize_token_balance
       normalize_holdings
 ```
+
+---
+
+## Code Structure Design
+
+```mermaid
+graph TB
+    subgraph "api/src/"
+        main[main.rs<br/>Server init, router, jobs]
+        lib[lib.rs<br/>Library exports]
+        db[db.rs<br/>Database pool]
+        cache[cache.rs<br/>Moka cache]
+        
+        handlers[handlers/<br/>HTTP handlers]
+        domain[domain/<br/>Business models]
+        entities[entities/<br/>SeaORM models]
+        connectors[connectors/<br/>External services]
+        helpers[helpers/<br/>Utilities]
+        jobs[jobs/<br/>Background tasks]
+        concurrency[concurrency/<br/>Async helpers]
+    end
+    
+    subgraph "handlers/"
+        h_portfolios[portfolios.rs]
+        h_accounts[accounts.rs]
+        h_snapshots[snapshots.rs]
+        h_recs[recommendations.rs]
+        h_evm_chains[evm_chains.rs]
+        h_evm_tokens[evm_tokens.rs]
+        h_jobs[jobs.rs]
+        h_error[error.rs]
+    end
+    
+    subgraph "domain/"
+        d_allocation[allocation.rs<br/>AllocationData]
+        d_holdings[holdings.rs<br/>AccountHolding]
+        d_snapshot[snapshot.rs<br/>SnapshotHolding]
+        d_mod[mod.rs]
+    end
+    
+    subgraph "entities/"
+        e_users[users.rs]
+        e_accounts[accounts.rs]
+        e_portfolios[portfolios.rs]
+        e_portfolio_accs[portfolio_accounts.rs]
+        e_snapshots[snapshots.rs]
+        e_assets[assets.rs]
+        e_contracts[asset_contracts.rs]
+        e_prices[asset_prices.rs]
+        e_chains[evm_chains.rs]
+        e_tokens[evm_tokens.rs]
+        e_sol_tokens[solana_tokens.rs]
+    end
+    
+    subgraph "connectors/"
+        c_okx[okx.rs<br/>OKX exchange]
+        c_evm[evm.rs<br/>EVM wallets]
+        c_coingecko[coingecko.rs]
+        c_paprika[coinpaprika.rs]
+    end
+    
+    subgraph "helpers/"
+        h_asset_id[asset_identity.rs]
+        h_balance[balance_normalization.rs]
+        h_auth[auth.rs]
+    end
+    
+    subgraph "jobs/"
+        j_runner[runner.rs<br/>Scheduling]
+        j_fetch[fetch_all_coins.rs]
+        j_price[price_collection.rs]
+        j_sync[account_sync.rs]
+        j_snapshot[portfolio_snapshot.rs]
+    end
+    
+    main --> lib
+    main --> db
+    main --> cache
+    main --> handlers
+    main --> domain
+    main --> entities
+    main --> jobs
+    
+    handlers --> domain
+    handlers --> entities
+    handlers --> connectors
+    handlers --> helpers
+    
+    domain --> entities
+    domain --> connectors
+    
+    entities --> db
+    connectors --> helpers
+    handlers --> h_error
+    
+    jobs --> db
+    jobs --> entities
+    j_runner --> j_fetch
+    j_runner --> j_price
+    j_runner --> j_sync
+    j_runner --> j_snapshot
+    
+    style main fill:#e1f5fe,stroke:#2196f3
+    style handlers fill:#e8f5e9,stroke:#4caf50
+    style domain fill:#fff3e0,stroke:#ff9800
+    style entities fill:#f3e5f5,stroke:#9c27b0
+    style connectors fill:#fce4ec,stroke:#e91e63
+    style helpers fill:#e0f2f1,stroke:#009688
+    style jobs fill:#fffde7,stroke:#ffc107
+```
+
+---
+
+## Module Dependency Flow
+
+```mermaid
+graph LR
+    lib[lib.rs] --> main[main.rs]
+    
+    main --> handlers
+    main --> db
+    main --> jobs
+    main --> cache
+    
+    handlers --> domain
+    handlers --> entities
+    handlers --> connectors
+    handlers --> helpers
+    
+    domain --> entities
+    domain --> connectors
+    
+    entities --> db
+    
+    connectors --> helpers
+    connectors --> db
+    
+    helpers --> db
+    helpers --> cache
+    
+    jobs --> db
+    jobs --> entities
+    jobs --> domain
+    
+    style lib fill:#bbdefb,stroke:#1565c0
+    style main fill:#a5d6a7,stroke:#2e7d32
+```
+
+---
+
+## API Handler Structure
+
+```mermaid
+graph TD
+    handlers[handlers/]
+    
+    handlers --> portfolios
+    handlers --> accounts
+    handlers --> snapshots
+    handlers --> recommendations
+    handlers --> evm_chains
+    handlers --> evm_tokens
+    handlers --> solana_tokens
+    handlers --> chains
+    handlers --> jobs
+    handlers --> migrations
+    handlers --> error
+    
+    portfolios --> portfolios_routes
+    portfolios --> portfolio_handlers
+    portfolios --> portfolio_dto
+    
+    accounts --> accounts_routes
+    accounts --> account_handlers
+    accounts --> account_dto
+    
+    snapshots --> snapshots_routes
+    snapshots --> snapshot_handlers
+    snapshots --> snapshot_dto
+    
+    portfolios_routes --> portfolios_handlers
+    portfolios_handlers --> portfolio_service
+    portfolios_service --> portfolio_domain
+    portfolio_domain --> portfolio_entities
+    
+    style handlers fill:#e1f5fe,stroke:#2196f3
+    style portfolios_handlers fill:#e8f5e9,stroke:#4caf50
+    style portfolio_domain fill:#fff3e0,stroke:#ff9800
+    style portfolio_entities fill:#f3e5f5,stroke:#9c27b0
+```
+
+---
+
+## Database Entity Relationships
+
+```mermaid
+erDiagram
+    users ||--o{ accounts : "has"
+    users ||--o{ portfolios : "has"
+    accounts ||--o{ portfolio_accounts : "joined through"
+    portfolios ||--o{ portfolio_accounts : "has"
+    
+    portfolios ||--o{ portfolio_allocations : "has"
+    portfolios ||--o{ snapshots : "has"
+    
+    accounts ||--|| holdings : "contains JSONB"
+    
+    assets ||--o{ asset_contracts : "has"
+    assets ||--o{ asset_prices : "has"
+    
+    evm_chains ||--o{ evm_tokens : "supports"
+    evm_chains ||--o{ asset_contracts : "has"
+    
+    portfolios ||--|| target_allocation : "JSONB"
+    portfolios ||--|| guardrails : "JSONB"
+```

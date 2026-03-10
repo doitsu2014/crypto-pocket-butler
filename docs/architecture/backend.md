@@ -346,6 +346,174 @@ graph TD
 
 ---
 
+## Business Services Layer
+
+```mermaid
+graph TD
+    subgraph "Business Services"
+        PS[PortfolioService]
+        AS[AssetService]
+        HS[HoldingService]
+        SN[SnapshotService]
+        AL[AllocationService]
+    end
+    
+    subgraph "Domain Models"
+        PM[Portfolio]
+        AM[Asset]
+        HM[AccountHolding]
+        SM[SnapshotHolding]
+        AIM[AllocationItem]
+    end
+    
+    PS -->|manages| PM
+    AS -->|manages| AM
+    HS -->|manages| HM
+    SN -->|manages| SM
+    AL -->|manages| AIM
+    
+    PS -->|creates| AL
+    HS -->|creates| HM
+    AL -->|uses| AIM
+```
+
+---
+
+## Business Logic Layer
+
+```mermaid
+graph TD
+    subgraph "Portfolio Business Logic"
+        PL1[Validate Portfolio Name]
+        PL2[Check Default Portfolio Only One]
+        PL3[Validate Guardrails Structure]
+        PL4[Check Portfolio Ownership]
+    end
+    
+    subgraph "Asset Business Logic"
+        AL1[Look Up Asset Prices]
+        AL2[Normalize Asset Symbols]
+        AL3[Check Asset Chain Mapping]
+    end
+    
+    subgraph "Holding Business Logic"
+        HL1[Normalize Quantities]
+        HL2[Calculate Available/Frozen]
+        HL3[Merge Holdings Across Accounts]
+    end
+    
+    subgraph "Allocation Business Logic"
+        ALG1[Aggregate Holdings]
+        ALG2[Enrich with Prices]
+        ALG3[Calculate USD Values]
+        ALG4[Compute Portfolio Weights]
+    end
+    
+    subgraph "Snapshot Business Logic"
+        SL1[Create Point-in-Time Copy]
+        SL2[Preserve Allocation State]
+        SL3[Generate Snapshot Metadata]
+    end
+    
+    PL1 --> Portfolio[Portfolio Operations]
+    PL2 --> Portfolio
+    PL3 --> Portfolio
+    PL4 --> Portfolio
+    
+    AL1 --> Asset[Asset Operations]
+    AL2 --> Asset
+    AL3 --> Asset
+    
+    HL1 --> Holding[Holding Operations]
+    HL2 --> Holding
+    HL3 --> Holding
+    
+    ALG1 --> Allocation[Allocation Operations]
+    ALG2 --> Allocation
+    ALG3 --> Allocation
+    ALG4 --> Allocation
+    
+    SL1 --> Snapshot[Snapshot Operations]
+    SL2 --> Snapshot
+    SL3 --> Snapshot
+```
+
+---
+
+## High-Level Business Flow: Portfolio Construction
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API
+    participant PortfolioService
+    participant HoldingService
+    participant AllocationService
+    participant AssetService
+    participant PortfolioEntity
+    participant SnapshotService
+    participant SnapshotEntity
+
+    User->>API: POST /api/portfolios/{id}/construct
+    API->>PortfolioService: validate_permission(user, portfolio_id)
+    
+    PortfolioService->>PortfolioService: check_portfolio_ownership()
+    PortfolioService->>HoldingService: fetch_all_holdings(portfolio_id)
+    
+    HoldingService->>API: User accounts from portfolio
+    API->>API: For each account, fetch holdings
+    
+    HoldingService-->>PortfolioService: Vec~AccountHolding~
+    
+    PortfolioService->>AssetService: get_prices(holdings.assets)
+    AssetService->>CoinPaprika: GET /coins
+    CoinPaprika-->>AssetService: Asset prices
+    
+    AssetService-->>PortfolioService: HashMap~asset, price~
+    
+    PortfolioService->>AllocationService: build_allocation(holdings, prices)
+    
+    AllocationService->>AllocationService: aggregate_quantities();
+    AllocationService->>AllocationService: enrich_with_prices(prices);
+    AllocationService->>AllocationService: calculate_values();
+    AllocationService->>AllocationService: compute_weights();
+    
+    AllocationService-->>PortfolioService: AllocationData
+    
+    PortfolioService->>PortfolioEntity: save_allocation(allocation)
+    PortfolioEntity-->>PortfolioService: PortfolioAllocation
+    
+    Optional: Create snapshot if EOD
+    PortfolioService->>SnapshotService: create_snapshot(allocation)
+    SnapshotService->>SnapshotEntity: persist_snapshot()
+    
+    PortfolioService-->>API: AllocationResponse
+    API-->>User: 200 OK + JSON
+```
+
+---
+
+## Business Rules Validation
+
+```mermaid
+flowchart TD
+    Start[New Portfolio Request] --> CheckName[Validate Name]
+    CheckName -->|Invalid| Error1[400 Bad Request]
+    CheckName -->|Valid| CheckDefault[Default Check]
+    
+    CheckDefault -->|Set Default| UnsetOther[Unset Other Defaults]
+    CheckDefault -->|Not Default| CheckGuardrails
+    
+    UnsetOther --> CheckGuardrails
+    CheckGuardrails -->|Invalid Format| Error2[400 Bad Request]
+    CheckGuardrails -->|Valid| Save[Save to DB]
+    
+    Save -->|Success| Success[201 Created]
+    Save -->|Conflict| Error3[409 Conflict]
+```
+
+---
+
 ## Domain-Driven Design Principles Applied
 
 ```mermaid
@@ -362,6 +530,18 @@ mindmap
       Value Objects
         AllocationItem, SnapshotHolding
         AccountHolding, AllocationData
+    Business Services Layer
+      PortfolioService
+      AssetService
+      HoldingService
+      SnapshotService
+      AllocationService
+    Business Logic Layer
+      Portfolio Validation
+      Asset Pricing
+      Holding Normalization
+      Allocation Calculation
+      Snapshot Persistence
     Infrastructure Layer
       Persistence
         SeaORM Entities

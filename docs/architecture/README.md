@@ -1,77 +1,73 @@
 # Crypto Pocket Butler Architecture Documentation
 
-This folder contains Mermaid diagrams for Crypto Pocket Butler's system architecture.
+This folder contains architecture documentation for the Crypto Pocket Butler system.
 
 ## Documentation
 
-| File | Description |
-|------|-------------|
-| `README.md` | This file |
-| `backend.md` | Backend API architecture (Part 1) |
-| `web.md` | Frontend web architecture (Part 2) |
+| File | Description | Updates Needed |
+|------|-------------|----------------|
+| `ARCHITECTURE.md` | Comprehensive reference (topology, connectors, database schema) | ⚠️ Needs review for Apalis 1.0.0 |
+| `backend.md` | Detailed Mermaid diagrams (API backend layer) | ✅ **Current focus** |
+| `web.md` | Detailed Mermaid diagrams (Frontend layer) | ⚠️ Needs review |
+| `NAMING_CONVENTION.md` | Naming conventions | ✅ Outdated |
+| `TECHNICAL_DESIGN.md` | Technical design notes | ⚠️ Needs review |
 
----
+## Current Focus: Detailed Architecture Diagrams
 
-## Part 1: Backend API Architecture (`backend.md`)
+### `backend.md` - Backend API Architecture (Updated ✅)
 
-### High-Level API Architecture
-- Client → Load Balancer → Multiple API Servers
-- API Servers → PostgreSQL Queue (apalis_jobs)
-- Apalis Workers → PostgreSQL Database
-- apalis-board Dashboard for monitoring
+**Latest update:** Business Services & Business Logic layer diagrams
 
-### Key Features
-- Rust + Axum 0.8 API
-- Keycloak OIDC authentication
-- SeaORM PostgreSQL integration
-- Apalis 1.0.0-rc.4 job queue system
-- Multi-instance scaling support
+**Diagrams included:**
+1. **Domain-Driven Layered Architecture** - Domain/Entity/API layers
+2. **Portfolio Domain Class Diagram** - core domain models
+3. **Asset Domain Class Diagram** - assets, prices, contracts
+4. **Holding & Allocation Domain** - entity relationships
+5. **Chain & Token Domain** - EVM/Solana tokens
+6. **API Endpoint Architecture** - route protection layers
+7. **Data Flow: Create Portfolio** - sequence diagram
+8. **Domain Model Validation Flow** - validation pipeline
+9. **Business Services Layer** - service responsibilities
+10. **Business Logic Layer** - validation rules and calculations
+11. **Portfolio Construction Flow** - sequence diagram
+12. **Business Rules Validation** - flowchart
+13. **Updated DDD Map** - domain boundaries with business layers
 
-### Diagrams Included
-1. High-Level API Architecture
-2. API Data Flow: Job Processing (sequence diagram)
-3. Multi-Instance API Architecture
-4. Backend Technology Stack (mindmap)
-5. Backend Deployment (Docker)
-6. apalis-board Component Details
-7. Job Storage Schema (ER diagram)
-8. Backend Security Architecture
+### `web.md` - Frontend Web Architecture
 
----
-
-## Part 2: Frontend Web Architecture (`web.md`)
-
-### High-Level Web Architecture
-- Browser → Load Balancer → Next.js 16 App
-- Next.js → TanStack Query → API Server
-- NextAuth.js → Keycloak for authentication
-
-### Key Features
-- Next.js 16 with app router
-- TailwindCSS 4 for styling
-- TanStack Query for data fetching
-- NextAuth.js v5 for authentication
-- PKCE flow for Keycloak
-
-### Diagrams Included
+**Diagrams included:**
 1. High-Level Web Architecture
 2. Frontend Technology Stack (mindmap)
 3. Web Deployment Architecture
-4. Frontend Data Flow: Authentication (sequence diagram)
+4. Frontend Auth Flow (sequence)
 5. Frontend Component Structure
 6. Frontend State Management
-7. Frontend Response Flow (sequence diagram)
+7. Frontend Response Flow (sequence)
 8. Frontend Security Architecture
-9. Frontend Deployment Flow (CI/CD)
+9. Frontend CI/CD Flow
 10. Frontend Routing Strategy
 11. Frontend Error Boundary Flow
 
----
+## Recommendations
+
+### For Apalis Migration (PR #157)
+
+The existing `ARCHITECTURE.md` still references `tokio-cron-scheduler`. Consider:
+
+1. Add section: **Background Job System (Apalis 1.0.0-rc.4)** replacing tokio-cron-scheduler
+2. Update connector section with new apalis-board integration
+3. Add apalis-board architecture to topology diagram
+
+### For Consistency
+
+1. Review `TECHNICAL_DESIGN.md` for alignment with current code
+2. Update `NAMING_CONVENTION.md` with current conventions
+3. Consider adding apalis-board architecture section to `ARCHITECTURE.md`
 
 ## Viewing the Diagrams
 
 ### GitHub
-The diagrams will render automatically in GitHub's markdown viewer.
+Mermaid diagrams will render automatically in GitHub's markdown viewer.
 
 ### Mermaid Live Editor
 Use https://mermaid.live/ to view/edit diagrams.
@@ -81,8 +77,4 @@ Install the "Mermaid Preview" extension for real-time rendering.
 
 ---
 
-## Source
-
-All diagrams are sourced from:
-- `docs/architecture/backend.md` - Part 1: Backend API
-- `docs/architecture/web.md` - Part 2: Web Frontend
+*Last updated: March 10, 2026*

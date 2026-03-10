@@ -1,210 +1,379 @@
 # Crypto Pocket Butler Backend API Architecture
 
-## High-Level API Architecture
+## Domain-Driven Architecture
+
+### Layered Architecture (Domain Model)
 
 ```mermaid
-graph TD
-    A[Client<br/>Browser/Mobile/API] -->|HTTPS| B[Load Balancer<br/>NGINX/HAProxy]
-    B --> C[API Server 1<br/>Rust + Axum + Keycloak]
-    B --> D[API Server 2<br/>Rust + Axum + Keycloak]
-    B --> E[API Server 3<br/>Rust + Axum + Keycloak]
+graph TB
+    subgraph "API Layer"
+        H1[Handlers<br/>handlers/]
+        H2[Routes<br/>routes]
+    end
     
-    C -->|Job Queue| F[PostgreSQL Queue<br/>apalis_jobs]
-    D -->|Job Queue| F
-    E -->|Job Queue| F
+    subgraph "Domain Layer"
+        D1[Domain Models<br/>domain/]
+        D2[Business Logic<br/>handlers/]
+    end
     
-    F -->|Consumes| G[Apalis Worker 1<br/>Fetch All Coins]
-    F -->|Consumes| H[Apalis Worker 2<br/>EOD Snapshot]
-    F -->|Consumes| I[Apalis Worker 3<br/>Multi-instance]
+    subgraph "Entity Layer"
+        E1[Entities<br/>entities/]
+        E2[SeaORM DB Access]
+    end
     
-    G -->|Read/Write| J[PostgreSQL<br/>Primary Database]
-    H -->|Read/Write| J
-    I -->|Read/Write| J
+    subgraph "External"
+        E3[Connectors<br/>connectors/]
+        E4[External APIs]
+    end
     
-    F -->|API| K[apalis-board<br/>Dashboard<br/>/admin/jobs]
+    H1 -->|Use| D1
+    D1 -->|Use| E1
+    E1 -->|Query| E2
+    H1 -->|Call| D2
+    H2 -->|Route| H1
+    D2 -->|Call| D1
+    D2 -->|Write| E2
+    
+    E2 -->|SQL| PG[(PostgreSQL)]
+    
+    D1 -->|Normalize| E3
+    E3 -->|HTTP| E4
 ```
 
 ---
 
-## API Data Flow: Job Processing
+## Domain Model Structure
+
+### Portfolio Domain
+
+```mermaid
+classDiagram
+    class Portfolio {
+        +Uuid id
+        +Uuid user_id
+        +String name
+        +String description
+        +bool is_default
+        +Json target_allocation
+        +Json guardrails
+        +DateTime last_constructed_at
+    }
+    
+    class PortfolioAccount {
+        +Uuid portfolio_id
+        +Uuid account_id
+    }
+    
+    class PortfolioAllocation {
+        +Uuid id
+        +Uuid portfolio_id
+        +AllocationData data
+        +DateTime created_at
+    }
+    
+    class Snapshot {
+        +Uuid id
+        +Uuid portfolio_id
+        +SnapshotData data
+        +DateTime created_at
+    }
+    
+    class Account {
+        +Uuid id
+        +Uuid user_id
+        +String name
+        +String type
+        +Json holdings
+    }
+    
+    Portfolio "1" *-- "0..*" PortfolioAccount : has >
+    Portfolio "1" *-- "0..*" PortfolioAllocation : has >
+    Portfolio "1" *-- "0..*" Snapshot : has >
+    PortfolioAccount *-- Account : links to >
+    Portfolio *-- User : belongs to >
+```
+
+---
+
+### Asset Domain
+
+```mermaid
+classDiagram
+    class Asset {
+        +String symbol
+        +String name
+        +String rank
+        +Json market_data
+    }
+    
+    class AssetPrice {
+        +String asset
+        +String chain
+        +Decimal price_usd
+        +DateTime timestamp
+    }
+    
+    class AssetContract {
+        +String asset
+        +String chain
+        +String contract_address
+    }
+    
+    class EvmToken {
+        +Uuid id
+        +String symbol
+        +String name
+        +String contract_address
+        +String chain
+        +bool is_active
+    }
+    
+    class SolanaToken {
+        +Uuid id
+        +String mint_address
+        +String symbol
+        +String name
+        +bool is_active
+    }
+    
+    Asset "1" *-- "0..*" AssetPrice : has price history >
+    Asset "1" *-- "0..*" AssetContract : has contracts >
+    Asset "1" *-- "0..*" EvmToken : evm versions >
+    Asset "1" *-- "0..*" SolanaToken : solana versions >
+```
+
+---
+
+### Holding & Allocation Domain
+
+```mermaid
+classDiagram
+    class AccountHolding {
+        +String asset
+        +String quantity
+        +String available
+        +String frozen
+        +u8 decimals
+    }
+    
+    class AllocationItem {
+        +String asset
+        +String quantity
+        +f64 price_usd
+        +f64 value_usd
+        +f64 weight
+        +bool unpriced
+    }
+    
+    class AllocationData {
+        +Vec~AllocationItem~ items
+        +Decimal total_value_usd
+        +DateTime as_of
+    }
+    
+    class SnapshotHolding {
+        +String asset
+        +String quantity
+        +f64 price_usd
+        +f64 value_usd
+        +f64 weight
+        +bool unpriced
+    }
+    
+    class SnapshotData {
+        +Vec~SnapshotHolding~ holdings
+        +SnapshotMetadata metadata
+    }
+    
+    AccountHolding --> AllocationItem : enrich with prices >
+    AllocationItem --> SnapshotHolding : persist snapshot >
+    AllocationData --> PortfolioAllocation : store >
+    SnapshotData --> Snapshot : store >
+```
+
+---
+
+### Chain & Token Domain
+
+```mermaid
+classDiagram
+    class EvmChain {
+        +Uuid id
+        +String name
+        +String chain_id
+        +String rpc_url
+        +String block_explorer
+        +bool is_active
+    }
+    
+    class ChainContract {
+        +String asset
+        +String chain
+        +String contract_address
+        +u8 decimals
+    }
+    
+    EvmChain "1" *-- "0..*" ChainContract : supports >
+    
+    note right of EvmChain
+        EVM chains:
+        - Ethereum
+        - BSC
+        - Polygon
+        - Arbitrum
+        - Optimism
+        - Base
+    end note
+```
+
+---
+
+## API Endpoint Architecture
+
+```mermaid
+graph TB
+    subgraph "Public Routes"
+        P1[GET /<br/>Root]
+        P2[GET /health<br/>Health Check]
+    end
+    
+    subgraph "Protected Routes (Any Auth)"
+        A1[GET /api/me<br/>User Info]
+        A2[GET /api/protected<br/>Protected]
+    end
+    
+    subgraph "Portfolio Routes"
+        PF1[GET /api/portfolios<br/>List]
+        PF2[GET /api/portfolios/{id}<br/>Detail]
+        PF3[POST /api/portfolios<br/>Create]
+        PF4[PUT /api/portfolios/{id}<br/>Update]
+        PF5[DELETE /api/portfolios/{id}<br/>Delete]
+    end
+    
+    subgraph "Account Routes"
+        ACC1[GET /api/accounts<br/>List]
+        ACC2[GET /api/accounts/{id}<br/>Detail]
+        ACC3[POST /api/accounts<br/>Create]
+        ACC4[PUT /api/accounts/{id}<br/>Update]
+        ACC5[POST /api/accounts/{id}/sync<br/>Sync]
+    end
+    
+    subgraph "Admin Routes (Admin Role)"
+        AD1[GET /admin/jobs<br/>apalis-board]
+        AD2[POST /api/v1/jobs/fetch-all-coins<br/>Manual Job]
+    end
+    
+    P1 --> H[Handler]
+    P2 --> H
+    A1 --> K[Keycloak Auth]
+    A2 --> K
+    PF1 --> K
+    PF2 --> K
+    PF3 --> K
+    PF4 --> K
+    PF5 --> K
+    ACC1 --> K
+    ACC2 --> K
+    ACC3 --> K
+    ACC4 --> K
+    ACC5 --> K
+    AD1 --> A[Admin Auth]
+    AD2 --> A
+    
+    K --> RBAC[Role Check]
+    A --> RBAC
+    RBAC -->|User Role| PF1
+    RBAC -->|User Role| ACC1
+    RBAC -->|Admin Role| AD1
+```
+
+---
+
+## Data Flow: Create Portfolio
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant LB as Load Balancer
     participant API
-    participant Queue as PostgreSQL Queue
-    participant Worker
-    participant DB as PostgreSQL
+    participant Auth
+    participant PortfolioHandler
+    participant PortfolioDomain
+    participant PortfolioEntity
+    participant DB
 
-    Client->>LB: POST /api/v1/jobs/fetch-all-coins
-    LB->>API: Forward request
-    API->>API: Validate auth (Keycloak)
-    API->>Queue: PUSH FetchAllCoinsJob
-    Queue-->>API: Acknowledgment
-    API-->>Client: 200 OK
+    Client->>API: POST /api/portfolios
+    API->>Auth: Validate JWT Token
+    Auth-->>API: Decoded Claims
     
-    Queue->>Worker: Notify pending job
-    Worker->>Worker: Acquire lock
-    Worker->>DB: BEGIN
-    Worker->>DB: Update task status: Running
-    Worker->>DB: fetch_all_coins()
-    Worker->>DB: UPDATE result
-    Worker->>DB: COMMIT
-    Worker-->>Queue: Update status: Completed
-    Queue-->>Worker: Release lock
+    API->>PortfolioHandler: CreatePortfolioRequest
+    
+    PortfolioHandler->>PortfolioDomain: portfolio_to_domain(request)
+    PortfolioDomain->>PortfolioDomain: validate_name(name)
+    PortfolioDomain->>PortfolioDomain: validate_guardrails(guardrails)
+    
+    PortfolioDomain->>PortfolioEntity: new(portfolio)
+    PortfolioEntity->>DB: INSERT INTO portfolios
+    DB-->>PortfolioEntity: Return new UUID
+    
+    PortfolioEntity-->>PortfolioDomain: Portfolio { id, ... }
+    PortfolioDomain-->>PortfolioHandler: Domain Portfolio
+    
+    PortfolioHandler-->>API: PortfolioResponse
+    API-->>Client: 201 Created + JSON
 ```
 
 ---
 
-## Multi-Instance API Architecture
-
-```mermaid
-graph LR
-    subgraph "Instance 1"
-        A1[API Server 1<br/>:3001]
-        W1[Apalis Worker 1]
-    end
-    
-    subgraph "Instance 2"
-        A2[API Server 2<br/>:3001]
-        W2[Apalis Worker 2]
-    end
-    
-    subgraph "Instance 3"
-        A3[API Server 3<br/>:3001]
-        W3[Apalis Worker 3]
-    end
-    
-    subgraph "Shared Services"
-        Q[PostgreSQL Queue<br/>apalis_jobs]
-        D[PostgreSQL DB]
-        B[apalis-board]
-    end
-    
-    A1 -->|Push/Consume| Q
-    A2 -->|Push/Consume| Q
-    A3 -->|Push/Consume| Q
-    
-    W1 -->|Consume| Q
-    W2 -->|Consume| Q
-    W3 -->|Consume| Q
-    
-    Q -->|Read/Write| D
-    Q -->|API| B
-```
-
----
-
-## Backend Technology Stack
-
-```mermaid
-mindmap
-  root((Crypto Pocket Butler Backend))
-    Backend(Rust)
-      API(Axum 0.8)
-      Auth(Keycloak OIDC)
-      DB(SeaORM + PostgreSQL)
-      Queue(Apalis 1.0.0-rc.4)
-        Workers(CronStream + PostgresStorage)
-        Storage(PostgreSQL apalis_jobs table)
-        Board(apalis-board-api)
-    Infrastructure
-      Container(Docker Compose)
-      Auth(Keycloak)
-      Load Balancer(NGINX/HAProxy)
-      Monitoring(apalis-board Dashboard)
-```
-
----
-
-## Backend Deployment (Docker)
-
-```mermaid
-graph TB
-    subgraph "Docker Network: crypto-network"
-        LB[nginx:proxy<br/>Port 443]
-        
-        subgraph "API Service Stack"
-            API1[api:3001]
-            API2[api:3001]
-            API3[api:3001]
-        end
-        
-        PG[postgres:5432]
-        KC[keycloak:8080]
-    end
-    
-    LB --> API1
-    LB --> API2
-    LB --> API3
-    
-    API1 --> PG
-    API2 --> PG
-    API3 --> PG
-    
-    LB --> KC
-```
-
----
-
-## Backend Component Details: apalis-board
-
-```mermaid
-graph LR
-    User[Admin User] -->|Browser| DB[Dashboard UI]
-    DB -->|API| AQ[apalis-board API]
-    AQ -->|Queries| PQ[PostgreSQL<br/>apalis_jobs table]
-    
-    AQ -.->|SSE Events| DB
-    DB -.->|Real-time| AQ
-    
-    style AQ fill:#f9f,stroke:#333,stroke-width:2px
-    style PQ fill:#bbf,stroke:#333,stroke-width:2px
-```
-
----
-
-## Backend Job Storage Schema
-
-```mermaid
-erDiagram
-    apalis_jobs ||--o{ apalis_heartbeats : "has"
-    apalis_jobs {
-        bigint id PK
-        text job_type
-        jsonb payload
-        text status
-        text error_message
-        jsonb context
-        timestamp created_at
-        timestamp started_at
-        timestamp completed_at
-        bigint priority
-    }
-    
-    apalis_heartbeats {
-        bigint id PK
-        bigint job_id FK
-        text worker_name
-        timestamp last_heartbeat
-    }
-```
-
----
-
-## Backend Security Architecture
+## Domain Model Validation Flow
 
 ```mermaid
 graph TD
-    Client[Client] -->|JWT Token| LB[Load Balancer]
-    LB -->|Validate| KC[Keycloak]
-    KC -->|Verify| DB[(PostgreSQL<br/>users/roles)]
+    Request[API Request] --> Parse[Parse JSON]
+    Parse --> Validate[Validate Fields]
+    Validate -->|Valid| Domain[Create Domain Model]
+    Validate -->|Invalid| Error[Validation Error]
+    Error --> 400[400 Bad Request]
     
-    Client -->|Bearer Token| API[API Endpoint]
-    API -->|Extract Claims| Auth[Keycloak Auth Layer]
-    Auth -->|Check Role| RBAC[Role-Based Access Control]
+    Domain --> Business[Business Rules Check]
+    Business -->|Pass| Transform[Transform to Entity]
+    Business -->|Fail| Error2[Business Error]
+    Error2 --> 422[422 Unprocessable Entity]
     
-    RBAC -->|Admin Role| Admin[Admin Routes<br/>apalis-board]
-    RBAC -->|Authenticated| User[User Routes]
+    Transform --> DB[Database Insert]
+    DB -->|Success| Response[Return Response]
+    DB -->|Conflict| 409[409 Conflict]
+```
+
+---
+
+## Domain-Driven Design Principles Applied
+
+```mermaid
+mindmap
+  root((Crypto Pocket Butler DDD))
+    Domain Layer
+      Boundaries
+        Portfolio Domain
+        Asset Domain
+        Account Domain
+        Snapshot Domain
+      Entities
+        Portfolio, Account, Asset
+      Value Objects
+        AllocationItem, SnapshotHolding
+        AccountHolding, AllocationData
+    Infrastructure Layer
+      Persistence
+        SeaORM Entities
+        PostgreSQL Schema
+      External Services
+        Keycloak Auth
+        CoinPaprika API
+        OKX API
+    Anticorruption Layer
+      Connectors
+        EVM Connector
+        OKX Connector
+      normalize_token_balance
+      normalize_holdings
 ```

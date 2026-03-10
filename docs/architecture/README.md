@@ -1,80 +1,42 @@
-# Crypto Pocket Butler Architecture Documentation
+# Architecture Design
 
-This folder contains architecture documentation for the Crypto Pocket Butler system.
+This folder contains architecture documentation for Crypto Pocket Butler.
 
-## Documentation
+## Files
 
-| File | Description | Updates Needed |
-|------|-------------|----------------|
-| `ARCHITECTURE.md` | Comprehensive reference (topology, connectors, database schema) | ⚠️ Needs review for Apalis 1.0.0 |
-| `backend.md` | Detailed Mermaid diagrams (API backend layer) | ✅ **Current focus** |
-| `web.md` | Detailed Mermaid diagrams (Frontend layer) | ⚠️ Needs review |
-| `NAMING_CONVENTION.md` | Naming conventions | ✅ Outdated |
-| `TECHNICAL_DESIGN.md` | Technical design notes | ⚠️ Needs review |
+| File | Description |
+|------|-------------|
+| `01-architecture-design.md` | Backend API architecture (DDD, domain models, business services) |
+| `02-web-frontend.md` | Frontend web architecture (Next.js, state management, components) |
+| `README.md` | This file |
 
-## Current Focus: Detailed Architecture Diagrams
+## Architecture Types
 
-### `backend.md` - Backend API Architecture (Updated ✅)
+### 1. System Architecture
+High-level view of the entire system including all components and their interactions.
 
-**Latest update:** Business Services & Business Logic layer diagrams
+### 2. Domain-Driven Architecture
+Detailed domain models, entity relationships, and business logic layered architecture.
 
-**Diagrams included:**
-1. **Domain-Driven Layered Architecture** - Domain/Entity/API layers
-2. **Portfolio Domain Class Diagram** - core domain models
-3. **Asset Domain Class Diagram** - assets, prices, contracts
-4. **Holding & Allocation Domain** - entity relationships
-5. **Chain & Token Domain** - EVM/Solana tokens
-6. **API Endpoint Architecture** - route protection layers
-7. **Data Flow: Create Portfolio** - sequence diagram
-8. **Domain Model Validation Flow** - validation pipeline
-9. **Business Services Layer** - service responsibilities
-10. **Business Logic Layer** - validation rules and calculations
-11. **Portfolio Construction Flow** - sequence diagram
-12. **Business Rules Validation** - flowchart
-13. **Updated DDD Map** - domain boundaries with business layers
+See `01-architecture-design.md` for:
+- Layered Architecture (Domain/Entity/API)
+- Domain Class Diagrams (Portfolio, Asset, Holding, Snapshot)
+- Business Services Layer
+- Business Logic Layer
+- Portfolio Construction Flow
+- Business Rules Validation
 
-### `web.md` - Frontend Web Architecture
+### 3. Frontend Architecture
+Frontend web architecture including UI components and state management.
 
-**Diagrams included:**
-1. High-Level Web Architecture
-2. Frontend Technology Stack (mindmap)
-3. Web Deployment Architecture
-4. Frontend Auth Flow (sequence)
-5. Frontend Component Structure
-6. Frontend State Management
-7. Frontend Response Flow (sequence)
-8. Frontend Security Architecture
-9. Frontend CI/CD Flow
-10. Frontend Routing Strategy
-11. Frontend Error Boundary Flow
+See `02-web-frontend.md` for:
+- Next.js App Router structure
+- TanStack Query patterns
+- NextAuth.js integration
+- Component organization
 
-## Recommendations
+## Viewing
 
-### For Apalis Migration (PR #157)
-
-The existing `ARCHITECTURE.md` still references `tokio-cron-scheduler`. Consider:
-
-1. Add section: **Background Job System (Apalis 1.0.0-rc.4)** replacing tokio-cron-scheduler
-2. Update connector section with new apalis-board integration
-3. Add apalis-board architecture to topology diagram
-
-### For Consistency
-
-1. Review `TECHNICAL_DESIGN.md` for alignment with current code
-2. Update `NAMING_CONVENTION.md` with current conventions
-3. Consider adding apalis-board architecture section to `ARCHITECTURE.md`
-
-## Viewing the Diagrams
-
-### GitHub
-Mermaid diagrams will render automatically in GitHub's markdown viewer.
-
-### Mermaid Live Editor
-Use https://mermaid.live/ to view/edit diagrams.
-
-### VS Code
-Install the "Mermaid Preview" extension for real-time rendering.
-
----
-
-*Last updated: March 10, 2026*
+- **GitHub**: Mermaid diagrams render automatically
+- **Mermaid Live Editor**: https://mermaid.live/
+- **VS Code**: Install "Mermaid Preview" extension

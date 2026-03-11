@@ -95,8 +95,8 @@ graph TB
         U[User]
     end
     
-    PA -.-> A : references
-    P -.-> U : belongs to
+    PA -.->|references| A
+    P -.->|belongs to| U
 ```
 
 ---

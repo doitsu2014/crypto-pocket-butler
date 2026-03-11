@@ -4,20 +4,25 @@
 
 ```mermaid
 graph TD
-    PublicRoutes[Public Routes]
-    ProtectedRoutes[Protected Routes]
-    PortfolioRoutes[Portfolio Routes]
-    AccountRoutes[Account Routes]
-    AdminRoutes[Admin Routes]
+    PR[Public Routes]
+    PT[Protected Routes]
+    PF[Portfolio Routes]
+    AC[Account Routes]
+    AD[Admin Routes]
+    H[Health Endpoint]
+    AU[Auth]
+    PH[Portfolio Handlers]
+    AH[Account Handlers]
+    AA[Admin Auth]
     
-    PublicRoutes --> Health
-    ProtectedRoutes --> Auth
-    PortfolioRoutes --> PortfolioHandlers
-    AccountRoutes --> AccountHandlers
-    AdminRoutes --> AdminAuth
-    Auth --> PortfolioRoutes
-    Auth --> AccountRoutes
-    AdminAuth --> AdminRoutes
+    PR --> H
+    PT --> AU
+    PF --> PH
+    AC --> AH
+    AD --> AA
+    AU --> PF
+    AU --> AC
+    AA --> AD
 ```
 
 ---
@@ -26,20 +31,28 @@ graph TD
 
 ```mermaid
 sequenceDiagram
-    Client->>API: POST /api/portfolios
-    API->>Auth: Validate JWT Token
-    Auth-->>API: Decoded Claims
-    API->>PortfolioHandler: CreatePortfolioRequest
-    PortfolioHandler->>PortfolioDomain: portfolio_to_domain(request)
-    PortfolioDomain->>PortfolioDomain: validate_name(name)
-    PortfolioDomain->>PortfolioDomain: validate_guardrails(guardrails)
-    PortfolioDomain->>PortfolioEntity: new(portfolio)
-    PortfolioEntity->>DB: INSERT INTO portfolios
-    DB-->>PortfolioEntity: Return new UUID
-    PortfolioEntity-->>PortfolioDomain: Portfolio { id, ... }
-    PortfolioDomain-->>PortfolioHandler: Domain Portfolio
-    PortfolioHandler-->>API: PortfolioResponse
-    API-->>Client: 201 Created + JSON
+    participant C as Client
+    participant A as API
+    participant AU as Auth
+    participant H as PortfolioHandler
+    participant D as PortfolioDomain
+    participant E as PortfolioEntity
+    participant DB as Database
+
+    C->>A: POST /api/portfolios
+    A->>AU: Validate JWT Token
+    AU-->>A: Decoded Claims
+    A->>H: CreatePortfolioRequest
+    H->>D: portfolio_to_domain
+    D->>D: validate_name
+    D->>D: validate_guardrails
+    D->>E: new portfolio
+    E->>DB: INSERT
+    DB-->>E: Return UUID
+    E-->>D: Portfolio
+    D-->>H: Domain Portfolio
+    H-->>A: PortfolioResponse
+    A-->>C: 201 Created
 ```
 
 ---
@@ -48,24 +61,22 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-    Request --> Parse
-    Parse --> Validate
-    Validate --> Valid
-    Valid --> Domain
-    Domain --> Business
-    Business --> Pass
-    Pass --> Transform
-    Transform --> DB
-    DB --> Success
-    Validate --> Invalid
-    Invalid --> Error1
-    Business --> Fail
-    Fail --> Error2
-    DB --> Conflict
-    Error1 --> 400
-    Error2 --> 422
-    Conflict --> 409
-    Success --> Response
+    R[Request] --> P[Parse]
+    P --> V[Validate]
+    V --> VL[Valid]
+    VL --> DM[Domain Model]
+    DM --> B[Business Rules]
+    B --> PS[Pass]
+    PS --> T[Transform]
+    T --> DB[Database]
+    DB --> S[Success]
+    V --> IV[Invalid]
+    IV --> E1[Error 400]
+    B --> FL[Fail]
+    FL --> E2[Error 422]
+    DB --> CF[Conflict]
+    CF --> E3[Error 409]
+    S --> RP[Response]
 ```
 
 ---
@@ -74,18 +85,14 @@ graph TD
 
 ```mermaid
 flowchart TD
-    Start --> CheckName
-    CheckName --> Invalid --> Error1
-    CheckName --> Valid --> CheckDefault
-    CheckDefault --> SetDefault --> UnsetOther
-    CheckDefault --> NotDefault --> CheckGuardrails
-    UnsetOther --> CheckGuardrails
-    CheckGuardrails --> Invalid --> Error2
-    CheckGuardrails --> Valid --> Save
-    Save --> Success
-    Save --> Conflict
-    Error1 --> 400
-    Error2 --> 400
-    Success --> 201
-    Conflict --> 409
+    ST[Start] --> CN[Check Name]
+    CN -->|Invalid| E1[Error 400]
+    CN -->|Valid| CD[Check Default]
+    CD -->|Set Default| UO[Unset Other]
+    CD -->|Not Default| CG[Check Guardrails]
+    UO --> CG
+    CG -->|Invalid| E2[Error 400]
+    CG -->|Valid| SV[Save]
+    SV --> SC[Success 201]
+    SV -->|Conflict| E3[Error 409]
 ```

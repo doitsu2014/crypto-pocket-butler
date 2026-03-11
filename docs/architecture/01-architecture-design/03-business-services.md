@@ -4,17 +4,17 @@
 
 ```mermaid
 graph TD
-    BusinessServices[Business Services Layer]
-    PortfolioService[PortfolioService]
-    AssetService[AssetService]
-    HoldingService[HoldingService]
-    SnapshotService[SnapshotService]
-    AllocationService[AllocationService]
-    BusinessServices --> PortfolioService
-    BusinessServices --> AssetService
-    BusinessServices --> HoldingService
-    BusinessServices --> SnapshotService
-    BusinessServices --> AllocationService
+    BS[Business Services Layer]
+    PS[PortfolioService]
+    AS[AssetService]
+    HS[HoldingService]
+    SS[SnapshotService]
+    ALS[AllocationService]
+    BS --> PS
+    BS --> AS
+    BS --> HS
+    BS --> SS
+    BS --> ALS
 ```
 
 ---
@@ -23,33 +23,55 @@ graph TD
 
 ```mermaid
 graph TD
-    PortfolioBusinessLogic[Portfolio Business Logic]
-    AssetBusinessLogic[Asset Business Logic]
-    HoldingBusinessLogic[Holding Business Logic]
-    AllocationBusinessLogic[Allocation Business Logic]
-    SnapshotBusinessLogic[Snapshot Business Logic]
+    PBL[Portfolio Business Logic]
+    ABL[Asset Business Logic]
+    HBL[Holding Business Logic]
+    ALBL[Allocation Business Logic]
+    SBL[Snapshot Business Logic]
     
-    PortfolioBusinessLogic --> ValidateName
-    PortfolioBusinessLogic --> CheckDefault
-    PortfolioBusinessLogic --> ValidateGuardrails
-    PortfolioBusinessLogic --> CheckOwnership
+    VN[ValidateName]
+    CD[CheckDefault]
+    VG[ValidateGuardrails]
+    CO[CheckOwnership]
     
-    AssetBusinessLogic --> LookUpPrices
-    AssetBusinessLogic --> NormalizeSymbols
-    AssetBusinessLogic --> CheckChainMapping
+    LP[LookUpPrices]
+    NS[NormalizeSymbols]
+    CM[CheckChainMapping]
     
-    HoldingBusinessLogic --> NormalizeQuantities
-    HoldingBusinessLogic --> CalculateAvailable
-    HoldingBusinessLogic --> MergeAccounts
+    NQ[NormalizeQuantities]
+    CA[CalculateAvailable]
+    MA[MergeAccounts]
     
-    AllocationBusinessLogic --> AggregateHoldings
-    AllocationBusinessLogic --> EnrichWithPrices
-    AllocationBusinessLogic --> CalculateValues
-    AllocationBusinessLogic --> ComputeWeights
+    AH[AggregateHoldings]
+    EP[EnrichWithPrices]
+    CV[CalculateValues]
+    CW[ComputeWeights]
     
-    SnapshotBusinessLogic --> CreateCopy
-    SnapshotBusinessLogic --> PreserveState
-    SnapshotBusinessLogic --> GenerateMetadata
+    CC[CreateCopy]
+    PS[PreserveState]
+    GM[GenerateMetadata]
+    
+    PBL --> VN
+    PBL --> CD
+    PBL --> VG
+    PBL --> CO
+    
+    ABL --> LP
+    ABL --> NS
+    ABL --> CM
+    
+    HBL --> NQ
+    HBL --> CA
+    HBL --> MA
+    
+    ALBL --> AH
+    ALBL --> EP
+    ALBL --> CV
+    ALBL --> CW
+    
+    SBL --> CC
+    SBL --> PS
+    SBL --> GM
 ```
 
 ---
@@ -58,73 +80,45 @@ graph TD
 
 ```mermaid
 sequenceDiagram
-    User->>API: POST /api/portfolios/{id}/construct
-    API->>PortfolioService: validate_permission
-    PortfolioService->>PortfolioService: check_portfolio_ownership
-    PortfolioService->>HoldingService: fetch_all_holdings
-    HoldingService-->>PortfolioService: Vec AccountHolding
-    PortfolioService->>AssetService: get_prices
-    AssetService->>CoinPaprika: GET /coins
-    CoinPaprika-->>AssetService: Asset prices
-    AssetService-->>PortfolioService: HashMap asset, price
-    PortfolioService->>AllocationService: build_allocation
-    AllocationService->>AllocationService: aggregate_quantities
-    AllocationService->>AllocationService: enrich_with_prices
-    AllocationService->>AllocationService: calculate_values
-    AllocationService->>AllocationService: compute_weights
-    AllocationService-->>PortfolioService: AllocationData
-    PortfolioService->>PortfolioEntity: save_allocation
-    PortfolioEntity-->>PortfolioService: PortfolioAllocation
-    PortfolioService-->>API: AllocationResponse
-    API-->>User: 200 OK + JSON
+    participant U as User
+    participant A as API
+    participant PS as PortfolioService
+    participant HS as HoldingService
+    participant ALS as AllocationService
+    participant AS as AssetService
+    participant PE as PortfolioEntity
+    participant CP as CoinPaprika
+
+    U->>A: POST /api/portfolios/id/construct
+    A->>PS: validate_permission
+    PS->>PS: check_portfolio_ownership
+    PS->>HS: fetch_all_holdings
+    HS-->>PS: Vec AccountHolding
+    PS->>AS: get_prices
+    AS->>CP: GET /coins
+    CP-->>AS: Asset prices
+    AS-->>PS: HashMap asset price
+    PS->>ALS: build_allocation
+    ALS->>ALS: aggregate_quantities
+    ALS->>ALS: enrich_with_prices
+    ALS->>ALS: calculate_values
+    ALS->>ALS: compute_weights
+    ALS-->>PS: AllocationData
+    PS->>PE: save_allocation
+    PE-->>PS: PortfolioAllocation
+    PS-->>A: AllocationResponse
+    A-->>U: 200 OK + JSON
 ```
 
 ---
 
-## Domain-Driven Design Principles Applied
+## Domain-Driven Design Principles
 
-```mermaid
-mindmap
-    root((Crypto Pocket Butler DDD))
-        Domain Layer
-            Boundaries
-                Portfolio Domain
-                Asset Domain
-                Account Domain
-                Snapshot Domain
-            Entities
-                Portfolio
-                Account
-                Asset
-            Value Objects
-                AllocationItem
-                SnapshotHolding
-                AccountHolding
-                AllocationData
-        Business Services Layer
-            PortfolioService
-            AssetService
-            HoldingService
-            SnapshotService
-            AllocationService
-        Business Logic Layer
-            Portfolio Validation
-            Asset Pricing
-            Holding Normalization
-            Allocation Calculation
-            Snapshot Persistence
-        Infrastructure Layer
-            Persistence
-                SeaORM Entities
-                PostgreSQL Schema
-            External Services
-                Keycloak Auth
-                CoinPaprika API
-                OKX API
-        Anticorruption Layer
-            Connectors
-                EVM Connector
-                OKX Connector
-            normalize_token_balance
-            normalize_holdings
-```
+| Layer | Components |
+|-------|------------|
+| **Domain Layer** | Portfolio, Asset, Account, Snapshot domains |
+| **Value Objects** | AllocationItem, SnapshotHolding, AccountHolding |
+| **Business Services** | PortfolioService, AssetService, HoldingService |
+| **Business Logic** | Validation, Pricing, Normalization, Calculation |
+| **Infrastructure** | SeaORM Entities, PostgreSQL, Keycloak |
+| **Anticorruption** | EVM Connector, OKX Connector |

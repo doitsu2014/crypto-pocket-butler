@@ -4,15 +4,15 @@
 
 ```mermaid
 graph TB
-    API Layer
-    Domain Layer
-    Entity Layer
-    External
-    API --> Domain
-    Domain --> Entity
-    Entity --> PostgreSQL
-    Domain --> Connectors
-    Connectors --> APIs
+    A[API Layer]
+    D[Domain Layer]
+    E[Entity Layer]
+    X[External]
+    A --> D
+    D --> E
+    E --> P[(PostgreSQL)]
+    D --> C[Connectors]
+    C --> X
 ```
 
 ---
@@ -58,11 +58,11 @@ classDiagram
         +Json holdings
     }
     
-    Portfolio "1" *-- "0..*" PortfolioAccount
-    Portfolio "1" *-- "0..*" PortfolioAllocation
-    Portfolio "1" *-- "0..*" Snapshot
-    PortfolioAccount *-- Account
-    Portfolio *-- User
+    Portfolio "1" --> "0..*" PortfolioAccount
+    Portfolio "1" --> "0..*" PortfolioAllocation
+    Portfolio "1" --> "0..*" Snapshot
+    PortfolioAccount --> Account
+    Portfolio --> User
 ```
 
 ---
@@ -101,15 +101,15 @@ classDiagram
         +String symbol
     }
     
-    Asset "1" *-- "0..*" AssetPrice
-    Asset "1" *-- "0..*" AssetContract
-    Asset "1" *-- "0..*" EvmToken
-    Asset "1" *-- "0..*" SolanaToken
+    Asset "1" --> "0..*" AssetPrice
+    Asset "1" --> "0..*" AssetContract
+    Asset "1" --> "0..*" EvmToken
+    Asset "1" --> "0..*" SolanaToken
 ```
 
 ---
 
-### Holding & Allocation Domain
+### Holding and Allocation Domain
 
 ```mermaid
 classDiagram
@@ -142,15 +142,14 @@ classDiagram
         +f64 weight
     }
     
-    AccountHolding --> AllocationItem : enrich with prices
-    AllocationItem --> SnapshotHolding : persist snapshot
+    AccountHolding --> AllocationItem : enrich
+    AllocationItem --> SnapshotHolding : persist
     AllocationData --> PortfolioAllocation : store
-    SnapshotData --> Snapshot : store
 ```
 
 ---
 
-### Chain & Token Domain
+### Chain and Token Domain
 
 ```mermaid
 classDiagram
@@ -168,5 +167,5 @@ classDiagram
         +u8 decimals
     }
     
-    EvmChain "1" *-- "0..*" ChainContract
+    EvmChain "1" --> "0..*" ChainContract
 ```

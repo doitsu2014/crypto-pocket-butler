@@ -75,7 +75,7 @@ impl AssetRepository for AssetRepositoryImpl {
     }
 
     async fn save(&self, asset: &Asset) -> Result<(), AssetError> {
-        use sea_orm::{ActiveModelTrait, Set};
+        use sea_orm::Set;
 
         let active_model = assets::ActiveModel {
             id: Set(uuid::Uuid::new_v4()),

@@ -97,7 +97,7 @@ impl AccountRepository for AccountRepositoryImpl {
     }
 
     async fn save(&self, account: &Account) -> Result<(), AccountError> {
-        use sea_orm::{ActiveModelTrait, Set};
+        use sea_orm::Set;
 
         let holdings_json = serde_json::to_value(account.holdings().items.clone())
             .map_err(|e| AccountError::PersistenceError(e.to_string()))?;
@@ -128,7 +128,7 @@ impl AccountRepository for AccountRepositoryImpl {
             updated_at: Set(account.updated_at.into()),
         };
 
-        let _ = accounts::Entity::insert(active_model.clone())
+        let _ = accounts::Entity::insert(active_model)
             .on_conflict(
                 sea_orm::sea_query::OnConflict::column(accounts::Column::Id)
                     .update_columns([

@@ -83,7 +83,7 @@ impl PortfolioRepository for PortfolioRepositoryImpl {
     }
 
     async fn save(&self, portfolio: &Portfolio) -> Result<(), PortfolioError> {
-        use sea_orm::{ActiveModelTrait, Set};
+        use sea_orm::Set;
 
         let target_alloc_json = serde_json::to_value(&portfolio.target_allocation)
             .map_err(|e| PortfolioError::PersistenceError(e.to_string()))?;

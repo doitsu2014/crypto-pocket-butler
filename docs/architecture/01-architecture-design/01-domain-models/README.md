@@ -56,8 +56,8 @@ graph LR
     A --> AH
     P --> PA
     PA --> A
-    PS --> AH : aggregates
-    AH --> AS : references
+    PS -->|aggregates| AH
+    AH -->|references| AS
     AS --> AP
 ```
 

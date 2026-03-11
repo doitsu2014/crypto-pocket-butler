@@ -106,8 +106,8 @@ graph TB
     A --> C
     A --> WA
     A --> AT
-    A -.-> U : belongs to
-    P -.-> A : references
+    A -.->|belongs to| U
+    P -.->|references| A
 ```
 
 ---

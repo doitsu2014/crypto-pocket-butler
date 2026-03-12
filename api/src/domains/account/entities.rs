@@ -14,8 +14,7 @@ use std::str::FromStr;
 /// blockchain integers). The `decimals` field is metadata — do not use it to
 /// re-normalise a quantity that is already stored in normalised form.
 ///
-/// This is the canonical domain type; `crate::domain::AccountHolding` re-exports
-/// this for backward compatibility.
+/// This is the canonical domain type for a single asset holding within an account.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AccountHolding {
     /// Asset symbol (e.g. "BTC", "ETH").

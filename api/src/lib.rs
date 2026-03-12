@@ -21,7 +21,6 @@ pub mod cache;
 pub mod concurrency;
 pub mod connectors;
 pub mod db;
-pub mod domain;
 pub mod entities;
 pub mod handlers;
 pub mod helpers;

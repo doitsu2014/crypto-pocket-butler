@@ -18,7 +18,7 @@ use std::str::FromStr;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::domain::AccountHolding;
+use crate::domains::account::entities::AccountHolding;
 use crate::entities::{accounts, portfolio_accounts, portfolios};
 use crate::helpers::auth::get_or_create_user;
 use super::error::ApiError;
@@ -954,7 +954,7 @@ pub async fn get_portfolio_holdings(
 // === Construct allocation DTOs ===
 
 // Use domain struct for AllocationHolding to ensure type safety
-pub use crate::domain::AllocationItem as AllocationHolding;
+pub use crate::domains::allocation::entities::AllocationItem as AllocationHolding;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ConstructAllocationResponse {

@@ -5,12 +5,14 @@
 ///
 /// ## Bounded Contexts
 ///
-/// - [`account`]  — Account management, credentials, and holdings storage
-/// - [`portfolio`] — Portfolio management, target allocations, and snapshots
-/// - [`asset`]    — Asset definitions, pricing, and contract addresses
-/// - [`chain`]    — Blockchain configurations, EVM chains, tokens
+/// - [`account`]    — Account management, credentials, and holdings storage
+/// - [`allocation`] — Portfolio allocation computation and snapshot management
+/// - [`asset`]      — Asset definitions, pricing, and contract addresses
+/// - [`chain`]      — Blockchain configurations, EVM chains, tokens
+/// - [`portfolio`]  — Portfolio management, target allocations, and snapshots
 
 pub mod account;
+pub mod allocation;
 pub mod asset;
 pub mod chain;
 pub mod portfolio;

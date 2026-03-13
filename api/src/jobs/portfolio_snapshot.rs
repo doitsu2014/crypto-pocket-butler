@@ -1,4 +1,4 @@
-use crate::domain::{AllocationItem, SnapshotHolding, SnapshotMetadata};
+use crate::domains::allocation::entities::{AllocationItem, SnapshotHolding, SnapshotMetadata};
 use crate::entities::{portfolio_allocations, portfolios, snapshots};
 use chrono::{Utc, NaiveDate};
 use sea_orm::{

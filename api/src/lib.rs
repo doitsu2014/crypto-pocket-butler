@@ -22,7 +22,9 @@ pub mod concurrency;
 pub mod db;
 pub mod handlers;
 pub mod helpers;
-pub mod jobs;
+
+/// Re-export jobs from their canonical location in the application layer.
+pub use application::jobs;
 
 /// Re-export entities from their canonical location in the infrastructure layer.
 pub use infrastructure::persistence::entities;

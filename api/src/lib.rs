@@ -19,11 +19,12 @@ pub mod application;
 
 pub mod cache;
 pub mod concurrency;
-pub mod connectors;
 pub mod db;
-pub mod entities;
 pub mod handlers;
 pub mod helpers;
+
+/// Re-export entities from their canonical location in the infrastructure layer.
+pub use infrastructure::persistence::entities;
 
 // Re-export migration for convenience
 pub use migration;

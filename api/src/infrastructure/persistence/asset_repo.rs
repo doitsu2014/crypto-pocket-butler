@@ -7,7 +7,7 @@ use crate::domains::asset::{
     aggregate::{Asset, AssetError},
     repository::AssetRepository,
 };
-use crate::entities::assets;
+use crate::infrastructure::persistence::entities::assets;
 
 /// SeaORM-backed implementation of [`AssetRepository`].
 pub struct AssetRepositoryImpl {

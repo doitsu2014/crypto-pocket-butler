@@ -8,6 +8,8 @@
 /// - [`PortfolioRepositoryImpl`] — `PortfolioRepository` backed by the `portfolios` table
 /// - [`AssetRepositoryImpl`] — `AssetRepository` backed by the `assets` / `asset_prices` tables
 
+pub mod entities;
+
 pub mod account_repo;
 pub mod asset_repo;
 pub mod portfolio_repo;

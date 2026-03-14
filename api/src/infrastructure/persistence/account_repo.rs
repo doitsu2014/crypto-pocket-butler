@@ -13,7 +13,7 @@ use crate::domains::account::{
     repository::AccountRepository,
     value_objects::{AccountCredentials, AccountType},
 };
-use crate::entities::accounts;
+use crate::infrastructure::persistence::entities::accounts;
 
 /// SeaORM-backed implementation of [`AccountRepository`].
 pub struct AccountRepositoryImpl {

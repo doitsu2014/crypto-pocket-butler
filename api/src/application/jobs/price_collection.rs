@@ -1,6 +1,6 @@
 use crate::infrastructure::external::coinpaprika::CoinPaprikaConnector;
 use crate::entities::{asset_prices, assets, accounts};
-use crate::jobs::runner::{JobRunner, JobMetrics};
+use super::runner::{JobRunner, JobMetrics};
 use chrono::{Timelike, Utc};
 use rust_decimal::Decimal;
 use sea_orm::{

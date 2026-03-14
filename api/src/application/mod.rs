@@ -11,3 +11,5 @@
 pub mod concurrency;
 pub mod dto;
 pub mod services;
+
+pub use concurrency::RateLimiter;

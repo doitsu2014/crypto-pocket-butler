@@ -10,7 +10,7 @@ use crate::domains::portfolio::{
     repository::PortfolioRepository,
     value_objects::{Guardrails, TargetAllocation},
 };
-use crate::entities::portfolios;
+use crate::infrastructure::persistence::entities::portfolios;
 
 /// SeaORM-backed implementation of [`PortfolioRepository`].
 pub struct PortfolioRepositoryImpl {

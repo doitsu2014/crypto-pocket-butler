@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::connectors::coinpaprika::CoinPaprikaConnector;
+use crate::infrastructure::external::coinpaprika::CoinPaprikaConnector;
 use crate::entities::{asset_contracts, evm_chains, evm_tokens};
 use super::error::ApiError;
 

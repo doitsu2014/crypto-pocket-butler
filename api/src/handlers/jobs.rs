@@ -3,7 +3,7 @@ use axum_keycloak_auth::decode::KeycloakToken;
 use axum::Extension;
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
-use crate::jobs::fetch_all_coins;
+use crate::application::jobs::fetch_all_coins;
 use utoipa::ToSchema;
 
 /// Response from fetch all coins job

@@ -5,7 +5,7 @@ use axum_keycloak_auth::{
 };
 use apalis_board_api::ui::ServeUI;
 use apalis_postgres::PostgresStorage;
-use crypto_pocket_butler_backend::{db::DbConfig, handlers, jobs};
+use crypto_pocket_butler_backend::{application, db::DbConfig, handlers};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -330,8 +330,8 @@ async fn main() {
 
     // Initialize and start Apalis job workers
     tracing::info!("Initializing Apalis job workers...");
-    let components = jobs::apalis_runner::build_monitor(db.clone(), pg_pool);
-    let board_router = jobs::apalis_runner::build_board_router(
+    let components = application::jobs::apalis_runner::build_monitor(db.clone(), pg_pool);
+    let board_router = application::jobs::apalis_runner::build_board_router(
         components.fetch_storage,
         components.snapshot_storage,
     );

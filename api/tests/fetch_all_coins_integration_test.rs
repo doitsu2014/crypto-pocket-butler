@@ -1,5 +1,5 @@
 use crypto_pocket_butler_backend::entities::{assets, asset_prices};
-use crypto_pocket_butler_backend::jobs::fetch_all_coins;
+use crypto_pocket_butler_backend::application::jobs::fetch_all_coins;
 use chrono::Utc;
 use rust_decimal::Decimal;
 use sea_orm::{

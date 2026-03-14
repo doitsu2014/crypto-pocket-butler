@@ -8,7 +8,7 @@
 //! This architecture allows [`apalis-board`] to query job history, queue
 //! depths, and worker state via standard `apalis-board-api` routes.
 
-use crate::jobs::{fetch_all_coins, portfolio_snapshot};
+use crate::application::jobs::{fetch_all_coins, portfolio_snapshot};
 use apalis_board_api::framework::{ApiBuilder, RegisterRoute};
 use apalis_core::{
     backend::TaskSink,

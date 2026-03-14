@@ -19,7 +19,6 @@ pub mod application;
 
 pub mod cache;
 pub mod concurrency;
-pub mod connectors;
 pub mod db;
 pub mod entities;
 pub mod handlers;

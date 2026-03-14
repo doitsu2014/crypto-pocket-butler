@@ -1,4 +1,4 @@
-use crate::connectors::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, solana::SolanaConnector, ExchangeConnector};
+use crate::infrastructure::external::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, solana::SolanaConnector, ExchangeConnector};
 use crate::entities::{accounts, evm_chains, evm_tokens, solana_tokens};
 use chrono::Utc;
 use sea_orm::{
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn test_holdings_format_qty_only() {
         // Test that holdings JSON contains only asset and quantity, no price/value
-        use crate::connectors::Balance;
+        use crate::infrastructure::external::Balance;
         
         let balances = vec![
             Balance {

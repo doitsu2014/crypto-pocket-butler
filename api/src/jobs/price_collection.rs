@@ -1,4 +1,4 @@
-use crate::connectors::coinpaprika::CoinPaprikaConnector;
+use crate::infrastructure::external::coinpaprika::CoinPaprikaConnector;
 use crate::entities::{asset_prices, assets, accounts};
 use crate::jobs::runner::{JobRunner, JobMetrics};
 use chrono::{Timelike, Utc};
@@ -151,7 +151,7 @@ pub async fn collect_prices(
 /// Returns (created: bool, asset_id: Uuid)
 async fn upsert_asset(
     db: &DatabaseConnection,
-    coin: &crate::connectors::coinpaprika::CoinMarketData,
+    coin: &crate::infrastructure::external::coinpaprika::CoinMarketData,
 ) -> Result<(bool, Uuid), Box<dyn Error + Send + Sync>> {
     use crate::entities::assets;
     use sea_orm::{ActiveModelTrait, Condition};
@@ -320,7 +320,7 @@ async fn fetch_prices_for_assets(
     }
     
     // Build a map of coinpaprika_id to coin data for quick lookup
-    let coins_map: HashMap<String, &crate::connectors::coinpaprika::CoinMarketData> = 
+    let coins_map: HashMap<String, &crate::infrastructure::external::coinpaprika::CoinMarketData> = 
         all_coins.iter().map(|c| (c.id.clone(), c)).collect();
     
     // Map CoinPaprika coin data to our tracked assets

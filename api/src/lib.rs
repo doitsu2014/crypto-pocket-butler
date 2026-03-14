@@ -18,7 +18,6 @@ pub mod application;
 // ─── Legacy / existing modules (kept for backward compatibility) ─────────────
 
 pub mod cache;
-pub mod concurrency;
 pub mod connectors;
 pub mod db;
 pub mod entities;

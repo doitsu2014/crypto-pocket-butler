@@ -12,7 +12,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use crate::concurrency::RateLimiter;
+//! use crate::application::concurrency::RateLimiter;
 //!
 //! let limiter = RateLimiter::coingecko();
 //! limiter.acquire().await?;

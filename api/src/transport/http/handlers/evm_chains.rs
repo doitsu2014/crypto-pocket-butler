@@ -14,7 +14,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::entities::evm_chains;
-use super::error::ApiError;
+use super::super::error::ApiError;
 
 // === Request / Response DTOs ===
 

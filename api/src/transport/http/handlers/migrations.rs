@@ -9,7 +9,7 @@ use sea_orm_migration::MigratorTrait;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::error::ApiError;
+use super::super::error::ApiError;
 
 /// Migration response
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

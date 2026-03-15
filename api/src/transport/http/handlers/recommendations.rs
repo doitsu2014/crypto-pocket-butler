@@ -17,7 +17,7 @@ use serde_json::json;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use super::error::ApiError;
+use super::super::error::ApiError;
 use crate::entities::{portfolios, recommendations};
 use crate::helpers::auth::get_or_create_user;
 

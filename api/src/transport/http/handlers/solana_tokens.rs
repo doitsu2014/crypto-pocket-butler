@@ -14,7 +14,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::entities::solana_tokens;
-use super::error::ApiError;
+use super::super::error::ApiError;
 
 // === Request / Response DTOs ===
 

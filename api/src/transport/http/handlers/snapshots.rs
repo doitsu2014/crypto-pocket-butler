@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::entities::{portfolios, snapshots};
 use crate::helpers::auth::get_or_create_user;
 use crate::jobs::portfolio_snapshot;
-use super::error::ApiError;
+use super::super::error::ApiError;
 
 // === Request/Response DTOs ===
 

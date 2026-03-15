@@ -5,7 +5,7 @@ use axum_keycloak_auth::{
 };
 use apalis_board_api::ui::ServeUI;
 use apalis_postgres::PostgresStorage;
-use crypto_pocket_butler_backend::{db::DbConfig, handlers, jobs};
+use crypto_pocket_butler_backend::{db::DbConfig, handlers, jobs, transport};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -387,16 +387,8 @@ async fn main() {
         // Protected routes that require authentication
         .route("/api/me", get(get_user_info))
         .route("/api/protected", get(protected_endpoint))
-        // Portfolio API routes (protected)
-        .merge(handlers::portfolios::create_router())
-        // Account sync API routes (protected)
-        .merge(handlers::accounts::create_router())
-        // Snapshot API routes (protected)
-        .merge(handlers::snapshots::create_router())
-        // Recommendation API routes (protected)
-        .merge(handlers::recommendations::create_router())
-        // Migration API routes (protected)
-        .merge(handlers::migrations::create_router())
+        // Domain-specific protected routes
+        .merge(transport::http::routes::protected_routes())
         .layer(auth_layer);
 
     // Build admin-only routes — require the "administrator" Keycloak realm role
@@ -405,14 +397,8 @@ async fn main() {
     let admin_auth_layer_board = admin_auth_layer.clone();
 
     let admin_routes = Router::new()
-        // Job management API routes (admin only)
-        .merge(handlers::jobs::create_router())
-        // EVM token registry API routes (admin only)
-        .merge(handlers::evm_tokens::create_router())
-        // EVM chain registry API routes (admin only)
-        .merge(handlers::evm_chains::create_router())
-        // Solana token registry API routes (admin only)
-        .merge(handlers::solana_tokens::create_router())
+        // Domain-specific admin-only routes
+        .merge(transport::http::routes::admin_routes())
         .layer(admin_auth_layer);
 
     // apalis-board routes are Router<()> (they don't use axum State extractor)
@@ -444,8 +430,8 @@ async fn main() {
         // Public routes (no auth required)
         .route("/", get(root))
         .route("/health", get(health))
-        // Chains API routes (public)
-        .merge(handlers::chains::create_router())
+        // Public domain routes
+        .merge(transport::http::routes::public_routes())
         // Merge protected routes
         .merge(protected_routes)
         // Merge admin-only routes

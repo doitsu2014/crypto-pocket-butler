@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::entities::accounts;
 use crate::helpers::auth::get_or_create_user;
 use crate::jobs::account_sync;
-use super::error::ApiError;
+use super::super::error::ApiError;
 
 // === Request/Response DTOs ===
 

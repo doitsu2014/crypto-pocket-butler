@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::infrastructure::external::coinpaprika::CoinPaprikaConnector;
 use crate::entities::{asset_contracts, evm_chains, evm_tokens};
-use super::error::ApiError;
+use super::super::error::ApiError;
 
 // === Request / Response DTOs ===
 

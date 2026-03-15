@@ -19,8 +19,11 @@ pub mod application;
 
 pub mod cache;
 pub mod db;
-pub mod handlers;
 pub mod helpers;
+pub mod transport;
+
+/// Re-export the HTTP handlers for backward compatibility.
+pub use transport::http::handlers;
 
 /// Re-export concurrency from its canonical location in the application layer.
 pub use application::concurrency;

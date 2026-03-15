@@ -18,10 +18,12 @@ pub mod application;
 // ─── Legacy / existing modules (kept for backward compatibility) ─────────────
 
 pub mod cache;
-pub mod concurrency;
 pub mod db;
 pub mod handlers;
 pub mod helpers;
+
+/// Re-export concurrency from its canonical location in the application layer.
+pub use application::concurrency;
 
 /// Re-export jobs from their canonical location in the application layer.
 pub use application::jobs;

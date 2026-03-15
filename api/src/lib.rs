@@ -12,7 +12,7 @@ pub mod domains;
 pub mod infrastructure;
 
 /// Application layer — application services that orchestrate domain logic,
-/// and DTOs for the HTTP boundary.
+/// use cases that transport handlers call, and DTOs for the HTTP boundary.
 pub mod application;
 
 // ─── Legacy / existing modules (kept for backward compatibility) ─────────────

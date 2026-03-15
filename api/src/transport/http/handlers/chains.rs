@@ -1,9 +1,10 @@
-use axum::{extract::State, routing::get, Json, Router};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use axum::{extract::Extension, routing::get, Json, Router};
+use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use utoipa::ToSchema;
 
-use crate::entities::evm_chains;
+use crate::application::usecases::chain_usecases::ChainUseCases;
 
 /// Supported chain information
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
@@ -37,20 +38,16 @@ pub struct ListChainsResponse {
     tag = "chains"
 )]
 pub async fn list_supported_chains(
-    State(db): State<DatabaseConnection>,
+    Extension(use_cases): Extension<Arc<ChainUseCases>>,
 ) -> Json<ListChainsResponse> {
-    let evm_rows = evm_chains::Entity::find()
-        .filter(evm_chains::Column::IsActive.eq(true))
-        .all(&db)
-        .await
-        .unwrap_or_default();
+    let evm_chains = use_cases.list_active_chains().await.unwrap_or_default();
 
-    let mut chains: Vec<ChainInfo> = evm_rows
+    let mut chains: Vec<ChainInfo> = evm_chains
         .into_iter()
-        .map(|r| ChainInfo {
-            id: r.chain_id,
-            name: r.name,
-            native_symbol: r.native_symbol,
+        .map(|c| ChainInfo {
+            id: c.chain_id,
+            name: c.name,
+            native_symbol: c.native_symbol,
         })
         .collect();
 

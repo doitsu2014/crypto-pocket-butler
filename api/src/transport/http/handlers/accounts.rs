@@ -6,12 +6,15 @@ use axum::{
     Router,
 };
 use axum_keycloak_auth::decode::KeycloakToken;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::accounts;
+use crate::application::usecases::account_usecases::{
+    AccountUseCases, CreateAccountCommand, UpdateAccountCommand,
+};
 use crate::helpers::auth::get_or_create_user;
 use crate::jobs::account_sync;
 use super::super::error::ApiError;
@@ -90,23 +93,35 @@ pub struct AccountResponse {
     pub updated_at: String,
 }
 
-impl From<accounts::Model> for AccountResponse {
-    fn from(account: accounts::Model) -> Self {
-        // Parse enabled_chains from JSON if present
-        let enabled_chains = account.enabled_chains.as_ref().and_then(|json| {
-            serde_json::from_value::<Vec<String>>(json.clone()).ok()
-        });
-        
-        // Parse holdings from JSON if present
-        let holdings = account.holdings.as_ref().and_then(|json| {
-            serde_json::from_value::<Vec<AccountHolding>>(json.clone()).ok()
-        });
-        
+impl From<crate::domains::account::aggregate::Account> for AccountResponse {
+    fn from(account: crate::domains::account::aggregate::Account) -> Self {
+        let enabled_chains = if account.enabled_chains.is_empty() {
+            None
+        } else {
+            Some(account.enabled_chains.clone())
+        };
+
+        let holdings = if account.holdings().is_empty() {
+            None
+        } else {
+            Some(
+                account
+                    .holdings()
+                    .items
+                    .iter()
+                    .map(|h| AccountHolding {
+                        asset: h.asset.clone(),
+                        quantity: h.quantity.clone(),
+                    })
+                    .collect(),
+            )
+        };
+
         Self {
             id: account.id,
             user_id: account.user_id,
             name: account.name,
-            account_type: account.account_type,
+            account_type: account.account_type.as_str().to_string(),
             exchange_name: account.exchange_name,
             wallet_address: account.wallet_address,
             enabled_chains,
@@ -166,6 +181,18 @@ pub struct SyncAllInitiatedResponse {
 
 // === API Handlers ===
 
+/// Converts a domain `AccountError` to the appropriate `ApiError`.
+fn map_account_error(e: crate::domains::account::aggregate::AccountError) -> ApiError {
+    use crate::domains::account::aggregate::AccountError;
+    match e {
+        AccountError::NotFound => ApiError::NotFound,
+        AccountError::MissingExchangeName | AccountError::MissingWalletAddress | AccountError::InvalidCredentials | AccountError::NotAnExchangeAccount => {
+            ApiError::BadRequest(e.to_string())
+        }
+        AccountError::PersistenceError(msg) => ApiError::InternalServerError(msg),
+    }
+}
+
 /// List all accounts for the authenticated user
 #[utoipa::path(
     get,
@@ -180,15 +207,11 @@ pub struct SyncAllInitiatedResponse {
 async fn list_accounts_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
+    Extension(use_cases): Extension<Arc<AccountUseCases>>,
 ) -> Result<Json<Vec<AccountResponse>>, ApiError> {
     let user = get_or_create_user(&db, &token).await?;
-
-    let accounts = accounts::Entity::find()
-        .filter(accounts::Column::UserId.eq(user.id))
-        .all(&db)
-        .await?;
-
-    Ok(Json(accounts.into_iter().map(|a| a.into()).collect()))
+    let accounts = use_cases.list_accounts(user.id).await.map_err(map_account_error)?;
+    Ok(Json(accounts.into_iter().map(AccountResponse::from).collect()))
 }
 
 /// Get a specific account
@@ -211,19 +234,14 @@ async fn list_accounts_handler(
 async fn get_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
+    Extension(use_cases): Extension<Arc<AccountUseCases>>,
     Path(account_id): Path<Uuid>,
 ) -> Result<Json<AccountResponse>, ApiError> {
     let user = get_or_create_user(&db, &token).await?;
-
-    let account = accounts::Entity::find_by_id(account_id)
-        .one(&db)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-
+    let account = use_cases.get_account(account_id).await.map_err(map_account_error)?;
     if account.user_id != user.id {
         return Err(ApiError::Forbidden);
     }
-
     Ok(Json(account.into()))
 }
 
@@ -244,61 +262,27 @@ async fn get_account_handler(
 async fn create_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
+    Extension(use_cases): Extension<Arc<AccountUseCases>>,
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<Json<AccountResponse>, ApiError> {
     let user = get_or_create_user(&db, &token).await?;
 
-    // Validate account type
-    if req.account_type != "exchange" && req.account_type != "wallet" {
-        return Err(ApiError::BadRequest(
-            "account_type must be 'exchange' or 'wallet'".to_string(),
-        ));
-    }
-
-    // Validate required fields based on account type
-    if req.account_type == "exchange" && req.exchange_name.is_none() {
-        return Err(ApiError::BadRequest(
-            "exchange_name is required for exchange accounts".to_string(),
-        ));
-    }
-
-    if req.account_type == "wallet" && req.wallet_address.is_none() {
-        return Err(ApiError::BadRequest(
-            "wallet_address is required for wallet accounts".to_string(),
-        ));
-    }
-
-    // Serialize enabled_chains if provided
-    let enabled_chains_json = if let Some(chains) = req.enabled_chains {
-        Some(
-            serde_json::to_value(&chains)
-                .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize enabled_chains: {}", e)))?,
-        )
-    } else {
-        None
+    // SECURITY NOTE: API credentials should be encrypted before storage.
+    // Current implementation stores credentials in plaintext.
+    // TODO: Implement proper encryption/decryption for api_key, api_secret, and passphrase fields.
+    let cmd = CreateAccountCommand {
+        user_id: user.id,
+        name: req.name,
+        account_type: req.account_type,
+        exchange_name: req.exchange_name,
+        wallet_address: req.wallet_address,
+        enabled_chains: req.enabled_chains,
+        api_key: req.api_key,
+        api_secret: req.api_secret,
+        passphrase: req.passphrase,
     };
 
-    // Create account
-    // SECURITY NOTE: API credentials should be encrypted before storage
-    // Current implementation stores credentials in plaintext with _encrypted suffix as placeholder
-    // TODO: Implement proper encryption/decryption for api_key, api_secret, and passphrase fields
-    let new_account = accounts::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        user_id: Set(user.id),
-        name: Set(req.name),
-        account_type: Set(req.account_type),
-        exchange_name: Set(req.exchange_name),
-        wallet_address: Set(req.wallet_address),
-        enabled_chains: Set(enabled_chains_json.map(|v| v.into())),
-        api_key_encrypted: Set(req.api_key), // TODO: Encrypt before storing
-        api_secret_encrypted: Set(req.api_secret), // TODO: Encrypt before storing
-        passphrase_encrypted: Set(req.passphrase), // TODO: Encrypt before storing
-        is_active: Set(true),
-        ..Default::default()
-    };
-
-    let account = new_account.insert(&db).await?;
-
+    let account = use_cases.create_account(cmd).await.map_err(map_account_error)?;
     Ok(Json(account.into()))
 }
 
@@ -323,45 +307,31 @@ async fn create_account_handler(
 async fn update_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
+    Extension(use_cases): Extension<Arc<AccountUseCases>>,
     Path(account_id): Path<Uuid>,
     Json(req): Json<UpdateAccountRequest>,
 ) -> Result<Json<AccountResponse>, ApiError> {
     let user = get_or_create_user(&db, &token).await?;
 
-    // Find and verify ownership
-    let account = accounts::Entity::find_by_id(account_id)
-        .one(&db)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-
-    if account.user_id != user.id {
+    // Ownership check: load the account first, verify the user owns it.
+    let existing = use_cases.get_account(account_id).await.map_err(map_account_error)?;
+    if existing.user_id != user.id {
         return Err(ApiError::Forbidden);
     }
 
-    // Update account
-    // SECURITY NOTE: When updating API credentials, they should be encrypted before storage
-    // TODO: Implement proper encryption for credential updates
-    let mut active_account: accounts::ActiveModel = account.into();
-    
-    if let Some(name) = req.name {
-        active_account.name = Set(name);
-    }
-    if let Some(is_active) = req.is_active {
-        active_account.is_active = Set(is_active);
-    }
-    if let Some(api_key) = req.api_key {
-        active_account.api_key_encrypted = Set(Some(api_key)); // TODO: Encrypt before storing
-    }
-    if let Some(api_secret) = req.api_secret {
-        active_account.api_secret_encrypted = Set(Some(api_secret)); // TODO: Encrypt before storing
-    }
-    if let Some(passphrase) = req.passphrase {
-        active_account.passphrase_encrypted = Set(Some(passphrase)); // TODO: Encrypt before storing
-    }
+    // SECURITY NOTE: When updating API credentials, they should be encrypted before storage.
+    // TODO: Implement proper encryption for credential updates.
+    let cmd = UpdateAccountCommand {
+        id: account_id,
+        name: req.name,
+        is_active: req.is_active,
+        api_key: req.api_key,
+        api_secret: req.api_secret,
+        passphrase: req.passphrase,
+    };
 
-    let updated_account = active_account.update(&db).await?;
-
-    Ok(Json(updated_account.into()))
+    let updated = use_cases.update_account(cmd).await.map_err(map_account_error)?;
+    Ok(Json(updated.into()))
 }
 
 /// Delete an account
@@ -384,24 +354,18 @@ async fn update_account_handler(
 async fn delete_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
+    Extension(use_cases): Extension<Arc<AccountUseCases>>,
     Path(account_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     let user = get_or_create_user(&db, &token).await?;
 
-    // Find and verify ownership
-    let account = accounts::Entity::find_by_id(account_id)
-        .one(&db)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-
+    // Ownership check before deletion.
+    let account = use_cases.get_account(account_id).await.map_err(map_account_error)?;
     if account.user_id != user.id {
         return Err(ApiError::Forbidden);
     }
 
-    // Delete account
-    let active_account: accounts::ActiveModel = account.into();
-    active_account.delete(&db).await?;
-
+    use_cases.delete_account(account_id).await.map_err(map_account_error)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -428,17 +392,13 @@ async fn delete_account_handler(
 async fn sync_account_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
+    Extension(use_cases): Extension<Arc<AccountUseCases>>,
     Path(account_id): Path<Uuid>,
 ) -> Result<(StatusCode, Json<SyncInitiatedResponse>), ApiError> {
-    // Get or create user
     let user = get_or_create_user(&db, &token).await?;
 
-    // Verify account belongs to user
-    let account = accounts::Entity::find_by_id(account_id)
-        .one(&db)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-
+    // Ownership check via use case.
+    let account = use_cases.get_account(account_id).await.map_err(map_account_error)?;
     if account.user_id != user.id {
         return Err(ApiError::Forbidden);
     }
@@ -499,18 +459,13 @@ async fn sync_account_handler(
 async fn sync_all_accounts_handler(
     State(db): State<DatabaseConnection>,
     Extension(token): Extension<KeycloakToken<String>>,
+    Extension(use_cases): Extension<Arc<AccountUseCases>>,
 ) -> Result<(StatusCode, Json<SyncAllInitiatedResponse>), ApiError> {
-    // Get or create user
     let user = get_or_create_user(&db, &token).await?;
 
-    // Fetch accounts now so we can report the count in the response
-    let active_accounts = accounts::Entity::find()
-        .filter(accounts::Column::UserId.eq(user.id))
-        .filter(accounts::Column::IsActive.eq(true))
-        .all(&db)
-        .await?;
-
-    let account_count = active_accounts.len();
+    // List active accounts so we can report the count in the response.
+    let all_accounts = use_cases.list_accounts(user.id).await.map_err(map_account_error)?;
+    let account_count = all_accounts.iter().filter(|a| a.is_active).count();
     let user_id = user.id;
 
     // Spawn a single background task that syncs all accounts sequentially.

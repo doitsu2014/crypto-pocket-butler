@@ -95,4 +95,32 @@ impl AccountService {
     pub async fn delete(&self, account_id: Uuid) -> Result<bool, AccountError> {
         self.repo.delete(account_id).await
     }
+
+    /// Update an account's name, activation state, and/or credentials.
+    ///
+    /// Only the `Some` fields are applied; `None` fields are left unchanged.
+    pub async fn update_account(
+        &self,
+        account_id: Uuid,
+        name: Option<String>,
+        is_active: Option<bool>,
+        credentials: Option<AccountCredentials>,
+    ) -> Result<Account, AccountError> {
+        let mut account = self.get_account(account_id).await?;
+        if let Some(new_name) = name {
+            account.rename(new_name);
+        }
+        if let Some(active) = is_active {
+            if active {
+                account.activate();
+            } else {
+                account.deactivate();
+            }
+        }
+        if let Some(creds) = credentials {
+            account.update_credentials(creds)?;
+        }
+        self.repo.save(&account).await?;
+        Ok(account)
+    }
 }

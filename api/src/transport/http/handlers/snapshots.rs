@@ -11,9 +11,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::{portfolios, snapshots};
+use crate::infrastructure::persistence::entities::{portfolios, snapshots};
 use crate::helpers::auth::get_or_create_user;
-use crate::jobs::portfolio_snapshot;
+use crate::application::jobs::portfolio_snapshot;
 use super::super::error::ApiError;
 
 // === Request/Response DTOs ===

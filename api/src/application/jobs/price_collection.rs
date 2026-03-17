@@ -1,5 +1,5 @@
 use crate::infrastructure::external::coinpaprika::CoinPaprikaConnector;
-use crate::entities::{asset_prices, assets, accounts};
+use crate::infrastructure::persistence::entities::{asset_prices, assets, accounts};
 use super::runner::{JobRunner, JobMetrics};
 use chrono::{Timelike, Utc};
 use rust_decimal::Decimal;
@@ -153,7 +153,7 @@ async fn upsert_asset(
     db: &DatabaseConnection,
     coin: &crate::infrastructure::external::coinpaprika::CoinMarketData,
 ) -> Result<(bool, Uuid), Box<dyn Error + Send + Sync>> {
-    use crate::entities::assets;
+    use crate::infrastructure::persistence::entities::assets;
     use sea_orm::{ActiveModelTrait, Condition};
     
     // Check if asset already exists by (symbol AND name) OR coinpaprika_id

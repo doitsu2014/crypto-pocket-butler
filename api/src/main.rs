@@ -7,6 +7,7 @@ use apalis_board_api::ui::ServeUI;
 use apalis_postgres::PostgresStorage;
 use crypto_pocket_butler_backend::{
     application::{
+        jobs,
         services::{account_service::AccountService, portfolio_service::PortfolioService},
         usecases::{
             account_usecases::AccountUseCases, chain_usecases::ChainUseCases,
@@ -14,11 +15,11 @@ use crypto_pocket_butler_backend::{
         },
     },
     db::DbConfig,
-    handlers,
     infrastructure::persistence::{
         AccountRepositoryImpl, ChainRepositoryImpl, PortfolioRepositoryImpl,
     },
-    jobs, transport,
+    transport,
+    transport::http::handlers,
 };
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};

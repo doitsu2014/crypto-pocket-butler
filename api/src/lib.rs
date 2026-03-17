@@ -22,18 +22,6 @@ pub mod db;
 pub mod helpers;
 pub mod transport;
 
-/// Re-export the HTTP handlers for backward compatibility.
-pub use transport::http::handlers;
-
-/// Re-export concurrency from its canonical location in the application layer.
-pub use application::concurrency;
-
-/// Re-export jobs from their canonical location in the application layer.
-pub use application::jobs;
-
-/// Re-export entities from their canonical location in the infrastructure layer.
-pub use infrastructure::persistence::entities;
-
 // Re-export migration for convenience
 pub use migration;
 

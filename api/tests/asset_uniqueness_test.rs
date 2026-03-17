@@ -1,4 +1,4 @@
-use crypto_pocket_butler_backend::entities::assets;
+use crypto_pocket_butler_backend::infrastructure::persistence::entities::assets;
 use crypto_pocket_butler_backend::helpers::asset_identity::AssetIdentityNormalizer;
 use chrono::Utc;
 use sea_orm::{

@@ -225,7 +225,7 @@ impl AssetIdentityNormalizer {
         contract_address: &str,
         chain: &str,
     ) -> NormalizationResult {
-        use crate::entities::{asset_contracts, assets};
+        use crate::infrastructure::persistence::entities::{asset_contracts, assets};
         
         tracing::debug!(
             "Normalizing EVM contract: {} on chain {}",
@@ -354,7 +354,7 @@ impl AssetIdentityNormalizer {
         symbol: &str,
         name: &str,
     ) -> NormalizationResult {
-        use crate::entities::assets;
+        use crate::infrastructure::persistence::entities::assets;
         
         tracing::debug!("Normalizing by symbol '{}' and name '{}'", symbol, name);
         
@@ -432,8 +432,8 @@ impl AssetIdentityNormalizer {
     ///
     /// This helper method joins with asset_prices to access rank information and selects
     /// the asset with the lowest rank value (e.g., rank 2 before rank 900).
-    async fn find_asset_by_symbol_with_rank(&self, normalized_symbol: &str) -> Result<Option<crate::entities::assets::Model>, sea_orm::DbErr> {
-        use crate::entities::{assets, asset_prices};
+    async fn find_asset_by_symbol_with_rank(&self, normalized_symbol: &str) -> Result<Option<crate::infrastructure::persistence::entities::assets::Model>, sea_orm::DbErr> {
+        use crate::infrastructure::persistence::entities::{assets, asset_prices};
         
         // First, try to find assets with the given symbol that have price data with rank
         // We only consider non-null ranks and order by rank ascending (lower is better)

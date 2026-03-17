@@ -1,5 +1,5 @@
 use crate::infrastructure::external::{okx::OkxConnector, evm::{EvmConnector, EvmChain}, solana::SolanaConnector, ExchangeConnector};
-use crate::entities::{accounts, evm_chains, evm_tokens, solana_tokens};
+use crate::infrastructure::persistence::entities::{accounts, evm_chains, evm_tokens, solana_tokens};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,

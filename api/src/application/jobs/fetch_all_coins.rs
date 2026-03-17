@@ -1,5 +1,5 @@
 use crate::infrastructure::external::coinpaprika::CoinPaprikaConnector;
-use crate::entities::{assets, asset_prices};
+use crate::infrastructure::persistence::entities::{assets, asset_prices};
 use super::runner::{JobRunner, JobMetrics};
 use chrono::Utc;
 use rust_decimal::Decimal;

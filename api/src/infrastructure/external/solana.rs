@@ -1,5 +1,5 @@
 use super::{Balance, ExchangeConnector};
-use crate::concurrency::RateLimiter;
+use crate::application::concurrency::RateLimiter;
 use crate::helpers::balance_normalization::normalize_token_balance;
 use async_trait::async_trait;
 use reqwest::Client;

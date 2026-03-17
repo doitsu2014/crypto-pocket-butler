@@ -217,6 +217,12 @@ impl Account {
         Ok(())
     }
 
+    /// Rename the account.
+    pub fn rename(&mut self, new_name: impl Into<String>) {
+        self.name = new_name.into();
+        self.updated_at = Utc::now();
+    }
+
     /// Validate that the account satisfies all type-specific invariants.
     pub fn validate(&self) -> Result<(), AccountError> {
         match &self.account_type {

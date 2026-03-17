@@ -5,7 +5,21 @@ use axum_keycloak_auth::{
 };
 use apalis_board_api::ui::ServeUI;
 use apalis_postgres::PostgresStorage;
-use crypto_pocket_butler_backend::{db::DbConfig, handlers, jobs, transport};
+use crypto_pocket_butler_backend::{
+    application::{
+        services::{account_service::AccountService, portfolio_service::PortfolioService},
+        usecases::{
+            account_usecases::AccountUseCases, chain_usecases::ChainUseCases,
+            portfolio_usecases::PortfolioUseCases,
+        },
+    },
+    db::DbConfig,
+    handlers,
+    infrastructure::persistence::{
+        AccountRepositoryImpl, ChainRepositoryImpl, PortfolioRepositoryImpl,
+    },
+    jobs, transport,
+};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -342,6 +356,32 @@ async fn main() {
     });
     tracing::info!("Apalis job workers started");
 
+    // ─── Build application-layer use cases ───────────────────────────────────────
+    //
+    // Use cases are constructed once at startup and shared across all matching
+    // handlers via Axum's `Extension` extractor.  Each use case holds an `Arc`
+    // to its repository implementation so no allocations happen per-request.
+    tracing::info!("Initializing application-layer use cases...");
+
+    let account_use_cases = {
+        let repo = Arc::new(AccountRepositoryImpl::new(db.clone()));
+        let service = Arc::new(AccountService::new(repo));
+        Arc::new(AccountUseCases::new(service))
+    };
+
+    let portfolio_use_cases = {
+        let repo = Arc::new(PortfolioRepositoryImpl::new(db.clone()));
+        let service = Arc::new(PortfolioService::new(repo));
+        Arc::new(PortfolioUseCases::new(service))
+    };
+
+    let chain_use_cases = {
+        let repo = Arc::new(ChainRepositoryImpl::new(db.clone()));
+        Arc::new(ChainUseCases::new(repo))
+    };
+
+    tracing::info!("Application-layer use cases initialized");
+
     // Keycloak configuration from environment variables
     let server_url = std::env::var("KEYCLOAK_SERVER")
         .unwrap_or_else(|_| "https://keycloak.example.com".to_string());
@@ -438,6 +478,10 @@ async fn main() {
         .merge(admin_routes)
         // Apply database state to all routes
         .with_state(db)
+        // Inject use cases as shared Extensions (available to all handlers)
+        .layer(Extension(account_use_cases))
+        .layer(Extension(portfolio_use_cases))
+        .layer(Extension(chain_use_cases))
         // Merge board admin routes (Router<()>) AFTER .with_state() so types align
         .merge(board_admin_routes);
 

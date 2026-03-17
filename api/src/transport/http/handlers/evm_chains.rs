@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::entities::evm_chains;
+use crate::infrastructure::persistence::entities::evm_chains;
 use super::super::error::ApiError;
 
 // === Request / Response DTOs ===

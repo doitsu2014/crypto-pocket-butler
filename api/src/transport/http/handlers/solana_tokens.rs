@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::entities::solana_tokens;
+use crate::infrastructure::persistence::entities::solana_tokens;
 use super::super::error::ApiError;
 
 // === Request / Response DTOs ===

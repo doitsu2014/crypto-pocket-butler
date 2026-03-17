@@ -19,7 +19,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::domains::account::entities::AccountHolding;
-use crate::entities::{accounts, portfolio_accounts, portfolios};
+use crate::infrastructure::persistence::entities::{accounts, portfolio_accounts, portfolios};
 use crate::helpers::auth::get_or_create_user;
 use super::super::error::ApiError;
 
@@ -852,7 +852,7 @@ pub async fn get_portfolio_holdings(
     }
 
     // Step 2: Lookup prices from database and calculate values
-    use crate::entities::asset_prices;
+    use crate::infrastructure::persistence::entities::asset_prices;
     use crate::helpers::asset_identity::{AssetIdentityNormalizer, NormalizationResult};
     
     let normalizer = AssetIdentityNormalizer::new(db.clone());
@@ -988,7 +988,7 @@ pub async fn construct_portfolio_allocation(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ConstructAllocationResponse>, ApiError> {
-    use crate::entities::{asset_prices, portfolio_allocations};
+    use crate::infrastructure::persistence::entities::{asset_prices, portfolio_allocations};
     use sea_orm::{QueryOrder, Set};
 
     let user = get_or_create_user(&db, &token).await?;
@@ -1225,7 +1225,7 @@ pub async fn get_portfolio_allocation(
     Extension(token): Extension<KeycloakToken<String>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ConstructAllocationResponse>, ApiError> {
-    use crate::entities::portfolio_allocations;
+    use crate::infrastructure::persistence::entities::portfolio_allocations;
 
     let user = get_or_create_user(&db, &token).await?;
     check_portfolio_ownership(&db, id, user.id).await?;

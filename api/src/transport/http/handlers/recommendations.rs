@@ -18,7 +18,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::super::error::ApiError;
-use crate::entities::{portfolios, recommendations};
+use crate::infrastructure::persistence::entities::{portfolios, recommendations};
 use crate::helpers::auth::get_or_create_user;
 
 // === Request/Response DTOs ===

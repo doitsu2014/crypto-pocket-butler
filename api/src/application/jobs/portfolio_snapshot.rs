@@ -1,5 +1,5 @@
 use crate::domains::allocation::entities::{AllocationItem, SnapshotHolding, SnapshotMetadata};
-use crate::entities::{portfolio_allocations, portfolios, snapshots};
+use crate::infrastructure::persistence::entities::{portfolio_allocations, portfolios, snapshots};
 use chrono::{Utc, NaiveDate};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,

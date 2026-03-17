@@ -1,4 +1,4 @@
-use crypto_pocket_butler_backend::entities::{assets, asset_prices};
+use crypto_pocket_butler_backend::infrastructure::persistence::entities::{assets, asset_prices};
 use crypto_pocket_butler_backend::helpers::asset_identity::{AssetIdentityNormalizer, NormalizationResult};
 use chrono::Utc;
 use rust_decimal::Decimal;

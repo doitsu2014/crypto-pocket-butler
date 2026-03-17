@@ -2,7 +2,7 @@ use axum_keycloak_auth::decode::KeycloakToken;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
-use crate::entities::users;
+use crate::infrastructure::persistence::entities::users;
 
 /// Get or create user in database from Keycloak token
 /// 

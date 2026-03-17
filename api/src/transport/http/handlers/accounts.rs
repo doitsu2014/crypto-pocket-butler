@@ -16,7 +16,7 @@ use crate::application::usecases::account_usecases::{
     AccountUseCases, CreateAccountCommand, UpdateAccountCommand,
 };
 use crate::helpers::auth::get_or_create_user;
-use crate::jobs::account_sync;
+use crate::application::jobs::account_sync;
 use super::super::error::ApiError;
 
 // === Request/Response DTOs ===

@@ -15,7 +15,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::infrastructure::external::coinpaprika::CoinPaprikaConnector;
-use crate::entities::{asset_contracts, evm_chains, evm_tokens};
+use crate::infrastructure::persistence::entities::{asset_contracts, evm_chains, evm_tokens};
 use super::super::error::ApiError;
 
 // === Request / Response DTOs ===
@@ -347,8 +347,8 @@ pub async fn sync_tokens_from_contracts_handler(
     // Batch-fetch all referenced assets upfront to avoid N+1 queries
     let asset_ids: Vec<Uuid> = contracts.iter().map(|c| c.asset_id).collect();
     let assets: std::collections::HashMap<Uuid, String> =
-        crate::entities::assets::Entity::find()
-            .filter(crate::entities::assets::Column::Id.is_in(asset_ids))
+        crate::infrastructure::persistence::entities::assets::Entity::find()
+            .filter(crate::infrastructure::persistence::entities::assets::Column::Id.is_in(asset_ids))
             .all(&db)
             .await?
             .into_iter()
@@ -494,7 +494,7 @@ pub async fn lookup_contracts_handler(
     Extension(_token): Extension<axum_keycloak_auth::decode::KeycloakToken<String>>,
     Query(q): Query<LookupContractsQuery>,
 ) -> Result<Json<LookupContractsResponse>, ApiError> {
-    use crate::entities::{assets, asset_prices};
+    use crate::infrastructure::persistence::entities::{assets, asset_prices};
     use sea_orm::QueryOrder;
 
     if q.symbol.is_empty() {

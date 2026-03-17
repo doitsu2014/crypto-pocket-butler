@@ -1,4 +1,4 @@
-use crate::concurrency::RateLimiter;
+use crate::application::concurrency::RateLimiter;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

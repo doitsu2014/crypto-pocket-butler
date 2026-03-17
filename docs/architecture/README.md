@@ -7,7 +7,7 @@ This folder contains architecture documentation for Crypto Pocket Butler.
 ```
 docs/architecture/
 ├── README.md                          # This file
-├── 01-architecture-design/            # Backend API architecture (DDD)
+├── 01-architecture-design/            # Backend API architecture (Clean Architecture)
 │   ├── README.md
 │   ├── 01-domain-models.md            # 5 diagrams
 │   ├── 02-api-dataflow.md             # 4 diagrams
@@ -20,20 +20,20 @@ docs/architecture/
 
 | File | Description | Diagrams |
 |------|-------------|----------|
-| `01-architecture-design/` | Backend API (DDD, domain models) | 17 |
+| `01-architecture-design/` | Backend API (Clean Architecture, domain models) | 17 |
 | `02-web-frontend.md` | Frontend (Next.js, components) | 11 |
 | `README.md` | This file | - |
 
 ## Architecture Types
 
 ### 1. Backend Architecture (01-architecture-design/)
-Domain-Driven Design with business services and logic layers.
+Clean Architecture with domain, application, infrastructure, and transport layers.
 
 **See:**
 - `01-domain-models.md` - Portfolio, Asset, Holding, Chain domains
 - `02-api-dataflow.md` - API endpoints, data flow, validation
-- `03-business-services.md` - Business services, logic, DDD principles
-- `04-code-structure.md` - Code structure, modules, entities
+- `03-business-services.md` - Application layer: use cases, services, repository traits
+- `04-code-structure.md` - Clean Architecture layers, dependency flow, principles
 
 ### 2. Frontend Architecture (02-web-frontend.md)
 Frontend web architecture including UI components and state management.

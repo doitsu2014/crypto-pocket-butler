@@ -1,20 +1,36 @@
 # Backend Architecture - Business Services & Logic
 
-## Business Services Layer
+## Application Layer Overview
 
 ```mermaid
 graph TD
-    BS[Business Services Layer]
-    PS[PortfolioService]
-    AS[AssetService]
-    HS[HoldingService]
-    SS[SnapshotService]
-    ALS[AllocationService]
-    BS --> PS
-    BS --> AS
-    BS --> HS
-    BS --> SS
-    BS --> ALS
+    AL[Application Layer]
+    SVC[services/]
+    UC[usecases/]
+    JOBS[jobs/]
+    DTO[dto/]
+    CONC[concurrency/]
+    REPO[repositories/]
+
+    AL --> SVC
+    AL --> UC
+    AL --> JOBS
+    AL --> DTO
+    AL --> CONC
+    AL --> REPO
+
+    SVC --> PS[PortfolioService]
+    SVC --> AS[AccountService]
+
+    UC --> AU[AccountUseCases]
+    UC --> CU[ChainUseCases]
+    UC --> PU[PortfolioUseCases]
+    UC --> RU[RecommendationUseCases]
+    UC --> SU[SnapshotUseCases]
+
+    REPO --> AR[AccountRepository trait]
+    REPO --> PR[PortfolioRepository trait]
+    REPO --> ASR[AssetRepository trait]
 ```
 
 ---
@@ -112,13 +128,13 @@ sequenceDiagram
 
 ---
 
-## Domain-Driven Design Principles
+## Clean Architecture Layer Map
 
 | Layer | Components |
 |-------|------------|
-| **Domain Layer** | Portfolio, Asset, Account, Snapshot domains |
-| **Value Objects** | AllocationItem, SnapshotHolding, AccountHolding |
-| **Business Services** | PortfolioService, AssetService, HoldingService |
-| **Business Logic** | Validation, Pricing, Normalization, Calculation |
-| **Infrastructure** | SeaORM Entities, PostgreSQL, Keycloak |
-| **Anticorruption** | EVM Connector, OKX Connector |
+| **Domain Layer** | Account, Allocation, Asset, Chain, Portfolio domains |
+| **Application Layer** | AccountUseCases, ChainUseCases, PortfolioUseCases, SnapshotUseCases, RecommendationUseCases |
+| **Application Services** | PortfolioService, AccountService |
+| **Repository Traits** | AccountRepository, PortfolioRepository, AssetRepository |
+| **Infrastructure** | SeaORM Entities, PostgreSQL, Keycloak, EVM/OKX/Solana connectors |
+| **Transport** | Axum HTTP handlers, routes, error mapping |

@@ -1,3 +1,8 @@
+---
+name: rust-api
+description: Axum-based Rust API endpoint development, SeaORM patterns, and OpenAPI documentation
+---
+
 # Rust API Development
 
 ## Context

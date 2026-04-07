@@ -1,3 +1,8 @@
+---
+name: nextjs-web
+description: Next.js 16 App Router development, components, authentication, and styling conventions
+---
+
 # Next.js Web Development
 
 ## Context

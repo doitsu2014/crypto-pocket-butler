@@ -1,3 +1,8 @@
+---
+name: database
+description: PostgreSQL and SeaORM database migration, entity management, and schema conventions
+---
+
 # Database and Migrations
 
 ## Context

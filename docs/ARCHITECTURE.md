@@ -493,11 +493,11 @@ Key Dependencies:
   - next@14
   - react@18
   - typescript@5
-  
+
   # State & Data
   - zustand                 # Global state
   - @tanstack/react-query   # Data fetching
-  
+
   # UI
   - tailwindcss             # Styling
   - radix-ui                # Primitives
@@ -505,24 +505,24 @@ Key Dependencies:
   - lucide-react            # Icons
   - class-variance-authority # Component variants
   - clsx + tailwind-merge   # Class utilities
-  
+
   # Charts
   - recharts                # Charts
   - @visx/visx              # D3 for React
-  
+
   # Tables
   - @tanstack/react-table   # Tables
-  
+
   # Forms
   - react-hook-form         # Forms
   - zod                     # Validation
   - @hookform/resolvers     # Zod resolver
-  
+
   # Wallet
   - @walletconnect/modal    # WalletConnect
   - viem                    # Ethereum client
   - wagmi                   # React hooks for Ethereum
-  
+
   # Utils
   - date-fns                # Date formatting
   - numeral                 # Number formatting
@@ -572,15 +572,13 @@ Key Crates:
   - criterion           # Benchmarking
 ```
 
-### Backend
+### Backend (Ortis - Rust Specialist)
 
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
-| **Runtime (Primary)** | **Rust** | Memory safety, zero-cost abstractions, high performance |
-| **Runtime (Secondary)** | Node.js 20 LTS | TypeScript, async I/O, large ecosystem |
-| **Framework (Rust)** | **Axum / Actix-web** | Type-safe, async, excellent performance |
-| **Framework (Node)** | NestJS | Modular, dependency injection, TypeScript-first |
-| **API** | REST + GraphQL + gRPC | REST for CRUD, GraphQL for complex queries, gRPC for internal |
+| **Runtime** | **Rust** | Memory safety, zero-cost abstractions, high performance |
+| **Framework** | **Axum / Actix-web** | Type-safe, async, excellent performance |
+| **API** | REST + gRPC | REST for external, gRPC for internal services |
 | **Database** | PostgreSQL 15 | ACID, JSONB, extensions |
 | **Timeseries** | TimescaleDB | PostgreSQL extension, efficient price storage |
 | **Cache** | Redis 7 | Sessions, rate limiting, price cache |
@@ -588,20 +586,20 @@ Key Crates:
 | **Search** | Elasticsearch | Transaction search, analytics |
 | **OLAP** | ClickHouse | Heavy analytics, reporting |
 
-### Frontend
+### Frontend (Fe - Next.js Specialist)
 
 | Component | Technology | Rationale |
 |-----------|------------|-----------|  
 | **Framework** | **Next.js 14** | App Router, SSR, RSC, API routes, optimal performance |
 | **Language** | **TypeScript 5** | Type safety, better DX, catch errors early |
-| **State** | **Zustand + Jotai** | Lightweight, simple, atomic updates |
+| **State** | **Zustand** | Lightweight, simple global state |
 | **Data Fetching** | **TanStack Query (React Query)** | Caching, background updates, optimistic updates |
-| **Charts** | **Recharts + Visx** | Flexible, performant, composable |
+| **Charts** | **Recharts** | Flexible, performant, easy to use |
 | **Tables** | **TanStack Table** | Virtualized, sortable, filterable |
 | **Forms** | **React Hook Form + Zod** | Performance, type-safe validation |
-| **Styling** | **Tailwind CSS + Radix UI** | Rapid development, accessible, dark mode |
-| **Components** | **shadcn/ui** | Copy-paste components, fully customizable |
-| **Mobile** | **Next.js PWA** or **React Native** | Code sharing, offline support |
+| **Styling** | **Pure Tailwind CSS** | Full control, no UI library dependencies, custom components |
+| **Wallet** | **wagmi + viem** | React hooks for Ethereum, lightweight client |
+| **Mobile** | **Responsive Next.js PWA** | Mobile-first, offline support |
 
 ### Infrastructure
 

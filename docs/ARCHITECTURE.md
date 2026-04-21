@@ -425,6 +425,110 @@ CREATE TABLE audit_log (
 
 ## Technology Stack
 
+### Next.js 14 Frontend (Recommended)
+
+```yaml
+Next.js 14 Features:
+  - App Router (file-based routing)
+  - React Server Components (RSC)
+  - Server Actions (mutations)
+  - Route Handlers (API endpoints)
+  - Streaming + Suspense
+  - Image Optimization
+  - Font Optimization
+  - Middleware (auth, redirects)
+
+Project Structure:
+  crypto-pocket-butler-web/
+  ├── app/                      # App Router
+  │   ├── (dashboard)/          # Dashboard layout
+  │   │   ├── layout.tsx        # Dashboard layout (sidebar, header)
+  │   │   ├── page.tsx          # Dashboard home
+  │   │   ├── portfolio/
+  │   │   │   ├── page.tsx      # Portfolio view
+  │   │   │   └── [id]/page.tsx # Portfolio detail
+  │   │   ├── analytics/
+  │   │   └── settings/
+  │   ├── (auth)/               # Auth layout (centered)
+  │   │   ├── login/page.tsx
+  │   │   └── register/page.tsx
+  │   ├── api/                  # API routes
+  │   │   ├── wallets/route.ts
+  │   │   ├── portfolio/route.ts
+  │   │   └── prices/route.ts
+  │   └── layout.tsx            # Root layout
+  ├── components/
+  │   ├── ui/                   # Base UI components (shadcn)
+  │   │   ├── button.tsx
+  │   │   ├── card.tsx
+  │   │   ├── table.tsx
+  │   │   └── ...
+  │   ├── dashboard/            # Dashboard-specific components
+  │   │   ├── PortfolioCard.tsx
+  │   │   ├── AssetTable.tsx
+  │   │   └── AllocationChart.tsx
+  │   ├── wallet/               # Wallet connection components
+  │   │   ├── ConnectModal.tsx
+  │   │   └── WalletSelector.tsx
+  │   └── charts/               # Chart components
+  │       ├── PieChart.tsx
+  │       └── LineChart.tsx
+  ├── lib/                      # Utilities
+  │   ├── api.ts                # API client
+  │   ├── utils.ts              # Helper functions
+  │   └── validations.ts        # Zod schemas
+  ├── hooks/                    # Custom hooks
+  │   ├── useWallet.ts
+  │   ├── usePortfolio.ts
+  │   └── usePrices.ts
+  ├── stores/                   # Zustand stores
+  │   ├── walletStore.ts
+  │   └── portfolioStore.ts
+  ├── types/                    # TypeScript types
+  │   └── index.ts
+  └── public/                   # Static assets
+
+Key Dependencies:
+  # Core
+  - next@14
+  - react@18
+  - typescript@5
+  
+  # State & Data
+  - zustand                 # Global state
+  - @tanstack/react-query   # Data fetching
+  
+  # UI
+  - tailwindcss             # Styling
+  - radix-ui                # Primitives
+  - @radix-ui/react-*       # Components
+  - lucide-react            # Icons
+  - class-variance-authority # Component variants
+  - clsx + tailwind-merge   # Class utilities
+  
+  # Charts
+  - recharts                # Charts
+  - @visx/visx              # D3 for React
+  
+  # Tables
+  - @tanstack/react-table   # Tables
+  
+  # Forms
+  - react-hook-form         # Forms
+  - zod                     # Validation
+  - @hookform/resolvers     # Zod resolver
+  
+  # Wallet
+  - @walletconnect/modal    # WalletConnect
+  - viem                    # Ethereum client
+  - wagmi                   # React hooks for Ethereum
+  
+  # Utils
+  - date-fns                # Date formatting
+  - numeral                 # Number formatting
+  - decimal.js              # Precise decimals
+```
+
 ### Rust Services (Recommended for Critical Paths)
 
 ```yaml
@@ -441,27 +545,27 @@ Key Crates:
   - axum / actix-web    # HTTP server
   - tonic / prost       # gRPC
   - tokio               # Async runtime
-  
+
   # Serialization
   - serde / serde_json  # JSON
   - serde_yaml          # YAML
   - bincode             # Binary
-  
+
   # Database
   - sqlx                # Async SQL (PostgreSQL)
   - diesel              # ORM
   - redis               # Redis client
-  
+
   # Blockchain
   - ethers / alloy      # Ethereum
   - solana-sdk          # Solana
   - bip32 / bip39       # HD wallets
   - k256 / p256         # Cryptography
-  
+
   # HTTP Client
   - reqwest             # HTTP client
   - hyper               # Low-level HTTP
-  
+
   # Testing
   - proptest            # Property-based testing
   - quickcheck          # QuickCheck
@@ -471,7 +575,7 @@ Key Crates:
 ### Backend
 
 | Component | Technology | Rationale |
-|-----------|------------|-----------|  
+|-----------|------------|-----------|
 | **Runtime (Primary)** | **Rust** | Memory safety, zero-cost abstractions, high performance |
 | **Runtime (Secondary)** | Node.js 20 LTS | TypeScript, async I/O, large ecosystem |
 | **Framework (Rust)** | **Axum / Actix-web** | Type-safe, async, excellent performance |
@@ -487,14 +591,17 @@ Key Crates:
 ### Frontend
 
 | Component | Technology | Rationale |
-|-----------|------------|-----------|
-| **Framework** | Next.js 14 | SSR, app router, React ecosystem |
-| **State** | Zustand | Lightweight, simple |
-| **Charts** | Recharts + D3 | Flexible, performant |
-| **Tables** | TanStack Table | Virtualized, sortable |
-| **Forms** | React Hook Form + Zod | Performance, validation |
-| **Styling** | Tailwind CSS + Radix UI | Rapid development, accessible |
-| **Mobile** | React Native | Code sharing with web |
+|-----------|------------|-----------|  
+| **Framework** | **Next.js 14** | App Router, SSR, RSC, API routes, optimal performance |
+| **Language** | **TypeScript 5** | Type safety, better DX, catch errors early |
+| **State** | **Zustand + Jotai** | Lightweight, simple, atomic updates |
+| **Data Fetching** | **TanStack Query (React Query)** | Caching, background updates, optimistic updates |
+| **Charts** | **Recharts + Visx** | Flexible, performant, composable |
+| **Tables** | **TanStack Table** | Virtualized, sortable, filterable |
+| **Forms** | **React Hook Form + Zod** | Performance, type-safe validation |
+| **Styling** | **Tailwind CSS + Radix UI** | Rapid development, accessible, dark mode |
+| **Components** | **shadcn/ui** | Copy-paste components, fully customizable |
+| **Mobile** | **Next.js PWA** or **React Native** | Code sharing, offline support |
 
 ### Infrastructure
 

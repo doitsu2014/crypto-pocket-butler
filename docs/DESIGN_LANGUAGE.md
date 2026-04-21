@@ -754,6 +754,162 @@ Reduced Motion:
 
 ---
 
+## Next.js 14 Implementation
+
+### Component Pattern (Next.js + TypeScript)
+
+```tsx
+// components/ui/button.tsx
+import { cva, type VariantProps } from 'class-variance-authority';
+import { cn } from '@/lib/utils';
+
+const buttonVariants = cva(
+  'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors',
+  {
+    variants: {
+      variant: {
+        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
+        outline: 'border border-input bg-background hover:bg-accent',
+        ghost: 'hover:bg-accent hover:text-accent-foreground',
+      },
+      size: {
+        default: 'h-10 px-4 py-2',
+        sm: 'h-9 rounded-md px-3',
+        lg: 'h-11 rounded-md px-8',
+        icon: 'h-10 w-10',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+      size: 'default',
+    },
+  }
+);
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {}
+
+export function Button({ className, variant, size, ...props }: ButtonProps) {
+  return (
+    <button className={cn(buttonVariants({ variant, size, className }))} {...props} />
+  );
+}
+```
+
+### Server Component Pattern
+
+```tsx
+// app/(dashboard)/portfolio/page.tsx
+import { getPortfolios } from '@/lib/api';
+import { PortfolioList } from './PortfolioList';
+
+export default async function PortfolioPage() {
+  const portfolios = await getPortfolios();
+  
+  return (
+    <div className="space-y-6">
+      <h1 className="text-3xl font-semibold">Portfolios</h1>
+      <PortfolioList portfolios={portfolios} />
+    </div>
+  );
+}
+
+// app/(dashboard)/portfolio/PortfolioList.tsx
+'use client';
+
+import { Card, CardContent } from '@/components/ui/card';
+
+interface PortfolioListProps {
+  portfolios: Portfolio[];
+}
+
+export function PortfolioList({ portfolios }: PortfolioListProps) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {portfolios.map((portfolio) => (
+        <Card key={portfolio.id}>
+          <CardContent className="p-6">
+            <h3 className="font-semibold">{portfolio.name}</h3>
+            <p className="text-2xl font-bold">${portfolio.totalValue}</p>
+            <p className="text-sm text-muted-foreground">
+              {portfolio.assetCount} assets
+            </p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+```
+
+### Data Fetching (TanStack Query)
+
+```tsx
+// hooks/usePortfolio.ts
+import { useQuery } from '@tanstack/react-query';
+import { fetchPortfolio } from '@/lib/api';
+
+export function usePortfolio(portfolioId: string) {
+  return useQuery({
+    queryKey: ['portfolio', portfolioId],
+    queryFn: () => fetchPortfolio(portfolioId),
+    staleTime: 30 * 1000, // 30 seconds
+    refetchInterval: 60 * 1000, // 1 minute
+  });
+}
+
+// Usage in component
+export function PortfolioDetail({ id }: { id: string }) {
+  const { data, isLoading, error } = usePortfolio(id);
+  
+  if (isLoading) return <Skeleton className="h-64 w-full" />;
+  if (error) return <ErrorState error={error} />;
+  
+  return (
+    <div>
+      <h1>{data.name}</h1>
+      <p>${data.totalValue}</p>
+    </div>
+  );
+}
+```
+
+### shadcn/ui Integration
+
+```bash
+# Initialize shadcn
+npx shadcn-ui@latest init
+
+# Add components
+npx shadcn-ui@latest add button
+npx shadcn-ui@latest add card
+npx shadcn-ui@latest add table
+npx shadcn-ui@latest add dialog
+npx shadcn-ui@latest add dropdown-menu
+```
+
+```json
+// components.json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "default",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "tailwind.config.js",
+    "css": "app/globals.css",
+    "baseColor": "slate",
+    "cssVariables": true
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils"
+  }
+}
+```
+
 ## Design Handoff
 
 ### Figma Organization

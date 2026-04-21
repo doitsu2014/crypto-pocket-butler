@@ -1,8 +1,8 @@
 # Crypto Pocket Butler - Technical Architecture
 
-**Version:** 1.0  
-**Last Updated:** 2026-04-21  
-**Owner:** Alex (Crypto Solution Architect)  
+**Version:** 1.0
+**Last Updated:** 2026-04-21
+**Owner:** Alex (Crypto Solution Architect)
 **Status:** Draft
 
 ---
@@ -117,7 +117,7 @@ Endpoints:
   GET  /api/v1/wallets              # List connected wallets
   DELETE /api/v1/wallets/{id}       # Disconnect wallet
   GET  /api/v1/wallets/{id}/txs     # Get wallet transactions
-  
+
 Features:
   - WalletConnect v2 protocol
   - MetaMask SDK integration
@@ -141,7 +141,7 @@ Endpoints:
   GET  /api/v1/portfolios/{id}/assets        # List portfolio assets
   GET  /api/v1/portfolios/{id}/performance   # Performance metrics
   POST /api/v1/portfolios/{id}/rebalance     # Trigger rebalance
-  
+
 Features:
   - Multi-wallet aggregation
   - Real-time valuation
@@ -166,7 +166,7 @@ Endpoints:
   GET  /api/v1/prices/{symbol}               # Get current price
   GET  /api/v1/prices/historical             # Historical prices
   WS /api/v1/prices/stream                   # WebSocket price stream
-  
+
 Price Sources:
   Primary:   CoinGecko API (free tier: 10-50 calls/min)
   Secondary: CoinMarketCap API
@@ -190,7 +190,7 @@ Endpoints:
   GET  /api/v1/transactions/{id}             # Transaction details
   POST /api/v1/transactions/classify         # Manual classification
   GET  /api/v1/transactions/export           # Export (CSV, PDF)
-  
+
 Features:
   - Automatic transaction classification
   - DeFi protocol detection (swap, stake, provide liquidity)
@@ -218,7 +218,7 @@ Endpoints:
   POST /api/v1/auth/refresh                  # Refresh token
   GET  /api/v1/users/me                      # Current user
   PUT  /api/v1/users/me                      # Update profile
-  
+
 Features:
   - JWT-based authentication
   - OAuth2 (Google, GitHub)
@@ -244,7 +244,7 @@ Endpoints:
   GET  /api/v1/analytics/attribution         # Return attribution
   GET  /api/v1/analytics/risk                # Risk metrics
   GET  /api/v1/analytics/benchmark           # Benchmark comparison
-  
+
 Metrics:
   Performance:
     - Total Return (%)
@@ -253,13 +253,13 @@ Metrics:
     - Sharpe Ratio
     - Sortino Ratio
     - Max Drawdown
-    
+
   Attribution:
     - By Asset (contribution to returns)
     - By Chain
     - By Strategy (DeFi, NFT, Trading)
     - Sector Exposure
-    
+
   Risk:
     - Portfolio Volatility
     - Value at Risk (VaR)
@@ -277,7 +277,7 @@ Endpoints:
   PUT  /api/v1/rebalance/targets             # Set target allocations
   GET  /api/v1/rebalance/opportunities       # Rebalance opportunities
   POST /api/v1/rebalance/execute             # Execute rebalance
-  
+
 Features:
   - Target allocation setup
   - Drift detection (>5% threshold)
@@ -303,7 +303,7 @@ Endpoints:
   GET  /api/v1/compliance/status             # Compliance status
   POST /api/v1/compliance/screen             # Address screening
   GET  /api/v1/compliance/reports            # Generate reports
-  
+
 Features:
   - Sanctioned address screening (OFAC)
   - KYC verification (Sumsub, Jumio)
@@ -425,13 +425,58 @@ CREATE TABLE audit_log (
 
 ## Technology Stack
 
+### Rust Services (Recommended for Critical Paths)
+
+```yaml
+Use Rust for:
+  - Price ingestion & aggregation service (high-frequency)
+  - Portfolio valuation engine (real-time calculations)
+  - Wallet indexer (blockchain parsing)
+  - Cryptographic operations (key derivation, signing)
+  - CLI tools (ops, deployment, debugging)
+  - Performance-critical microservices
+
+Key Crates:
+  # Web Framework
+  - axum / actix-web    # HTTP server
+  - tonic / prost       # gRPC
+  - tokio               # Async runtime
+  
+  # Serialization
+  - serde / serde_json  # JSON
+  - serde_yaml          # YAML
+  - bincode             # Binary
+  
+  # Database
+  - sqlx                # Async SQL (PostgreSQL)
+  - diesel              # ORM
+  - redis               # Redis client
+  
+  # Blockchain
+  - ethers / alloy      # Ethereum
+  - solana-sdk          # Solana
+  - bip32 / bip39       # HD wallets
+  - k256 / p256         # Cryptography
+  
+  # HTTP Client
+  - reqwest             # HTTP client
+  - hyper               # Low-level HTTP
+  
+  # Testing
+  - proptest            # Property-based testing
+  - quickcheck          # QuickCheck
+  - criterion           # Benchmarking
+```
+
 ### Backend
 
 | Component | Technology | Rationale |
-|-----------|------------|-----------|
-| **Runtime** | Node.js 20 LTS | TypeScript, async I/O, large ecosystem |
-| **Framework** | NestJS | Modular, dependency injection, TypeScript-first |
-| **API** | REST + GraphQL | REST for CRUD, GraphQL for complex queries |
+|-----------|------------|-----------|  
+| **Runtime (Primary)** | **Rust** | Memory safety, zero-cost abstractions, high performance |
+| **Runtime (Secondary)** | Node.js 20 LTS | TypeScript, async I/O, large ecosystem |
+| **Framework (Rust)** | **Axum / Actix-web** | Type-safe, async, excellent performance |
+| **Framework (Node)** | NestJS | Modular, dependency injection, TypeScript-first |
+| **API** | REST + GraphQL + gRPC | REST for CRUD, GraphQL for complex queries, gRPC for internal |
 | **Database** | PostgreSQL 15 | ACID, JSONB, extensions |
 | **Timeseries** | TimescaleDB | PostgreSQL extension, efficient price storage |
 | **Cache** | Redis 7 | Sessions, rate limiting, price cache |

@@ -1,8 +1,8 @@
 # Software Architecture — crypto-pocket-butler
 
-**Version:** 1.0-draft  
-**Date:** 2026-04-26  
-**Status:** Draft — pending BMAD team review  
+**Version:** 2.0-revised
+**Date:** 2026-04-26
+**Status:** Revised — post BMAD team review
 **Authors:** BMAD Architecture Team (Sam, Alex, Ortis, Fe, Quinn)
 
 ---
@@ -12,7 +12,6 @@
 crypto-pocket-butler is a crypto portfolio management application providing:
 - Multi-wallet and exchange portfolio tracking
 - Rebalancing suggestions
-- Daily briefs written to Notion
 
 ### Technology Stack
 
@@ -20,7 +19,7 @@ crypto-pocket-butler is a crypto portfolio management application providing:
 |---|---|
 | **Frontend** | Next.js 16 (App Router), TypeScript, TailwindCSS 4, NextAuth.js v5 |
 | **API** | Rust, Axum 0.8, SeaORM, PostgreSQL |
-| **Authentication** | Keycloak (JWT validation via axum-keycloak-auth) |
+| **Authentication** | API key middleware (v1); Keycloak OIDC (future multi-user) |
 | **Deployment** | Docker Compose |
 
 ---
@@ -37,13 +36,12 @@ crypto-pocket-butler is a crypto portfolio management application providing:
 ┌─────────────────────────▼───────────────────────────────────┐
 │                    EDGE LAYER                                │
 │  [CDN / Cloudflare] — Static assets, caching                 │
-│  [Keycloak] — Identity Provider (OIDC)                      │
 └─────────────────────────┬───────────────────────────────────┘
-                          │ JWT Auth
+                          │ API Key / JWT (future)
 ┌─────────────────────────▼───────────────────────────────────┐
 │                 APPLICATION LAYER                           │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │   Web App    │  │   REST API    │  │  Notion      │     │
+│  │   Web App    │  │   REST API    │  │  Portfolio   │     │
 │  │  (Next.js)   │  │   (Axum)      │  │  Sync Job    │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘     │
 └─────────────────────────┬───────────────────────────────────┘
@@ -143,18 +141,17 @@ infrastructure/
 
 ### 4.3 Authentication Flow
 
-```
-User → Next.js App → Keycloak (OIDC) → JWT Token
-                                ↓
-                         Next.js receives session
-                                ↓
-                         API requests include JWT
-                                ↓
-                    Axum validates JWT via Keycloak
-```
+**v1 (current):** API key middleware
+- API key passed via `X-API-Key` header
+- Validated in Axum middleware against database-stored keys
+- Simple, self-contained, no external dependencies
 
-- **Web:** Authorization Code + PKCE via NextAuth.js v5
-- **API:** JWT Bearer token validation via `axum-keycloak-auth`
+**Future (multi-user):** Keycloak OIDC
+- Migration path: replace API key middleware with JWT validation
+- Keycloak handles identity, API validates JWTs locally via JWKS
+- Authorization Code + PKCE via NextAuth.js v5 for web
+
+> **Decision (AD-006):** Use API key auth for v1 to eliminate Keycloak dependency. Migrate to Keycloak OIDC when multi-user support is needed.
 
 ---
 
@@ -168,8 +165,7 @@ web/app/
 ├── (dashboard)/         # Main app routes
 │   ├── portfolios/
 │   ├── assets/
-│   ├── settings/
-│   └── admin/
+│   └── settings/
 ├── api/                  # Route handlers (not API routes)
 ├── layout.tsx
 └── page.tsx
@@ -188,35 +184,52 @@ web/app/
 - **Server Components:** Direct API calls (no client-side fetch)
 - **Client Components:** React Query or SWR for cached data
 - **Streaming:** Use React Suspense for progressive loading
+- **ISR:** Use Incremental Static Regeneration for portfolio dashboard pages
 
 ---
 
 ## 6. Key Architectural Decisions
 
 ### AD-001: DDD Layered Architecture (Rust)
-**Decision:** Use DDD with explicit layers: domain → application → infrastructure  
-**Rationale:** Clear separation enables testing, bounded contexts align with team ownership  
+**Decision:** Use DDD with explicit layers: domain → application → infrastructure
+**Rationale:** Clear separation enables testing, bounded contexts align with team ownership
 **Alternatives Considered:** Flat module structure — rejected due to scaling issues
 
-### AD-002: JWT Auth via Keycloak
-**Decision:** Keycloak handles identity, API validates JWTs locally  
-**Rationale:** Centralized auth, no API gateway needed, supports OIDC flows  
-**Trade-off:** API depends on Keycloak being available for token validation
+### AD-002: API Key Auth (v1)
+**Decision:** API key middleware for self-contained auth, no external IdP dependency
+**Rationale:** Eliminates Keycloak operational burden for single-user v1. Simple, testable, no external deps.
+**Trade-off:** No OIDC/OAuth2 features. Upgrade path needed when multi-user support is added.
 
 ### AD-003: Moka for In-Memory Cache
-**Decision:** Use Moka with async cache for chain data and asset prices  
-**Rationale:** Simple, thread-safe, integrates well with Tokio  
+**Decision:** Use Moka with async cache for chain data and asset prices
+**Rationale:** Simple, thread-safe, integrates well with Tokio
 **Trade-off:** Cache invalidation requires careful TTL management
 
 ### AD-004: SeaORM for Persistence
-**Decision:** SeaORM with PostgreSQL for all structured data  
-**Rationale:** Type-safe queries, async support, migration tooling  
+**Decision:** SeaORM with PostgreSQL for all structured data
+**Rationale:** Type-safe queries, async support, migration tooling
 **Trade-off:** Runtime overhead vs raw SQL — acceptable for this scale
 
 ### AD-005: Next.js App Router with Server Components
-**Decision:** Use App Router with RSC as default, client components only when needed  
-**Rationale:** Better performance via SSR, improved SEO, cleaner data fetching  
+**Decision:** Use App Router with RSC as default, client components only when needed
+**Rationale:** Better performance via SSR, improved SEO, cleaner data fetching
 **Trade-off:** Complexity of client/server boundary — mitigated by established patterns
+
+### AD-006: RPC Abstraction Layer
+**Decision:** Abstract external chain RPC calls behind a trait-based interface with failover support
+**Rationale:** Multi-chain DeFi requires hitting Ethereum, Arbitrum, Base, Solana — each with different rate limits, failure modes, and cost profiles. Public RPCs hit rate limits; private RPCs (Alchemy, QuickNode) add cost and dependency.
+**Structure:**
+```
+trait ChainRpc {
+    async fn get_balance(&self, address: &str) -> Result<Balance>;
+    async fn get_tokens(&self, address: &str) -> Result<Vec<TokenBalance>>;
+}
+struct MultiChainRouter {
+    chains: HashMap<ChainId, Box<dyn ChainRpc>>,
+    fallback: Box<dyn ChainRpc>,  // failover RPC
+}
+```
+**Trade-off:** Complexity of managing multiple RPC providers. Monitor rate limits and costs.
 
 ---
 
@@ -225,14 +238,17 @@ web/app/
 ### 7.1 Portfolio Update Flow
 
 ```
-1. Cron job triggers (apalis-cron, runs every 15 minutes)
+1. Cron job triggers (apalis-cron, configurable interval — default 15 min)
 2. Job fetches all tracked wallet addresses from DB
-3. For each chain, batch RPC calls to fetch balances
-4. Normalize all balances to common format (decimals + USD)
-5. Update holdings in PostgreSQL via SeaORM
-6. Invalidate related cache entries (Moka)
-7. If significant change (>5%), trigger rebalance calculation
-8. Log job completion metrics
+3. MultiChainRouter batches RPC calls per chain
+4. Use WebSocket subscriptions where available (Ethereum, Solana)
+5. Fall back to polling for chains without WS support
+6. Normalize all balances to common format (decimals + USD)
+7. Update holdings in PostgreSQL via SeaORM
+8. Invalidate related cache entries (Moka)
+9. If significant change (>5%), trigger rebalance calculation
+10. Log job completion metrics
+11. Alert on failures (see §9 Monitoring)
 ```
 
 ### 7.2 Rebalancing Flow
@@ -248,29 +264,26 @@ web/app/
 8. User confirms → status changes to "executed"
 ```
 
-### 7.3 Notion Brief Generation
+### 7.3 Cache Invalidation Policy
 
-```
-1. Scheduled job runs daily at 08:00 UTC
-2. Fetches overnight portfolio changes
-3. Aggregates price movements from cached data
-4. Formats brief using Notion API client
-5. Creates/updates Notion page for user
-6. Logs generation status and duration
-```
+| Data Type | Cache | TTL | Invalidation |
+|---|---|---|---|
+| Asset metadata | Moka | 1 hour | TTL only |
+| Chain balances | Moka | 5 minutes | TTL + event-driven on wallet tx |
+| Price data | Moka | 1 minute | TTL only |
+
+> **Policy:** Distinguish between "stale data that's wrong" (aggressive invalidation) and "data not yet refreshed" (graceful staleness). Portfolio balances use 5-min TTL with event-driven invalidation when wallet activity is detected.
 
 ---
 
 ## 8. Security Model
 
 ### 8.1 Authentication
-- **Web:** Keycloak OIDC (Authorization Code + PKCE)
-- **API:** JWT Bearer tokens validated against Keycloak JWKS
-- **Token refresh:** Handled by NextAuth.js v5
+- **v1:** API key via `X-API-Key` header
+- **Future:** Keycloak OIDC (JWT Bearer tokens)
 
 ### 8.2 Authorization
-- Role-based access control via Keycloak groups
-- **Roles:** `admin`, `user`, `viewer`
+- Role-based access control (admin, user, viewer)
 - API enforces authorization at application layer
 
 ### 8.3 Data Protection
@@ -279,44 +292,58 @@ web/app/
 - Environment variables for all secrets (dotenvy)
 - No sensitive data in logs
 
-### 8.4 Smart Contract Security (Future)
+### 8.4 Audit Trail
+- **PostgreSQL audit table:** `portfolio_audit_log` records all portfolio changes
+  - Columns: `id`, `user_id`, `portfolio_id`, `action`, `old_value`, `new_value`, `timestamp`
+- Replaces Notion as audit/backup log
+- Queryable for compliance and recovery
+
+### 8.5 Smart Contract Security
 - Wallet operations require explicit user confirmation
 - Transaction amounts displayed in USD before signing
-- Blacklist/whitelist for contract addresses (per Quinn's input)
+- Blacklist/whitelist for contract addresses
 
 ---
 
-## 9. Scalability Considerations
+## 9. Monitoring & Operations
 
-### 9.1 Horizontal Scaling
+### 9.1 Cron Job Monitoring
+- Failed cron jobs trigger alerts (PagerDuty/email)
+- Metrics: job success rate, duration, records processed
+- Silent failures are unacceptable — all job executions logged
+
+### 9.2 Secrets Management
+- All API keys, RPC credentials, DB passwords in `.env` (not committed to git)
+- Notion API keys (if any) revoked and removed — no stale secrets
+
+### 9.3 Dependency Management
+- Rust crate versions pinned in `Cargo.lock`
+- Regular `cargo audit` runs in CI
+- Third-party dependencies reviewed quarterly
+
+---
+
+## 10. Scalability Considerations
+
+### 10.1 Horizontal Scaling
 - API (Rust): Stateless, can scale behind load balancer
 - Next.js: Can scale with ISR and edge caching
 - PostgreSQL: Read replicas for heavy read workloads
 
-### 9.2 Caching Strategy
-| Data Type | Cache | TTL |
-|---|---|---|
-| Asset metadata | Moka | 1 hour |
-| Chain balances | Moka | 5 minutes |
-| Price data | Moka | 1 minute |
-| User session | Keycloak | OAuth session |
+### 10.2 Caching Strategy
+See §7.3 Cache Invalidation Policy
 
-### 9.3 Background Jobs
+### 10.3 Background Jobs
 - Use `apalis` for job processing (already in Cargo.toml)
 - Worker processes scale independently of API
 - Job queue backed by PostgreSQL
 
 ---
 
-## 10. Deployment Architecture
+## 11. Deployment Architecture
 
 ```yaml
 services:
-  keycloak:
-    image: keycloak/keycloak
-    ports:
-      - "8080:8080"
-
   postgres:
     image: postgres:16
     volumes:
@@ -326,10 +353,9 @@ services:
     build: ./api
     depends_on:
       - postgres
-      - keycloak
     environment:
       - DATABASE_URL=postgres://...
-      - KEYCLOAK_URL=http://keycloak:8080
+      - API_KEY=<secret>
 
   web:
     build: ./web
@@ -337,6 +363,7 @@ services:
       - api
     environment:
       - NEXTAUTH_URL=http://localhost:3000
+      - API_KEY=<secret>
 
   notifier:
     build: ./api
@@ -345,21 +372,41 @@ services:
       - postgres
 ```
 
----
-
-## 11. Open Questions
-
-1. **Solana support:** Currently disabled due to dependency conflicts. Resolution needed.
-2. **Notion integration:** Auth flow not finalized — API key vs OAuth?
-3. **Price feed:** Current approach? CoinGecko vs custom aggregator?
-4. **Multi-chain batching:** Any preference for parallel vs sequential RPC calls?
+> **Note:** Keycloak removed from deployment for v1. API key auth is self-contained.
 
 ---
 
-## 12. Next Steps
+## 12. Open Questions (Resolved)
 
-- [ ] Review this document with full BMAD team
-- [ ] Resolve open questions
-- [ ] Create ADR (Architecture Decision Records) for key decisions
-- [ ] Produce detailed component specifications per bounded context
-- [ ] Update codebase to match approved architecture
+| # | Question | Resolution |
+|---|---|---|
+| 1 | Solana support | Deferred — dependency conflicts to resolve post-v1 |
+| 2 | Notion integration | **Removed** — no daily briefs, no Notion sync |
+| 3 | Price feed | Use CoinGecko for v1, keep abstraction for future swap |
+| 4 | Multi-chain batching | WebSocket subscriptions where available, polling fallback |
+
+---
+
+## 13. Next Steps
+
+- [ ] Update codebase: remove Notion sync components, Notion API client, sync job
+- [ ] Audit UI components: remove `NotionSyncStatus`, `NotionConnectionCard`, sync toggles
+- [ ] Strip API responses of Notion-related fields (`notion_synced_at`, `notion_page_id`)
+- [ ] Implement API key middleware in Axum
+- [ ] Add `portfolio_audit_log` table to SeaORM schema
+- [ ] Implement MultiChainRouter trait for RPC abstraction
+- [ ] Add cron job alerting/monitoring
+- [ ] Create ADR for API key auth decision (AD-006)
+
+---
+
+## Appendix: What Was Removed
+
+| Removed | Reason |
+|---|---|
+| Notion sync job | Not in scope — no daily briefs, no Notion integration |
+| Notion API client | Unused without sync job |
+| Notion brief generation flow | Not in scope |
+| Keycloak (v1) | Overkill for single-user v1; API key auth sufficient |
+| Notion-related UI components | No longer needed |
+| Notion-related API response fields | Cleaner API surface |

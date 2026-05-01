@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cd /d/Workspace/doitsu-technology/crypto-pocket-butler/api && docker build -t crypto-pocket-butler-api:test . 2>&1)"
-    ]
-  }
-}

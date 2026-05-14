@@ -1,50 +1,138 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+==================
+Version change: N/A → 1.0.0 (initial constitution)
+Modified principles: N/A (new creation)
+Added sections:
+  - Core Principles (5 principles)
+  - Technology Stack Constraints
+  - Development Workflow
+  - Governance
+Removed sections: None
+Templates requiring updates:
+  - .specify/templates/plan-template.md ✅ (no changes needed)
+  - .specify/templates/spec-template.md ✅ (no changes needed)
+  - .specify/templates/tasks-template.md ✅ (no changes needed)
+Follow-up TODOs: None
+-->
+
+# Crypto Pocket Butler Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Security-First Design
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+All cryptographic operations and user data handling MUST prioritize security above all else.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+- Private keys and sensitive data MUST NEVER be stored in plaintext
+- All API endpoints MUST implement proper authentication and authorization
+- Cryptographic operations MUST use well-vetted libraries (e.g., `ring`, `rust-crypto`)
+- Input validation MUST be applied at all boundaries (API, CLI, UI)
+- Secrets management MUST follow industry best practices (environment variables, secret managers)
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+**Rationale**: As a cryptocurrency application, security vulnerabilities can result in direct financial loss.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### II. Rust Backend Excellence
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+The backend MUST leverage Rust's safety guarantees and performance characteristics.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- All backend services MUST be written in Rust with safe defaults
+- Unsafe code blocks MUST include documentation justifying necessity
+- Error handling MUST use `Result<T, E>` types, NOT panics
+- Concurrency MUST use Rust's ownership model to prevent data races
+- Memory safety MUST be verified through compilation without `unsafe` where possible
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+**Rationale**: Rust's memory safety and zero-cost abstractions are critical for reliable cryptocurrency operations.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### III. Modern Frontend Stack
+
+The frontend MUST use React, Next.js, and raw Tailwind CSS for UI development.
+
+- UI components MUST be built with React functional components and hooks
+- Styling MUST use Tailwind CSS utility classes directly (NO TanStack libraries due to security vulnerabilities)
+- State management MUST use React Context or Zustand (lightweight alternatives)
+- Pages MUST leverage Next.js App Router for optimal routing and SSR
+- Component structure MUST follow atomic design principles
+
+**Rationale**: Raw Tailwind CSS avoids the TanStack vulnerability issue while maintaining development velocity.
+
+### IV. Test-Driven Development (NON-NEGOTIABLE)
+
+All features MUST follow TDD discipline: Tests written → User approved → Tests fail → Then implement.
+
+- Unit tests MUST achieve minimum 80% code coverage for business logic
+- Integration tests MUST verify service interactions and database operations
+- Contract tests MUST validate API endpoint behavior
+- E2E tests MUST cover critical user flows (authentication, transactions)
+- Red-Green-Refactor cycle MUST be strictly enforced
+
+**Rationale**: Financial applications require comprehensive testing to prevent costly bugs in production.
+
+### V. API-First Architecture
+
+Backend services MUST expose functionality through well-defined APIs before building frontend consumers.
+
+- API contracts MUST be defined using OpenAPI/Swagger specifications
+- Endpoints MUST follow RESTful conventions with clear resource naming
+- Request/response schemas MUST be validated using JSON Schema
+- API versioning MUST be implemented from the start (e.g., `/api/v1/`)
+- Error responses MUST follow RFC 7807 Problem Details format
+
+**Rationale**: API-first design enables parallel frontend/backend development and future mobile/web clients.
+
+## Technology Stack Constraints
+
+### Backend Requirements
+
+- **Language**: Rust (latest stable)
+- **Web Framework**: Axum or Actix-web (chosen based on team expertise)
+- **Database**: PostgreSQL with SQLx or Diesel ORM
+- **Authentication**: JWT tokens with refresh token rotation
+- **Testing**: Built-in Rust test framework + cargo-nextest
+
+### Frontend Requirements
+
+- **Framework**: Next.js 14+ with App Router
+- **UI Library**: React 18+
+- **Styling**: Tailwind CSS 3+ (raw utility classes, NO component libraries with known vulnerabilities)
+- **State Management**: React Context API or Zustand
+- **Testing**: Jest + React Testing Library
+
+### Prohibited Dependencies
+
+- TanStack libraries (Query, Table, Form, Router, etc.) - known security vulnerabilities
+- Any library with active CVEs without documented mitigation
+
+## Development Workflow
+
+### Branch Strategy
+
+- `main` branch MUST always be deployable
+- Feature branches MUST follow `###-feature-name` convention
+- Pull requests MUST pass CI checks before merge
+
+### Code Review Requirements
+
+- All PRs MUST verify compliance with these principles
+- Security-sensitive changes MUST have two approvals
+- API contract changes MUST update OpenAPI spec
+
+### Quality Gates
+
+- Linting MUST pass (clippy for Rust, ESLint for TypeScript)
+- Type checking MUST pass (TypeScript strict mode)
+- All tests MUST pass before merge
+- Code coverage MUST NOT decrease
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution supersedes all other development practices. Any amendments require:
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+1. Documentation of the proposed change with rationale
+2. Review and approval by project maintainers
+3. Migration plan for any breaking changes
+4. Version increment following semantic versioning rules
+
+All pull requests and code reviews MUST verify compliance with these principles. Complexity must be justified with clear business value.
+
+**Version**: 1.0.0 | **Ratified**: 2026-05-14 | **Last Amended**: 2026-05-14

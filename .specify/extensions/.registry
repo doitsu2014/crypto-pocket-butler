@@ -8,7 +8,7 @@
       "enabled": true,
       "priority": 10,
       "registered_commands": {
-        "claude": [
+        "opencode": [
           "speckit.git.feature",
           "speckit.git.validate",
           "speckit.git.remote",
@@ -17,7 +17,7 @@
         ]
       },
       "registered_skills": [],
-      "installed_at": "2026-05-02T03:15:55.167066+00:00"
+      "installed_at": "2026-05-14T15:02:57.002275+00:00"
     }
   }
 }

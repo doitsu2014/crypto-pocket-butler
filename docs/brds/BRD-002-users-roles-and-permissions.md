@@ -30,8 +30,8 @@ Define who interacts with Crypto Pocket Butler, what each actor may do, how user
 
 | Role | Source of truth | Capabilities |
 |------|-----------------|--------------|
-| Portfolio Owner | Any authenticated Keycloak user | Manage own accounts, portfolios, snapshots, recommendations, and settings |
-| Admin | Keycloak `admin` role (or equivalent realm role) | Everything a Portfolio Owner can do **plus** manage EVM chains, EVM tokens, and Solana tokens |
+| Portfolio Owner | Any authenticated Supabase Auth user | Manage own accounts, portfolios, snapshots, recommendations, and settings |
+| Admin | Supabase Auth user with `app_metadata.role = "admin"`, projected into the JWT by the Custom Access Token Hook | Everything a Portfolio Owner can do **plus** manage EVM chains, EVM tokens, and Solana tokens |
 | System | Internal scheduler / job runner | Execute background jobs against all users' data; never granted interactive access |
 
 ### 3.2 Post-MVP roles (target model)
@@ -116,7 +116,7 @@ Define who interacts with Crypto Pocket Butler, what each actor may do, how user
 
 ## 9. Assumptions, dependencies, constraints
 
-- Keycloak (or a compatible OIDC provider) is the source of truth for authentication and for the `admin` role.
+- Supabase Auth is the source of truth for authentication. The admin role is stored in Supabase `app_metadata.role` and projected into the JWT by the Custom Access Token Hook.
 - Role claims are delivered in the access token and validated by the API.
 - The MVP does not support email invitations, self-service registration, or shared portfolios.
 - Audit logging may be implemented as an append-only store; its retention period is defined in BRD-012.

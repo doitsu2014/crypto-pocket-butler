@@ -11,15 +11,15 @@
 
 ## 1. Purpose
 
-Define how users authenticate, how sessions are established and refreshed, how the API trusts requests, and how sign-out works. The product uses federated identity so that the application never stores user passwords.
+Define how users authenticate, how sessions are established and refreshed, how the API trusts requests, and how sign-out works. Identity is delegated to **Supabase Auth** so the application never stores user passwords.
 
 ## 2. Scope
 
 ### In scope
 
-- Single sign-on through an OpenID Connect (OIDC) identity provider (Keycloak in the current deployment).
-- Authorization Code flow with PKCE for the web client.
-- Session cookies, access-token refresh, and sign-out.
+- Single sign-on through Supabase Auth (email/password, magic link, OAuth providers, MFA).
+- Authorization Code flow with PKCE for OAuth redirects; the Supabase JavaScript SDK manages token exchange and refresh.
+- Client-side session tokens held in memory, access-token refresh, and sign-out.
 - JWT validation and claim requirements at the API.
 - First-login provisioning of an internal user record.
 - Failure and edge-case handling (expired tokens, revoked sessions, provider outage).
@@ -37,7 +37,7 @@ Define how users authenticate, how sessions are established and refreshed, how t
 |-------|-------------|
 | Anonymous visitor | Initiates sign-in; has no access to portfolio data |
 | Portfolio Owner / Admin | Authenticates and uses the application |
-| Identity provider | Authenticates credentials, issues tokens, ends sessions |
+| Identity provider | Supabase Auth: authenticates credentials, issues and refreshes JWTs, ends sessions |
 | Web client | Maintains session cookie and attaches bearer tokens to API calls |
 | API | Validates JWTs and enforces authorisation |
 
@@ -46,7 +46,7 @@ Define how users authenticate, how sessions are established and refreshed, how t
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-AUTH-01 | An unauthenticated visitor attempting to reach a protected page must be redirected to sign-in. | Must |
-| FR-AUTH-02 | Sign-in must use OIDC Authorization Code flow with PKCE; implicit flow must not be used. | Must |
+| FR-AUTH-02 | Sign-in must use Supabase Auth with PKCE for OAuth redirects; implicit flow must not be used. | Must |
 | FR-AUTH-03 | After successful authentication, the web client must establish a session and redirect the user to the dashboard. | Must |
 | FR-AUTH-04 | The API must validate the access token's signature, issuer, audience, and expiry on every protected request. | Must |
 | FR-AUTH-05 | The API must map the token subject to an internal user, creating the user on first successful request. | Must |
@@ -55,9 +55,9 @@ Define how users authenticate, how sessions are established and refreshed, how t
 | FR-AUTH-08 | Sign-out must destroy the application session and terminate the identity-provider session. | Must |
 | FR-AUTH-09 | The system must reject requests with missing, malformed, expired, or incorrectly scoped tokens. | Must |
 | FR-AUTH-10 | The system should support multiple concurrent sessions/devices for the same user. | Should |
-| FR-AUTH-11 | The system should display a clear, non-revealing error when the identity provider is unavailable. | Should |
-| FR-AUTH-12 | The post-MVP system should support multi-factor authentication (TOTP/WebAuthn) through the identity provider. | Won't (MVP) |
-| FR-AUTH-13 | The post-MVP system should support additional OAuth2 identity providers (Google, GitHub). | Won't (MVP) |
+| FR-AUTH-11 | The system should display a clear, non-revealing error when Supabase Auth is unavailable. | Should |
+| FR-AUTH-12 | The post-MVP system should support multi-factor authentication (TOTP/WebAuthn) through Supabase Auth. | Won't (MVP) |
+| FR-AUTH-13 | The post-MVP system should support additional OAuth2 identity providers (Google, GitHub) through Supabase Auth. | Won't (MVP) |
 
 ## 5. Business rules
 
@@ -96,17 +96,17 @@ Define how users authenticate, how sessions are established and refreshed, how t
 
 ## 8. Security and non-functional considerations
 
-- OIDC discovery metadata should be used rather than hard-coded endpoints where possible.
+- Use the configured Supabase project URL, JWKS endpoint and publishable key rather than hard-coded endpoints.
 - Clock skew allowance for token validation must be small and documented.
 - Authentication failures must be logged with correlation identifiers but without token contents.
-- Session lifetime must align with the identity provider's policy; the product must not extend it silently.
-- The identity provider must be reachable over TLS in production.
+- Session lifetime must align with the Supabase Auth JWT expiry and refresh-token policy; the product must not extend it silently.
+- Supabase Auth endpoints must be reachable over TLS in production.
 
 ## 9. Assumptions, dependencies, constraints
 
-- A Keycloak realm and OIDC client are provisioned per environment.
+- A Supabase project with Auth enabled, asymmetric JWT signing keys, configured redirect URLs and the Custom Access Token Hook is provisioned per environment.
 - The web client and API are served over HTTPS in production.
-- The identity provider is responsible for account lockout, password policy, and MFA.
+- Supabase Auth is responsible for account lockout, password policy, email verification, MFA and session revocation.
 - The API validates tokens on every request; no server-side session store is required for MVP.
 
 ## 10. Open questions

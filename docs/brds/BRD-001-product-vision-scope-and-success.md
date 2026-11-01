@@ -58,7 +58,7 @@ The **MVP is optimized for the retail investor and the active trader**. Family-o
 
 | Capability | Summary | BRD |
 |------------|---------|-----|
-| Identity | Keycloak-backed single sign-on, JWT-protected APIs, per-user data isolation | BRD-002, BRD-003 |
+| Identity | Supabase Auth single sign-on (email/password, magic link, OAuth, MFA), JWT-protected APIs, per-user data isolation | BRD-002, BRD-003 |
 | Account connections | OKX exchange accounts (read-only API keys) and wallet accounts (public addresses) | BRD-004 |
 | Wallet networks | Configured EVM chains and Solana | BRD-004, BRD-010 |
 | Asset catalogue | Asset identity, contract mappings, decimals, prices | BRD-005 |

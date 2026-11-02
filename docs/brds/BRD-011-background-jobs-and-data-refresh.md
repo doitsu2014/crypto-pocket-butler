@@ -3,10 +3,10 @@
 | Field | Value |
 |-------|-------|
 | Document ID | BRD-011 |
-| Version | 1.0 |
+| Version | 1.1 |
 | Status | Draft — requires operations sign-off |
 | Owner | Operations / Product |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-02 |
 | Related documents | BRD-004, BRD-005, BRD-007, BRD-010, BRD-012 |
 
 ## 1. Purpose
@@ -34,7 +34,7 @@ Define the scheduled processing that keeps the asset catalogue, prices, and port
 
 | Job | Purpose | Default schedule (UTC) | Outputs |
 |-----|---------|------------------------|---------|
-| Asset catalogue refresh | Fetch the top asset list and metadata; update assets and contract mappings | Daily at 00:00 | Asset records, contract mappings |
+| Asset catalogue refresh | Update assets and contract mappings; refresh instrument/pair metadata from the exchange | Daily at 00:00 | Asset records, contract mappings |
 | Price collection | Fetch current prices for tracked assets | Every 15 minutes | Price observations |
 | EOD portfolio snapshots | Value every portfolio and record an end-of-day snapshot | Daily at 23:00 | Snapshot per active portfolio |
 
@@ -91,7 +91,7 @@ Define the scheduled processing that keeps the asset catalogue, prices, and port
 |----|---------------------|
 | AC-JOB-01 | Given the daily schedule, when the catalogue job runs, then asset and contract data are updated and a run record exists. |
 | AC-JOB-02 | Given price collection, when one asset fails, then the remaining assets are still updated and the failure is recorded. |
-| AC-JOB-03 | Given two overlapping triggers for the same job, when the second starts, then it is rejected or queued, and only one run executes. |
+| AC-JOB-03 | Given two overlapping triggers for the same job, when the second starts, then it is rejected or deferred, and only one run executes. |
 | AC-JOB-04 | Given an EOD snapshot already exists for today, when the job re-runs, then the existing snapshot is updated and no duplicate is created. |
 | AC-JOB-05 | Given a non-admin user, when a manual trigger is attempted, then access is denied. |
 | AC-JOB-06 | Given a job failure, when operations inspect the system, then the failure and affected scope are visible and an alert is produced. |

@@ -3,10 +3,10 @@
 | Field | Value |
 |-------|-------|
 | Document ID | BRD-001 |
-| Version | 1.0 |
+| Version | 1.1 |
 | Status | Draft — requires product sign-off |
 | Owner | Product |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-02 |
 | Related documents | BRD-002 … BRD-012 |
 
 ## 1. Purpose
@@ -48,7 +48,7 @@ The **MVP is optimized for the retail investor and the active trader**. Family-o
 | G-02 | Provide a trustworthy USD valuation | Valuation reconciles with manual spot-checking to >99% |
 | G-03 | Make allocation drift visible | Every portfolio with a target allocation displays drift per asset |
 | G-04 | Turn drift into an actionable, safe recommendation | A recommendation lists proposed trades, rationale, risk, and guardrail status |
-| G-05 | Remove manual reporting effort | A daily/weekly brief is delivered to Notion without manual assembly |
+| G-05 | Remove manual reporting effort | A daily/weekly brief is available in-app without manual assembly |
 | G-06 | Protect user credentials | Exchange credentials are encrypted at rest, never returned by the API, and read-only |
 | G-07 | Preserve history | Point-in-time snapshots are immutable and available for trend review |
 
@@ -66,7 +66,7 @@ The **MVP is optimized for the retail investor and the active trader**. Family-o
 | Valuation and allocation | Aggregation, USD valuation, weights, drift versus target | BRD-007 |
 | Snapshots | Manual and end-of-day (EOD) snapshots, immutable history, trend view | BRD-007 |
 | Recommendations | Drift-based rebalancing suggestions requiring human accept/reject | BRD-008 |
-| Reporting | Daily/weekly brief written to Notion by the OpenClaw agent | BRD-009 |
+| Reporting | Daily/weekly brief composed in-app and readable in the SPA | BRD-009 |
 | Administration | Chain and token registry management | BRD-010 |
 | Scheduled processing | Coin catalogue refresh, price collection, EOD snapshots | BRD-011 |
 
@@ -102,7 +102,7 @@ The **MVP is optimized for the retail investor and the active trader**. Family-o
 | FR-GEN-03 | The product must compare actual allocation against a user-defined target allocation. | Must |
 | FR-GEN-04 | The product must generate rebalancing recommendations that the user can accept or reject; it must never execute trades automatically. | Must |
 | FR-GEN-05 | The product must record immutable point-in-time snapshots and display their history. | Must |
-| FR-GEN-06 | The product must publish a scheduled portfolio brief to Notion through the OpenClaw agent. | Should |
+| FR-GEN-06 | The product must generate a scheduled portfolio brief, readable in-app. | Should |
 | FR-GEN-07 | The product must support more than one portfolio per user. | Must |
 | FR-GEN-08 | The product must expose a documented API for the web client and future integrations. | Should |
 | FR-GEN-09 | The product should notify users when allocation drifts beyond configured guardrails. | Should |
@@ -129,13 +129,13 @@ The **MVP is optimized for the retail investor and the active trader**. Family-o
 | Supported chains | 10+ | EVM chains plus Solana |
 | Time to first value | <2 minutes | From account creation to first portfolio view |
 | Recommendation acceptance rate | Baseline in first quarter, then improve | Accepted ÷ presented recommendations |
-| Reporting reliability | 100% of scheduled briefs delivered or explicitly failed | Job run log and Notion delivery record |
+| Reporting reliability | 100% of scheduled briefs generated or explicitly failed | Job run log and brief generation record |
 
 ## 10. Key assumptions and constraints
 
 - **Read-only by design.** Exchange integrations use read-only API keys; the product never asks for withdrawal or trading permissions in the MVP.
 - **Human-in-the-loop.** Recommendations are advisory; execution is manual and outside the product.
-- **Data provider dependency.** Prices and asset metadata depend on third-party providers (CoinGecko, CoinPaprika); outages must degrade gracefully using last-known values.
+- **Exchange data dependency.** Prices and market metadata depend on the OKX exchange API; outages must degrade gracefully using last-known stored values, and assets without a supported exchange pair are unpriced.
 - **Public wallet addresses only.** Wallet connections require no private keys.
 - **Base currency is USD.** Multi-currency reporting is post-MVP.
 - **Single-tenant personal deployment initially.** The architecture must not prevent future multi-tenant scaling.
@@ -144,7 +144,7 @@ The **MVP is optimized for the retail investor and the active trader**. Family-o
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Price-provider outage or rate limiting | High | Multiple providers, caching, last-known-price fallback, tiered refresh rates |
+| Market-data outage or rate limiting | High | Shared request budget, caching, last-known-price fallback, unpriced labelling, tiered refresh rates |
 | Stale or incorrect balance data | High | Show last-synced time, surface sync failures, allow manual re-sync |
 | Credential compromise | Critical | Encryption at rest, never return secrets, read-only permissions, least privilege |
 | Regulatory change affecting crypto reporting | High | Keep compliance rules configurable; obtain legal review before launch of tax features |
@@ -156,6 +156,6 @@ The **MVP is optimized for the retail investor and the active trader**. Family-o
 | ID | Question | Owner |
 |----|----------|-------|
 | OQ-001 | Which pricing tiers, if any, are committed for launch versus tested later? | Product |
-| OQ-002 | Is the OpenClaw/Notion brief part of the MVP launch or a fast-follow? | Product |
+| OQ-002 | Is in-app-only reporting sufficient for launch, or is an external channel (email/PDF) needed? | Product |
 | OQ-003 | What is the target regulatory posture by jurisdiction? | Compliance |
 | OQ-004 | Which wallet-connection methods are required at launch (address import only vs. wallet-extension connect)? | Product |

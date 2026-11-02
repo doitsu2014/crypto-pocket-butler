@@ -3,10 +3,10 @@
 | Field | Value |
 |-------|-------|
 | Document ID | BRD-005 |
-| Version | 1.0 |
+| Version | 1.1 |
 | Status | Draft — requires product and data sign-off |
 | Owner | Product / Data |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-02 |
 | Related documents | BRD-004, BRD-007, BRD-010, BRD-011 |
 
 ## 1. Purpose
@@ -19,7 +19,7 @@ Define the canonical asset catalogue, the mapping of on-chain tokens to assets, 
 
 - A canonical asset record per tradeable asset (symbol, name, rank, type).
 - Contract/mint mappings per chain, including token decimals.
-- Price collection from external providers, with fallback.
+- Price collection from the OKX exchange market-data API, with last-known-price fallback.
 - Asset identity resolution: converting a chain-level token into a portfolio-level asset.
 - Price freshness, caching, and missing-price handling.
 
@@ -38,7 +38,7 @@ Define the canonical asset catalogue, the mapping of on-chain tokens to assets, 
 | Portfolio Owner | Selects assets when defining target allocations; sees prices and values |
 | Admin | Maintains the chain/token registry (BRD-010) |
 | System jobs | Refresh the asset catalogue and prices |
-| Price providers | Supply market prices and asset metadata |
+| Exchange market data (OKX) | Supplies ticker prices, candle histories and instrument/pair metadata |
 
 ## 4. Canonical asset model
 
@@ -46,11 +46,11 @@ Define the canonical asset catalogue, the mapping of on-chain tokens to assets, 
 |--------------|-------------|------|
 | Symbol | Human-readable ticker (e.g., BTC, ETH, USDC) | Unique across the catalogue |
 | Name | Display name | Required |
-| Rank | Market-cap rank used for prioritisation and refresh | Updated from provider data |
+| Rank | Refresh prioritisation | Derived from exchange ticker 24h volume |
 | Asset type | Classification (crypto, stablecoin, token, etc.) | Required for filtering |
 | Contracts | One or more chain-specific contract/mint addresses | One address per asset per chain |
 | Decimals | Token precision per contract | Required for balance normalisation |
-| Price | Latest USD price and market context | Sourced from approved providers |
+| Price | Latest USD price and market context | Sourced from exchange ticker data |
 
 ### 4.1 Asset identity resolution
 
@@ -65,8 +65,8 @@ Define the canonical asset catalogue, the mapping of on-chain tokens to assets, 
 
 ### 5.1 Sources
 
-- **Primary/consumer price API:** CoinGecko or CoinPaprika (deployment configuration).
-- **Fallback:** the other approved provider, then the last known stored price.
+- **Primary:** the OKX exchange market-data API — tickers, candles and instrument/pair metadata.
+- **Fallback:** the last known stored price; assets without a supported exchange pair are unpriced.
 - Prices are stored with source, timestamp, and asset identity.
 
 ### 5.2 Price context
@@ -75,8 +75,6 @@ For each price record, retain where available:
 
 - USD spot price.
 - 24-hour volume.
-- Market capitalisation.
-- Market rank.
 - 24-hour change percentage.
 - Source and retrieval timestamp.
 
@@ -96,8 +94,8 @@ For each price record, retain where available:
 | FR-AST-04 | The system must store token decimals and use them to normalise raw balances. | Must |
 | FR-AST-05 | The system must resolve synced tokens to canonical assets using the registry and contract mappings. | Must |
 | FR-AST-06 | The system must record unmapped assets explicitly and exclude them from valuation. | Must |
-| FR-AST-07 | The system must collect prices from at least one approved provider on a schedule. | Must |
-| FR-AST-08 | The system must fall back to a secondary provider or the last known price when the primary provider fails. | Must |
+| FR-AST-07 | The system must collect prices from the exchange market-data API on a schedule. | Must |
+| FR-AST-08 | The system must fall back to the last known stored price when collection fails. | Must |
 | FR-AST-09 | The system must store price source and timestamp with every price. | Must |
 | FR-AST-10 | The system must expose the price timestamp wherever a valuation is shown. | Should |
 | FR-AST-11 | An Admin must be able to refresh the asset catalogue and token registry on demand. | Should |
@@ -127,7 +125,7 @@ For each price record, retain where available:
 | DR-AST-02 | Name, type, rank | Descriptive and prioritisation data | Internal |
 | DR-AST-03 | Chain and contract address | On-chain mapping | Internal |
 | DR-AST-04 | Decimals | Precision for normalisation | Internal |
-| DR-AST-05 | Price, volume, market cap, change | Market observations | Internal |
+| DR-AST-05 | Price, volume, change | Market observations | Internal |
 | DR-AST-06 | Price source and timestamp | Auditability and freshness | Internal |
 | DR-AST-07 | Unmapped asset record | Tokens that could not be resolved | Internal |
 
@@ -138,22 +136,22 @@ For each price record, retain where available:
 | AC-AST-01 | Given a new asset, when added to the catalogue, then its symbol is unique and its record is available for holdings resolution. |
 | AC-AST-02 | Given a token contract on an enabled chain, when a wallet is synced, then the balance resolves to the canonical asset and the correct decimals are applied. |
 | AC-AST-03 | Given an unregistered token, when a wallet is synced, then the holding is marked unmapped and excluded from the valued total. |
-| AC-AST-04 | Given a price-provider outage, when valuation runs, then the last known price is used and its timestamp is displayed. |
+| AC-AST-04 | Given a market-data outage, when valuation runs, then the last known price is used and its timestamp is displayed. |
 | AC-AST-05 | Given a valuation, when a user inspects it, then the price source and observation time are available. |
 | AC-AST-06 | Given duplicate contract registration, when an Admin attempts to save it, then the change is rejected with a clear error. |
 
 ## 10. Assumptions, dependencies, constraints
 
-- Approved price providers expose rate-limited public APIs; paid tiers may be required for volume.
+- The exchange market-data API is rate-limited; a shared request budget applies to collection jobs.
 - Asset metadata is refreshed daily; prices are refreshed more frequently (BRD-011).
 - The system is USD-denominated in the MVP.
-- Provider data may contain inconsistencies; the product must prefer deterministic, recorded mappings over heuristics.
+- Exchange data may contain inconsistencies; the product must prefer deterministic, recorded mappings over heuristics.
 
 ## 11. Open questions
 
 | ID | Question | Owner |
 |----|----------|-------|
-| OQ-001 | Which provider is primary at launch, and what is the contracted rate limit? | Data |
+| OQ-001 | Which tracked assets lack a supported exchange pair at launch, and how are they surfaced? | Data |
 | OQ-002 | How long should price history be retained? | Product |
 | OQ-003 | What is the policy for delisted or renamed assets? | Data |
 | OQ-004 | Should users be able to manually price an unmapped asset? | Product |

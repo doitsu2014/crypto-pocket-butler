@@ -10,6 +10,7 @@ Shared terminology for the Crypto Pocket Butler business requirements. Where a t
 | **Asset** | A canonical, tradable unit in the product's catalogue (for example, BTC, ETH, USDC), identified by a unique symbol and resolved from chain-level tokens. | BRD-005 |
 | **Asset contract** | The chain-specific contract or mint address that represents an asset on a particular chain. | BRD-005 |
 | **Base currency** | The currency in which portfolio value is reported. The MVP uses USD. | BRD-001 |
+| **Brief** | A scheduled daily or weekly portfolio report, composed deterministically in-app and readable in the SPA. | BRD-009 |
 | **Chain** | A blockchain network. The product supports EVM chains and Solana. | BRD-010 |
 | **Decimals** | The precision of a token on-chain; used to convert raw integer balances into human-readable quantities. | BRD-005 |
 | **Default portfolio** | The portfolio a user designates as primary. Each user with at least one portfolio has exactly one default. | BRD-006 |
@@ -20,7 +21,6 @@ Shared terminology for the Crypto Pocket Butler business requirements. Where a t
 | **Guardrails** | User-configured constraints that recommendations must respect, such as maximum deviation, minimum trade size, and allowed assets. | BRD-006 |
 | **Holding** | A quantity of an asset held in an account. | BRD-004 |
 | **Manual snapshot** | A snapshot created on user request at a point in time. | BRD-007 |
-| **OpenClaw agent** | The automated agent that composes portfolio briefs and publishes them to Notion. | BRD-009 |
 | **Portfolio** | A user's strategic grouping of accounts with an optional target allocation and guardrails; the unit of valuation, drift, snapshots, and recommendations. | BRD-006 |
 | **Price observation** | A recorded market price for an asset at a timestamp, including its source. | BRD-005 |
 | **Recommendation** | A human-reviewed rebalancing proposal containing rationale, risk level, and suggested trades. Never executed automatically in the MVP. | BRD-008 |

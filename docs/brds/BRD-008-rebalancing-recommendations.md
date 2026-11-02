@@ -3,10 +3,10 @@
 | Field | Value |
 |-------|-------|
 | Document ID | BRD-008 |
-| Version | 1.0 |
+| Version | 1.1 |
 | Status | Draft — requires product, risk, and compliance sign-off |
 | Owner | Product / Risk |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-02 |
 | Related documents | BRD-006, BRD-007, BRD-009, BRD-012 |
 
 ## 1. Purpose
@@ -38,7 +38,6 @@ Define how the product turns allocation drift into understandable, safe, and aud
 |-------|-------------|
 | Portfolio Owner | Requests, reviews, accepts, or rejects recommendations |
 | Admin | Same as owner for own portfolios; may trigger batch generation (future) |
-| OpenClaw agent | May generate narrative summaries of recommendations (BRD-009) |
 | System | May generate recommendations on a schedule (future) |
 
 ## 4. Recommendation model

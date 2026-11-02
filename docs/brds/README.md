@@ -16,7 +16,7 @@ The requirements were consolidated from the project's former product brief, use-
 | [BRD-006](./BRD-006-portfolio-management.md) | Portfolio Management | Portfolios, targets, guardrails | Product |
 | [BRD-007](./BRD-007-valuation-allocation-and-snapshots.md) | Valuation, Allocation & Snapshots | Valuation, drift, history | Product, finance |
 | [BRD-008](./BRD-008-rebalancing-recommendations.md) | Rebalancing Recommendations | Drift response and approvals | Product, compliance |
-| [BRD-009](./BRD-009-reporting-and-agent-integration.md) | Reporting & Agent Integration | OpenClaw briefs, Notion output | Product, operations |
+| [BRD-009](./BRD-009-reporting-and-agent-integration.md) | Reporting | In-app daily/weekly briefs | Product, operations |
 | [BRD-010](./BRD-010-admin-configuration.md) | Admin Configuration | Chains, tokens, registries | Product, operations |
 | [BRD-011](./BRD-011-background-jobs-and-data-refresh.md) | Background Jobs & Data Refresh | Scheduled processing | Product, operations |
 | [BRD-012](./BRD-012-security-compliance-and-non-functional-requirements.md) | Security, Compliance & NFRs | Security, compliance, quality | Security, compliance, leadership |
@@ -55,7 +55,7 @@ The requirements were consolidated from the project's former product brief, use-
 
 ### Status
 
-All documents are **Draft v1.0**. They require validation by product ownership and, where noted, legal/compliance review before being treated as signed-off requirements.
+All documents are **Draft**. Documents revised on 2026-11-02 (BRD-001, 005, 008, 009, 010, 011, 012) are v1.1; the remainder are v1.0. They require validation by product ownership and, where noted, legal/compliance review before being treated as signed-off requirements.
 
 ## MVP boundary
 
@@ -66,7 +66,7 @@ The MVP consists of read-only aggregation and guidance:
 - Show a consolidated portfolio with valuation, allocation, and drift versus target.
 - Capture point-in-time snapshots and show history.
 - Generate **human-approved** rebalancing recommendations.
-- Produce a daily/weekly portfolio brief for **Notion** via the **OpenClaw** agent.
+- Produce a daily/weekly portfolio brief, readable in-app.
 
 Anything involving trade execution, custody, tax filing, or regulated advice is explicitly out of scope for the MVP (see BRD-001 and BRD-012).
 

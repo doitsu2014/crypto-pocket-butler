@@ -3,10 +3,10 @@
 | Field | Value |
 |-------|-------|
 | Document ID | BRD-010 |
-| Version | 1.0 |
+| Version | 1.1 |
 | Status | Draft — requires operations sign-off |
 | Owner | Operations / Product |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-02 |
 | Related documents | BRD-002, BRD-004, BRD-005, BRD-011 |
 
 ## 1. Purpose
@@ -20,7 +20,7 @@ Define the administrative capabilities that keep the platform's chain and token 
 - Managing EVM chain configurations.
 - Managing the EVM token registry.
 - Managing the Solana token registry.
-- Looking up token contracts by symbol through an approved data provider.
+- Manual entry and reviewed import of token contracts.
 - Synchronising contract data from the asset catalogue.
 - Access control and audit for administrative changes.
 
@@ -29,14 +29,14 @@ Define the administrative capabilities that keep the platform's chain and token 
 - User management and billing (post-MVP).
 - System-wide feature flags or pricing configuration (future).
 - Direct editing of user portfolios or recommendations.
-- Managing price-provider subscriptions and credentials (operations runbook, not product UI).
+- Managing exchange and RPC credentials (operations runbook, not product UI).
 - Adding new chain *types* (the product supports EVM and Solana; adding another family is a product change).
 
 ## 3. Actors
 
 | Actor | Interaction |
 |-------|-------------|
-| Admin | Creates and updates chains and tokens; runs lookups and syncs |
+| Admin | Creates and updates chains and tokens; runs imports and syncs |
 | System jobs | Use the registry during account sync and asset resolution |
 | Non-admin user | Cannot access administrative capabilities |
 
@@ -81,9 +81,9 @@ Rules:
 | Decimals | Yes | Precision used to normalise balances |
 | Active status | Yes | Whether the token is queried during sync |
 
-### 5.3 Lookup and sync
+### 5.3 Entry and sync
 
-- **Lookup by symbol:** an Admin enters a symbol; the system queries an approved data provider for contract addresses across configured chains; the Admin reviews and imports selected results.
+- **Manual entry:** an Admin enters a contract/mint address from a trusted reference (the chain's canonical token list or a block explorer); entries are reviewed before activation.
 - **Sync from contracts:** the system reads the asset catalogue and adds or updates known contract mappings in the token registry.
 - Imports must be reviewable before becoming active and must not silently overwrite an existing mapping.
 
@@ -97,8 +97,8 @@ Rules:
 | FR-ADM-04 | An Admin must be able to list, create, edit, and deactivate EVM tokens per chain. | Must |
 | FR-ADM-05 | An Admin must be able to list, create, edit, and deactivate Solana tokens. | Must |
 | FR-ADM-06 | Token records must reject duplicate contract/mint addresses on the same chain. | Must |
-| FR-ADM-07 | An Admin must be able to look up token contracts by symbol through an approved provider. | Should |
-| FR-ADM-08 | An Admin must be able to import selected lookup results into the registry. | Should |
+| FR-ADM-07 | An Admin must be able to enter token contracts manually, with review before activation. | Should |
+| FR-ADM-08 | An Admin must be able to import token lists from a chain's canonical token list. | Should |
 | FR-ADM-09 | An Admin must be able to trigger a synchronisation of contract mappings from the asset catalogue. | Should |
 | FR-ADM-10 | Registry changes must take effect on subsequent syncs without a deployment. | Must |
 | FR-ADM-11 | Every administrative create/update/deactivate must be recorded in an audit log with actor and timestamp. | Should |

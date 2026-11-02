@@ -3,10 +3,10 @@
 | Field | Value |
 |-------|-------|
 | Document ID | BRD-012 |
-| Version | 1.0 |
+| Version | 1.1 |
 | Status | Draft — requires security and compliance sign-off |
 | Owner | Security / Compliance |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-02 |
 | Related documents | BRD-002, BRD-003, BRD-004, BRD-008, BRD-009, BRD-011 |
 
 ## 1. Purpose
@@ -58,7 +58,7 @@ Define the security, privacy, compliance, and quality obligations that apply acr
 | NFR-SEC-07 | Administrative capabilities must require the explicit admin role projected by Supabase Auth into the `app_metadata.role` claim. | Must |
 | NFR-SEC-08 | Authentication tokens must be validated against Supabase Auth JWKS for signature, issuer, audience, and expiry. | Must |
 | NFR-SEC-09 | Authentication sessions must be managed by Supabase Auth; browser tokens must be held in memory and never persisted in localStorage. | Must |
-| NFR-SEC-10 | Public endpoints must be rate-limited per user/IP at the API Gateway using Supabase Postgres atomic counters; authentication and manual job triggers must be limited more strictly. | Must |
+| NFR-SEC-10 | Public endpoints must be rate-limited per user/IP at the API Gateway; authentication and manual job triggers must be limited more strictly. | Must |
 | NFR-SEC-11 | Security-sensitive events must be logged without recording secrets. | Must |
 | NFR-SEC-12 | Dependencies and container images must be scanned for known vulnerabilities before release. | Should |
 | NFR-SEC-13 | Secrets must be supplied through Supabase Vault or Supabase project secrets, never committed to source control. | Must |
@@ -76,12 +76,11 @@ data minimisation, log redaction, retention and restore drills.
 | Supabase service | Security control | Shared-responsibility boundary |
 |------------------|------------------|--------------------------------|
 | **Supabase Auth** | Passwords, MFA factors, sessions, JWT signing and refresh are managed by GoTrue. The Custom Access Token Hook projects `app_metadata.role = "admin"`. Services validate JWTs against the Supabase Auth JWKS and re-check the admin claim. Auth Hooks/webhooks for sign-up, sign-in, sign-out and user-update are verified with the standard-webhooks signature and idempotency. | Supabase secures the Auth engine and signing keys. The product owns role projection, admin gating, hook verification, user-lifecycle policy, disabled-user denial and session revocation through the Admin API. |
-| **Supabase Postgres** | Managed Postgres with one schema and one Postgres role per service (identity, account, registry, market, portfolio, reporting, job, audit, plus the gateway cache schema) and no cross-schema grants. **Row Level Security is not used by services**, because a service connects as its own role rather than as an end user; ownership and admin rules are enforced in application use cases against the signed internal principal assertion. | Supabase secures the engine, storage, encryption and backup mechanics. The product owns schema design, migrations, grants, connection budgets, advisory-lock usage, query safety, RLS decisions and per-service data minimisation. |
-| **Supabase Queues (pgmq)** | Durable Postgres-backed queues with visibility timeouts, archive and dead-letter handling and at-least-once delivery. Producers use a transactional outbox; consumers use an inbox dedup table and are idempotent. Events never carry credentials, tokens or signed assertions. | Supabase operates the queue engine. The product owns queue and subject naming, visibility-timeout tuning, archive/dead-letter monitoring, consumer idempotency and throughput validation. |
+| **Supabase Postgres** | Managed Postgres with one schema and one Postgres role per service (identity, account, registry, market, portfolio, reporting, job, audit) and no cross-schema grants. **Row Level Security is not used by services**, because a service connects as its own role rather than as an end user; ownership and admin rules are enforced in application use cases against the validated Supabase JWT principal forwarded unchanged by the gateway. | Supabase secures the engine, storage, encryption and backup mechanics. The product owns schema design, migrations, grants, connection budgets, advisory-lock usage, query safety, RLS decisions and per-service data minimisation. |
 | **Supabase Storage** | Private buckets for audit export and retention archives. Access is only through signed, access-controlled URLs; no public bucket is permitted. | Supabase operates storage and URL signing. The product owns bucket privacy, signed-URL lifetime, archive retention, access review and encryption expectations. |
-| **Supabase Vault** | pgsodium-backed secrets store with versioned encryption, per-credential data encryption keys and per-subject crypto-shredding keys. Secret values are resolved at runtime through the owning service's Postgres role and are never returned, logged, published in events or placed in briefs. | Supabase provides the encryption primitives and the secrets store. The product owns secret classification, least-privilege access, rotation runbooks, break-glass procedure and ensuring no plaintext leakage. |
-| **Supabase Cron (pg_cron)** | Scheduled SQL enqueues `job.tick` into Supabase Queues, runs retention triggers and hosts the independent dead-man watchdog that calls the Operational Alerting Channel through pg_net. | Supabase runs the scheduler. The product owns the real job semantics in Job Orchestration (due-ness, logical run keys, single-flight, leases, fencing, retries and outcomes) and the alert thresholds. |
-| **Supabase Logs & Metrics** | Platform logs, metrics, log drains and alerts with correlation and trace context. Credentials, tokens and signed assertions must never be written to logs. | Supabase collects telemetry. The product owns structured logging, correlation, health and readiness endpoints, metric selection, dashboards, alert routing and log-retention requirements. |
+| **Supabase Vault** | pgsodium-backed secrets store with versioned encryption, per-credential data encryption keys and per-subject crypto-shredding keys. Secret values are resolved at runtime through the owning service's Postgres role and are never returned, logged or placed in briefs. | Supabase provides the encryption primitives and the secrets store. The product owns secret classification, least-privilege access, rotation runbooks, break-glass procedure and ensuring no plaintext leakage. |
+| **Supabase Cron (pg_cron)** | Scheduled SQL ticks the Job Orchestration Service through pg_net, runs retention triggers and hosts the dead-man check that calls the Operational Alerting Channel when scheduler heartbeats stop. | Supabase runs the scheduler. The product owns the real job semantics in Job Orchestration (due-ness, single-flight advisory locks, retries and outcomes) and the alert thresholds. |
+| **Supabase Logs & Metrics** | Platform logs, metrics, log drains and alerts with correlation and trace context. Credentials and tokens must never be written to logs. | Supabase collects telemetry. The product owns structured logging, correlation, health and readiness endpoints, metric selection, dashboards, alert routing and log-retention requirements. |
 
 **Shared-responsibility summary.** Supabase secures the managed runtime and the primitives;
 the product secures how it uses them. Configuration of Supabase plan limits, PITR, Auth rate
@@ -98,7 +97,7 @@ though Supabase operates the backup mechanism.
 | NFR-PRV-03 | Provide a way to export a user's data on request. | Should |
 | NFR-PRV-04 | Provide a way to delete or anonymise a user's data on request, subject to legal retention. | Should |
 | NFR-PRV-05 | Do not sell or share personal data with third parties beyond the processors required to run the service. | Must |
-| NFR-PRV-06 | Disclose which external providers receive data (Supabase Auth, Supabase Postgres/Storage/Logs, exchanges, RPC providers, price providers, Notion). | Should |
+| NFR-PRV-06 | Disclose which external providers receive data (Supabase Auth, Supabase Postgres/Storage/Logs, exchanges, RPC providers). | Should |
 | NFR-PRV-07 | Apply data minimisation to logs and analytics. | Must |
 
 ## 6. Audit logging
@@ -112,7 +111,7 @@ The following events are security- or financially material and must be recorded:
 - Recommendation generation, acceptance, and rejection.
 - Administrative chain/token changes.
 - Manual job triggers.
-- Reporting delivery outcomes.
+- Reporting generation outcomes.
 
 Sign-in, sign-in-failure, sign-out and user-update events are sourced from verified Supabase
 Auth hooks; the product records the verified event, not raw Auth payloads.
@@ -178,7 +177,7 @@ Each event should record: actor (or system), action, target resource, timestamp,
 |----|-------------|--------|
 | NFR-OBS-01 | Structured logs with correlation IDs for requests and jobs | Must |
 | NFR-OBS-02 | Health/readiness endpoints for all services | Must |
-| NFR-OBS-03 | Metrics for request latency, error rate, job outcomes, and provider failures | Must |
+| NFR-OBS-03 | Metrics for request latency, error rate, job outcomes, and external data-source failures | Must |
 | NFR-OBS-04 | Alerts for sustained error rates, job failures, and stale prices | Must |
 | NFR-OBS-05 | Documentation sufficient for a new engineer or operator to run the system | Must |
 | NFR-OBS-06 | Automated tests covering business rules in this BRD set | Should |
@@ -197,8 +196,8 @@ Each event should record: actor (or system), action, target resource, timestamp,
 |------|--------|------------|
 | Credential compromise | Critical | Supabase Vault encryption, read-only permissions, least privilege, secret rotation, no logging |
 | Data leakage between users | Critical | Ownership checks, row-level authorisation tests, audit |
-| Supabase plan limits or project outage | High | Monitor plan quotas, Auth rate limits and Postgres/queue capacity; encrypted backups and PITR; documented degradation and restore procedure |
-| Provider outage/stale prices | High | Multiple providers, last-known-price fallback, freshness labels, alerts |
+| Supabase plan limits or project outage | High | Monitor plan quotas, Auth rate limits and Postgres capacity; encrypted backups and PITR; documented degradation and restore procedure |
+| Market-data outage/stale prices | High | Last-known-price fallback, freshness labels, unpriced labelling, alerts |
 | Silent job failure | High | Heartbeat monitoring, alerts, run records |
 | Regulatory breach | High | Legal review before launch of tax/advice features; configurable restrictions |
 | Incorrect decimals/normalisation | High | Registry validation, reconciliation checks, anomaly alerts |
@@ -211,12 +210,12 @@ Each event should record: actor (or system), action, target resource, timestamp,
 - [ ] Supabase Vault and Supabase project secrets verified; no secrets in source control or logs.
 - [ ] Supabase encrypted backups and PITR configured, and a restore drill exercised successfully.
 - [ ] Schema/role isolation verified: one schema and role per service, no cross-schema grants, and RLS not relied on by services.
-- [ ] Supabase plan limits (MAU, database, storage, pgmq throughput, Auth rate limits, log retention) reviewed against launch capacity.
+- [ ] Supabase plan limits (MAU, database, storage, Auth rate limits, log retention) reviewed against launch capacity.
 - [ ] Rate limiting and abuse controls validated.
 - [ ] Audit log coverage verified for all sensitive events.
 - [ ] Data-retention and deletion policy approved.
 - [ ] Privacy notice and terms reviewed.
-- [ ] Provider terms of service reviewed (price, exchange, RPC, Notion).
+- [ ] Provider terms of service reviewed (exchange, RPC).
 - [ ] Jurisdictional legal review completed for advisory/recommendation outputs.
 - [ ] Incident-response and breach-notification process defined.
 - [ ] Accessibility review completed for core flows.

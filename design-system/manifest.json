@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "od-design-system-project/v1",
+  "id": "gilded-ledger",
+  "name": "Gilded Ledger",
+  "category": "Fintech · Luxury",
+  "description": "A luxury dark design system for read-only crypto portfolio aggregation. Black-lacquer surfaces, ivory Didone display type, one champagne-gold accent, and tabular mono figures. Built for Crypto Pocket Butler.",
+  "source": {
+    "type": "project",
+    "origin": "Crypto Pocket Butler product requirements (BRD-001 to BRD-012), 2026-11-02"
+  },
+  "files": {
+    "design": "DESIGN.md",
+    "tokens": "tokens.css",
+    "guide": "index.html",
+    "splash": "splash.html",
+    "logo": "logo.svg",
+    "mark": "logo-mark.svg"
+  }
+}

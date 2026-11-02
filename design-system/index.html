@@ -1,0 +1,1239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="logo-mark.svg">
+<title>Gilded Ledger — Crypto Pocket Butler Design System</title>
+<meta name="description" content="Design system for Crypto Pocket Butler: tokens, typography, components, and data conventions for a read-only crypto portfolio product.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Jost:wght@400;500;600&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* ── Base ─────────────────────────────────────────────────────────── */
+  :root { color-scheme: dark; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 88px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+    line-height: var(--leading-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3, h4 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-display);
+  }
+  p { margin: 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  code { font-family: var(--font-mono); font-size: 0.86em; }
+  :focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .skip {
+    position: absolute; left: var(--space-4); top: -80px; z-index: 100;
+    background: var(--surface); color: var(--fg); padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: var(--text-sm);
+    transition: top var(--motion-fast) var(--ease-standard);
+  }
+  .skip:focus { top: var(--space-4); }
+
+  /* ── Layout ───────────────────────────────────────────────────────── */
+  .site-header {
+    position: sticky; top: 0; z-index: 30;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .header-inner {
+    max-width: var(--container-max); margin: 0 auto;
+    padding: 0 var(--container-gutter-desktop);
+    height: var(--header-height);
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  }
+  .brand { display: flex; align-items: center; gap: var(--space-3); color: var(--fg); }
+  .brand:hover { text-decoration: none; }
+  .brand-mark {
+    display: block; width: 36px; height: 36px; flex: none;
+  }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+  .brand-name { font-family: var(--font-display); font-weight: 600; font-size: var(--text-base); }
+  .brand-sub {
+    font-size: var(--text-xs); color: var(--meta);
+    letter-spacing: var(--tracking-label); text-transform: uppercase;
+  }
+  .header-meta { display: flex; align-items: center; gap: var(--space-3); }
+  .header-note { font-size: var(--text-xs); color: var(--meta); }
+
+  .hero {
+    max-width: var(--container-max); margin: 0 auto;
+    padding: var(--space-16) var(--container-gutter-desktop) var(--space-12);
+  }
+  .hero h1 {
+    font-size: clamp(40px, 6vw, var(--text-4xl));
+    line-height: 1.02;
+  }
+  .lede {
+    margin-top: var(--space-4); max-width: 62ch;
+    font-size: var(--text-lg); line-height: 1.5; color: var(--fg-2);
+  }
+  .hero-facts {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-4); margin: var(--space-8) 0 0; padding: var(--space-5) 0 0;
+    border-top: 1px solid var(--border-soft);
+  }
+  .hero-facts dt {
+    font-size: var(--text-xs); font-weight: 600; letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--meta); margin-bottom: var(--space-1);
+  }
+  .hero-facts dd { margin: 0; font-size: var(--text-sm); color: var(--fg-2); }
+
+  .doc {
+    max-width: var(--container-max); margin: 0 auto;
+    padding: 0 var(--container-gutter-desktop) var(--space-20);
+    display: grid; grid-template-columns: 220px minmax(0, 1fr);
+    gap: var(--space-12); align-items: start;
+  }
+  .toc { position: sticky; top: calc(var(--header-height) + var(--space-6)); }
+  .toc nav { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-3); }
+  .toc a {
+    color: var(--muted); font-size: var(--text-sm);
+    padding: var(--space-2) 0 var(--space-2) var(--space-3);
+    border-left: 2px solid transparent;
+  }
+  .toc a:hover { color: var(--fg); border-left-color: var(--border); text-decoration: none; }
+
+  .content { min-width: 0; display: flex; flex-direction: column; gap: var(--space-20); }
+  .section {
+    padding-top: var(--space-16); border-top: 1px solid var(--border-soft);
+    scroll-margin-top: calc(var(--header-height) + var(--space-4));
+  }
+  .section:first-child { border-top: 0; padding-top: 0; }
+  .section h2 { font-size: clamp(28px, 3vw, var(--text-2xl)); }
+  .section-lede { margin-top: var(--space-3); max-width: 70ch; color: var(--muted); }
+  .subhead { margin: var(--space-8) 0 var(--space-4); font-size: var(--text-lg); }
+  .section-head + .subhead { margin-top: var(--space-6); }
+
+  .overline {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-xs); font-weight: 600;
+    letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--meta);
+  }
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); }
+  .note { margin-top: var(--space-3); font-size: var(--text-sm); color: var(--muted); max-width: 70ch; }
+
+  /* ── Foundations ──────────────────────────────────────────────────── */
+  .principle {
+    display: flex; flex-direction: column; gap: var(--space-2);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: var(--space-6);
+  }
+  .principle .num { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--accent); }
+  .principle h3 { font-size: var(--text-lg); }
+  .principle p { font-size: var(--text-sm); color: var(--muted); }
+
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--space-4); }
+  .swatch {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-md); overflow: hidden;
+  }
+  .swatch-chip {
+    height: 88px; display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 500;
+  }
+  .swatch-meta {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--border-soft);
+  }
+  .swatch-name { font-size: var(--text-sm); font-weight: 500; }
+  .swatch-meta code { font-size: var(--text-xs); color: var(--muted); }
+  .swatch-value { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); }
+
+  .c-bg { background: var(--bg); color: var(--fg); }
+  .c-surface { background: var(--surface); color: var(--fg); }
+  .c-warm { background: var(--surface-warm); color: var(--fg); }
+  .c-fg { background: var(--fg); color: var(--surface); }
+  .c-fg2 { background: var(--fg-2); color: var(--surface); }
+  .c-muted { background: var(--muted); color: var(--surface); }
+  .c-meta { background: var(--meta); color: var(--surface); }
+  .c-border { background: var(--border); color: var(--fg); }
+  .c-border-soft { background: var(--border-soft); color: var(--fg); }
+  .c-accent { background: var(--accent); color: var(--accent-on); }
+  .c-accent-hover { background: var(--accent-hover); color: var(--accent-on); }
+  .c-success { background: var(--success); color: var(--accent-on); }
+  .c-warn { background: var(--warn); color: var(--accent-on); }
+  .c-danger { background: var(--danger); color: var(--accent-on); }
+  .c-chart1 { background: var(--chart-1); color: var(--accent-on); }
+  .c-chart2 { background: var(--chart-2); color: var(--accent-on); }
+  .c-chart3 { background: var(--chart-3); color: var(--accent-on); }
+  .c-chart4 { background: var(--chart-4); color: var(--accent-on); }
+  .c-chart5 { background: var(--chart-5); color: var(--accent-on); }
+
+  .specimen {
+    margin-top: var(--space-6); padding: var(--space-8);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  }
+  .specimen-display {
+    margin: var(--space-3) 0 var(--space-4);
+    font-family: var(--font-display); font-weight: 600;
+    font-size: clamp(40px, 7vw, var(--text-4xl)); line-height: 1.05;
+    letter-spacing: var(--tracking-display);
+  }
+  .specimen-body { max-width: 65ch; color: var(--fg-2); }
+
+  .type-scale { margin-top: var(--space-6); border-top: 1px solid var(--border-soft); }
+  .type-row {
+    display: grid; grid-template-columns: 110px minmax(0, 1fr) 120px;
+    gap: var(--space-4); align-items: baseline;
+    padding: var(--space-4) 0; border-bottom: 1px solid var(--border-soft);
+  }
+  .type-label { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); }
+  .type-use { font-size: var(--text-xs); color: var(--muted); text-align: right; }
+  .t-4xl { font-family: var(--font-display); font-weight: 600; font-size: clamp(36px, 5vw, var(--text-4xl)); line-height: 1.05; }
+  .t-3xl { font-family: var(--font-display); font-weight: 600; font-size: var(--text-3xl); line-height: 1.1; }
+  .t-2xl { font-family: var(--font-display); font-weight: 600; font-size: var(--text-2xl); line-height: 1.15; }
+  .t-xl { font-family: var(--font-display); font-weight: 600; font-size: var(--text-xl); }
+  .t-lg { font-size: var(--text-lg); }
+  .t-base { font-size: var(--text-base); }
+  .t-sm { font-size: var(--text-sm); }
+  .t-xs { font-size: var(--text-xs); }
+
+  .panel {
+    margin-top: var(--space-6); padding: var(--space-6);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-4);
+  }
+  .panel-head h3 { font-size: var(--text-lg); }
+  .mini-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  .mini-table th {
+    padding: 0 0 var(--space-3); border-bottom: 1px solid var(--border-soft);
+    text-align: left; font-size: var(--text-xs); font-weight: 600;
+    letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--meta);
+  }
+  .mini-table td { padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); }
+  .mini-table tr:last-child td { border-bottom: 0; }
+  .mini-table th.num { text-align: right; }
+  .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .muted { color: var(--muted); }
+  .meta { color: var(--meta); }
+
+  .spacing-list { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); }
+  .spacing-row {
+    display: grid; grid-template-columns: 120px minmax(0, 1fr) 56px;
+    gap: var(--space-4); align-items: center;
+    font-size: var(--text-xs); color: var(--meta);
+  }
+  .spacing-row code { color: var(--muted); }
+  .spacing-row .px { font-family: var(--font-mono); text-align: right; }
+  .bar-sample {
+    justify-self: start; height: 8px; border-radius: var(--radius-pill);
+    background: color-mix(in oklab, var(--accent), transparent 78%);
+  }
+  .radius-grid, .elev-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: var(--space-4); margin-top: var(--space-4);
+  }
+  .radius-tile, .elev-tile {
+    display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
+    padding: var(--space-5); background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius-md); text-align: center;
+  }
+  .radius-demo { width: 72px; height: 48px; background: var(--surface-warm); border: 1px solid var(--border); }
+  .r-sm { border-radius: var(--radius-sm); }
+  .r-md { border-radius: var(--radius-md); }
+  .r-lg { border-radius: var(--radius-lg); }
+  .r-pill { border-radius: var(--radius-pill); }
+  .radius-tile code, .elev-tile code { font-size: var(--text-xs); color: var(--muted); }
+  .elev-demo { width: 100%; height: 64px; display: grid; place-items: center; background: var(--surface); border-radius: var(--radius-sm); font-size: var(--text-xs); color: var(--meta); }
+  .e-flat { box-shadow: var(--elev-flat); border: 1px solid var(--border); }
+  .e-ring { box-shadow: var(--elev-ring); }
+  .e-raised { box-shadow: var(--elev-raised); }
+
+  .brand-demo {
+    display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap;
+    padding: var(--space-8); margin-top: var(--space-6);
+    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg);
+  }
+  .brand-demo img { display: block; max-width: 100%; height: auto; }
+
+  /* ── Components ───────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+    height: 40px; padding: 0 var(--space-4);
+    border: 1px solid transparent; border-radius: var(--radius-sm);
+    font-family: var(--font-body); font-size: var(--text-sm); font-weight: 600; line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--motion-fast) var(--ease-standard),
+                border-color var(--motion-fast) var(--ease-standard),
+                color var(--motion-fast) var(--ease-standard);
+  }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: var(--accent-on); }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-primary:active:not(:disabled) { background: var(--accent-active); }
+  .btn-secondary { background: var(--surface); border-color: var(--border); color: var(--fg); }
+  .btn-secondary:hover:not(:disabled) { background: var(--surface-warm); }
+  .btn-ghost { background: transparent; color: var(--accent); }
+  .btn-ghost:hover:not(:disabled) { background: color-mix(in oklab, var(--accent), transparent 92%); }
+  .btn-danger { background: var(--danger); color: var(--accent-on); }
+  .btn-danger:hover:not(:disabled) { background: color-mix(in oklab, var(--danger), black 8%); }
+  .btn-icon { width: 40px; padding: 0; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
+  .icon { width: 16px; height: 16px; flex: none; }
+
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-5); margin-top: var(--space-4); }
+  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .field label { font-size: var(--text-sm); font-weight: 500; color: var(--fg); }
+  input[type="text"], select {
+    width: 100%; height: 40px; padding: 0 var(--space-3);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface); color: var(--fg);
+    font: 400 var(--text-base)/1.2 var(--font-body);
+  }
+  input[type="text"]:hover, select:hover { border-color: color-mix(in oklab, var(--border), var(--fg) 18%); }
+  input[type="text"]:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+  .hint { font-size: var(--text-xs); color: var(--meta); }
+  .field-error input[type="text"] { border-color: var(--danger); }
+  .field-error input[type="text"]:focus { box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger), transparent 72%); }
+  .hint-error { color: var(--danger); }
+  .input-with-icon { position: relative; }
+  .input-with-icon .icon { position: absolute; left: var(--space-3); top: 50%; transform: translateY(-50%); color: var(--meta); pointer-events: none; }
+  .input-with-icon input[type="text"] { padding-left: 36px; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    height: 24px; padding: 0 10px; border-radius: var(--radius-pill);
+    font-size: var(--text-xs); font-weight: 500; white-space: nowrap;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+  .badge-success { background: color-mix(in oklab, var(--success), var(--surface) 90%); color: var(--success); }
+  .badge-warn { background: color-mix(in oklab, var(--warn), var(--surface) 90%); color: color-mix(in oklab, var(--warn), black 12%); }
+  .badge-danger { background: color-mix(in oklab, var(--danger), var(--surface) 90%); color: var(--danger); }
+  .badge-neutral { background: var(--surface-warm); color: var(--muted); }
+  .badge-accent { background: color-mix(in oklab, var(--accent), var(--surface) 90%); color: var(--accent); }
+
+  .kpi {
+    display: flex; flex-direction: column; gap: var(--space-2);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: var(--space-5);
+  }
+  .kpi-label {
+    font-size: var(--text-xs); font-weight: 600; letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--meta);
+  }
+  .kpi-value {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    font-size: clamp(24px, 3vw, var(--text-2xl)); font-weight: 500;
+    line-height: 1.2; white-space: nowrap;
+  }
+  .kpi-delta {
+    display: flex; align-items: center; gap: var(--space-1);
+    font-family: var(--font-mono); font-size: var(--text-sm); color: var(--success);
+  }
+  .kpi-delta.is-negative { color: var(--danger); }
+  .kpi-foot { margin-top: var(--space-1); font-size: var(--text-xs); color: var(--meta); }
+
+  .account-list {
+    margin-top: var(--space-4); overflow: hidden;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  }
+  .account-row {
+    display: grid; grid-template-columns: 36px minmax(0, 1fr) auto auto;
+    align-items: center; gap: var(--space-4);
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .account-row:last-child { border-bottom: 0; }
+  .account-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .account-name { font-size: var(--text-sm); font-weight: 500; }
+  .account-meta { font-size: var(--text-xs); color: var(--meta); }
+  .account-time { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); white-space: nowrap; }
+  .icon-tile {
+    width: 36px; height: 36px; display: grid; place-items: center; flex: none;
+    border-radius: var(--radius-sm); background: var(--surface-warm); color: var(--fg-2);
+  }
+  .icon-tile .icon { width: 18px; height: 18px; }
+
+  .tabs { display: flex; gap: var(--space-6); margin-top: var(--space-6); border-bottom: 1px solid var(--border); }
+  .tab {
+    appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+    margin-bottom: -1px; padding: var(--space-3) 0;
+    font: 500 var(--text-sm)/1 var(--font-body); color: var(--muted); cursor: pointer;
+  }
+  .tab:hover { color: var(--fg); }
+  .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+  .tabpanel { padding-top: var(--space-5); font-size: var(--text-sm); color: var(--fg-2); }
+  [hidden] { display: none !important; }
+
+  .callout {
+    display: flex; flex-direction: column; gap: var(--space-4);
+    margin-top: var(--space-6); padding: var(--space-5);
+    background: var(--surface-warm); border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+  }
+  .callout-head { display: flex; align-items: flex-start; gap: var(--space-3); flex-wrap: wrap; }
+  .callout-head > div { flex: 1; min-width: 180px; }
+  .callout-head h3 { font-size: var(--text-xl); }
+  .callout-head .icon-tile { background: var(--surface); border: 1px solid var(--border); }
+  .callout-copy { max-width: 70ch; font-size: var(--text-sm); color: var(--fg-2); }
+  .trade { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-3); margin: 0; }
+  .trade div { padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+  .trade dt { margin-bottom: 2px; font-size: var(--text-xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--meta); }
+  .trade dd { margin: 0; font-family: var(--font-mono); font-size: var(--text-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .callout-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+  .fineprint { max-width: 70ch; font-size: var(--text-xs); color: var(--meta); }
+
+  .empty {
+    display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
+    margin-top: var(--space-6); padding: var(--space-12) var(--space-6);
+    background: var(--surface); border: 1px dashed var(--border);
+    border-radius: var(--radius-md); text-align: center;
+  }
+  .empty h4 { font-size: var(--text-lg); }
+  .empty p { max-width: 46ch; font-size: var(--text-sm); color: var(--muted); }
+  .empty .btn { margin-top: var(--space-2); }
+
+  /* ── Data ─────────────────────────────────────────────────────────── */
+  .alloc-card, .drift-card, .trend-card {
+    margin-top: var(--space-4); padding: var(--space-5);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  }
+  .alloc-head, .trend-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: var(--space-4); margin-bottom: var(--space-4);
+  }
+  .alloc-total { margin-top: var(--space-1); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--text-xl); font-weight: 500; }
+  .alloc-bar { display: flex; height: 14px; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface-warm); }
+  .seg { height: 100%; }
+  .seg + .seg { border-left: 2px solid var(--surface); }
+  .s1 { background: var(--chart-1); }
+  .s2 { background: var(--chart-2); }
+  .s3 { background: var(--chart-3); }
+  .s4 { background: var(--chart-4); }
+  .s5 { background: var(--chart-5); }
+  .legend {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--space-3); margin: var(--space-4) 0 0; padding: 0; list-style: none;
+  }
+  .legend li { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .legend-name { color: var(--muted); }
+  .legend-value { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--fg); }
+
+  .drift-grid { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+  .drift-row {
+    display: grid; grid-template-columns: 48px minmax(0, 1fr) 72px 84px;
+    gap: var(--space-3); align-items: center; font-size: var(--text-sm);
+  }
+  .drift-asset { font-family: var(--font-mono); font-weight: 500; }
+  .drift-track { position: relative; height: 8px; background: var(--surface-warm); border-radius: var(--radius-pill); }
+  .drift-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: var(--radius-pill); }
+  .drift-target { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); border-radius: 1px; }
+  .drift-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .drift-row .badge { justify-self: end; }
+
+  .trend-value { font-family: var(--font-mono); font-size: var(--text-xl); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .trend-change { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--success); }
+  .spark { display: block; width: 100%; height: auto; margin-top: var(--space-2); }
+
+  .table-card { margin-top: var(--space-4); overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+  .table-wrap { overflow-x: auto; }
+  .table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: var(--text-sm); }
+  .table th {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    text-align: left; font-size: var(--text-xs); font-weight: 600;
+    letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--meta);
+  }
+  .table td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
+  .table tbody tr:last-child td { border-bottom: 0; }
+  .table .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .asset-cell { display: flex; align-items: center; gap: 10px; }
+  .asset-badge {
+    width: 28px; height: 28px; display: grid; place-items: center; flex: none;
+    border-radius: 50%; background: var(--surface-warm); color: var(--fg-2);
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  }
+  .asset-text { display: flex; flex-direction: column; gap: 1px; }
+  .asset-name { font-size: var(--text-sm); font-weight: 500; }
+  .asset-symbol { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); }
+
+  .activity { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+  .activity li {
+    display: grid; grid-template-columns: 52px minmax(0, 1fr) auto;
+    gap: var(--space-3); align-items: center;
+    padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); font-size: var(--text-sm);
+  }
+  .activity li:last-child { border-bottom: 0; }
+  .activity-time { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); }
+
+  .rule-card { padding: var(--space-6); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+  .rule-list { display: flex; flex-direction: column; gap: var(--space-3); margin: var(--space-3) 0 0; padding: 0; list-style: none; }
+  .rule-list li { display: flex; align-items: flex-start; gap: var(--space-3); font-size: var(--text-sm); color: var(--fg-2); }
+  .rule-list .icon { width: 16px; height: 16px; margin-top: 3px; }
+  .rule-list.do .icon { color: var(--success); }
+  .rule-list.dont .icon { color: var(--danger); }
+
+  .site-footer { background: var(--surface); border-top: 1px solid var(--border); }
+  .footer-inner {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: var(--space-4); max-width: var(--container-max); margin: 0 auto;
+    padding: var(--space-8) var(--container-gutter-desktop);
+    font-size: var(--text-xs); color: var(--meta);
+  }
+  .footer-files { display: flex; flex-wrap: wrap; gap: var(--space-3); font-family: var(--font-mono); }
+
+  /* ── Responsive ───────────────────────────────────────────────────── */
+  @media (max-width: 960px) {
+    .doc { grid-template-columns: 1fr; gap: var(--space-8); }
+    .toc { position: static; }
+    .toc nav { flex-direction: row; flex-wrap: wrap; gap: var(--space-2); }
+    .toc a { padding: var(--space-2); border-left: 0; border-bottom: 2px solid transparent; }
+    .toc a:hover { border-left-color: transparent; border-bottom-color: var(--border); }
+    .hero-facts { grid-template-columns: 1fr; gap: var(--space-3); }
+    .type-row { grid-template-columns: 96px minmax(0, 1fr); }
+    .type-use { display: none; }
+  }
+  @media (max-width: 640px) {
+    .header-inner { padding: 0 var(--container-gutter-phone); }
+    .hero { padding: var(--space-12) var(--container-gutter-phone) var(--space-8); }
+    .doc { padding: 0 var(--container-gutter-phone) var(--space-16); }
+    .header-note, .brand-sub { display: none; }
+    .specimen { padding: var(--space-5); }
+    .account-row { grid-template-columns: 36px minmax(0, 1fr) auto; row-gap: var(--space-2); }
+    .account-time { grid-column: 2 / -1; }
+    .drift-row {
+      grid-template-columns: 48px minmax(0, 1fr);
+      grid-template-areas: "asset value" "track track" "badge badge";
+      row-gap: 6px;
+    }
+    .drift-asset { grid-area: asset; }
+    .drift-track { grid-area: track; }
+    .drift-value { grid-area: value; text-align: left; }
+    .drift-row .badge { grid-area: badge; justify-self: start; }
+    .callout-head .badge { margin-left: calc(36px + var(--space-3)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="#top" aria-label="Gilded Ledger, back to top">
+      <svg class="brand-mark" viewBox="0 0 96 96" aria-hidden="true" focusable="false">
+        <rect width="96" height="96" rx="20" fill="var(--bg)"/>
+        <rect x="0.5" y="0.5" width="95" height="95" rx="19.5" fill="none" stroke="var(--border)"/>
+        <circle cx="48" cy="48" r="33" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+        <circle cx="48" cy="48" r="29" fill="none" stroke="var(--accent)" stroke-width="0.75" opacity="0.7"/>
+        <rect x="45.5" y="12.5" width="5" height="5" transform="rotate(45 48 15)" fill="var(--bg)"/>
+        <rect x="46.25" y="13.25" width="3.5" height="3.5" transform="rotate(45 48 15)" fill="var(--accent)"/>
+        <text x="48" y="58.5" text-anchor="middle" font-family="var(--font-display)" font-weight="600" font-size="30" letter-spacing="1" fill="var(--accent)">PB</text>
+      </svg>
+      <span class="brand-text">
+        <span class="brand-name">Pocket Butler</span>
+        <span class="brand-sub">Design System</span>
+      </span>
+    </a>
+    <div class="header-meta">
+      <span class="badge badge-neutral"><span class="dot"></span>v1.1</span>
+      <span class="header-note">Dark theme</span>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <p class="overline">Crypto Pocket Butler &middot; Design system</p>
+    <h1 id="hero-title">Gilded Ledger</h1>
+    <p class="lede">A calm, exact interface for people who want to know where their crypto is &mdash; not a trading terminal. Numbers lead; chrome recedes; every state is stated in words as well as color.</p>
+    <dl class="hero-facts">
+      <div><dt>Product</dt><dd>Crypto Pocket Butler</dd></div>
+      <div><dt>Audience</dt><dd>Retail investors &amp; active traders (MVP)</dd></div>
+      <div><dt>Palette</dt><dd>Black lacquer &middot; ivory &middot; champagne gold</dd></div>
+    </dl>
+  </section>
+
+  <div class="doc">
+    <aside class="toc" aria-label="On this page">
+      <p class="overline">Contents</p>
+      <nav>
+        <a href="#principles">01 &middot; Principles</a>
+        <a href="#color">02 &middot; Color</a>
+        <a href="#typography">03 &middot; Typography</a>
+        <a href="#spacing">04 &middot; Spacing &amp; grid</a>
+        <a href="#components">05 &middot; Components</a>
+        <a href="#data">06 &middot; Data &amp; status</a>
+        <a href="#rules">07 &middot; Do &amp; don't</a>
+        <a href="#brand">08 &middot; Brand mark</a>
+      </nav>
+    </aside>
+
+    <div class="content">
+<!-- 01 ─────────────────────────────────────────────────────────── -->
+      <section id="principles" class="section" aria-labelledby="principles-title">
+        <header class="section-head">
+          <p class="overline">01 &middot; Foundations</p>
+          <h2 id="principles-title">Principles</h2>
+          <p class="section-lede">Three rules settle most design arguments before they start.</p>
+        </header>
+        <div class="grid-3" style="margin-top: var(--space-6)">
+          <article class="principle">
+            <span class="num">01</span>
+            <h3>Say the number, then the context.</h3>
+            <p>A value is never naked. It carries an as-of time and a source state, so the user can judge it instead of trusting it.</p>
+          </article>
+          <article class="principle">
+            <span class="num">02</span>
+            <h3>Quiet chrome, loud data.</h3>
+            <p>Lacquer-dark surfaces, hairline borders, no decorative glow. Hierarchy comes from type scale and space, not ornament.</p>
+          </article>
+          <article class="principle">
+            <span class="num">03</span>
+            <h3>Color confirms, words decide.</h3>
+            <p>Status always includes a label. Green, amber, and red never carry meaning alone, and the accent is never decoration.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- 02 ─────────────────────────────────────────────────────────── -->
+      <section id="color" class="section" aria-labelledby="color-title">
+        <header class="section-head">
+          <p class="overline">02 &middot; Foundations</p>
+          <h2 id="color-title">Color</h2>
+          <p class="section-lede">One accent, four text levels, and three semantic states. Every value below is a token &mdash; never type a hex value into an artifact.</p>
+        </header>
+
+        <h3 class="subhead">Surfaces</h3>
+        <div class="swatches">
+          <div class="swatch">
+            <div class="swatch-chip c-bg">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Background</span><code>--bg</code><span class="swatch-value">#080706</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-surface">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Surface</span><code>--surface</code><span class="swatch-value">#151310</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-warm">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Surface warm</span><code>--surface-warm</code><span class="swatch-value">#241E14</span></div>
+          </div>
+        </div>
+
+        <h3 class="subhead">Text</h3>
+        <div class="swatches">
+          <div class="swatch">
+            <div class="swatch-chip c-fg">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Foreground</span><code>--fg</code><span class="swatch-value">#FFF8EA</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-fg2">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Foreground 2</span><code>--fg-2</code><span class="swatch-value">#D8CDB7</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-muted">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Muted</span><code>--muted</code><span class="swatch-value">#9F927C</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-meta">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Meta</span><code>--meta</code><span class="swatch-value">#B3A58C</span></div>
+          </div>
+        </div>
+
+        <h3 class="subhead">Accent</h3>
+        <div class="swatches">
+          <div class="swatch">
+            <div class="swatch-chip c-accent">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Accent</span><code>--accent</code><span class="swatch-value">#C6A15B</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-accent-hover">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Accent hover</span><code>--accent-hover</code><span class="swatch-value">accent + 8% black</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-accent">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">On accent</span><code>--accent-on</code><span class="swatch-value">#080706</span></div>
+          </div>
+        </div>
+
+        <h3 class="subhead">Borders</h3>
+        <div class="swatches">
+          <div class="swatch">
+            <div class="swatch-chip c-border">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Border</span><code>--border</code><span class="swatch-value">#3A3020</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-border-soft">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Border soft</span><code>--border-soft</code><span class="swatch-value">#282217</span></div>
+          </div>
+        </div>
+
+        <h3 class="subhead">Semantic</h3>
+        <div class="swatches">
+          <div class="swatch">
+            <div class="swatch-chip c-success">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Success</span><code>--success</code><span class="swatch-value">#6FAE7A</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-warn">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Warn</span><code>--warn</code><span class="swatch-value">#D8A94F</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-danger">Aa</div>
+            <div class="swatch-meta"><span class="swatch-name">Danger</span><code>--danger</code><span class="swatch-value">#E06A60</span></div>
+          </div>
+        </div>
+
+        <h3 class="subhead">Data series</h3>
+        <div class="swatches">
+          <div class="swatch">
+            <div class="swatch-chip c-chart1">1</div>
+            <div class="swatch-meta"><span class="swatch-name">Series 1</span><code>--chart-1</code><span class="swatch-value">#C6A15B</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-chart2">2</div>
+            <div class="swatch-meta"><span class="swatch-name">Series 2</span><code>--chart-2</code><span class="swatch-value">#D8CDB7</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-chart3">3</div>
+            <div class="swatch-meta"><span class="swatch-name">Series 3</span><code>--chart-3</code><span class="swatch-value">#7FB0A4</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-chart4">4</div>
+            <div class="swatch-meta"><span class="swatch-name">Series 4</span><code>--chart-4</code><span class="swatch-value">#A8875A</span></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-chip c-chart5">5</div>
+            <div class="swatch-meta"><span class="swatch-name">Series 5</span><code>--chart-5</code><span class="swatch-value">#8C9DB0</span></div>
+          </div>
+        </div>
+
+        <p class="note">All four text levels clear WCAG AA on <code>--bg</code> and <code>--surface</code>; <code>--meta</code> on <code>--bg</code> measures 8.32:1. Green is reserved for synced, within guardrail, and positive change &mdash; never decoration. Chart series follow a fixed order with the largest holding as series 1, and always ship with a labeled legend.</p>
+      </section>
+
+<!-- 03 ─────────────────────────────────────────────────────────── -->
+      <section id="typography" class="section" aria-labelledby="typography-title">
+        <header class="section-head">
+          <p class="overline">03 &middot; Foundations</p>
+          <h2 id="typography-title">Typography</h2>
+          <p class="section-lede">Serif for titles, sans for interface copy, mono for every figure. Three jobs, no overlap.</p>
+        </header>
+
+        <div class="specimen">
+          <p class="overline">Display &middot; Playfair Display 600</p>
+          <p class="specimen-display">Know where<br>it all is.</p>
+          <p class="specimen-body">Interface copy is Jost at 16px with 1.55 line height. The Didone serif is reserved for the product name, page titles, and section headings. Prices, balances, weights, and drift are always IBM Plex Mono with tabular numerals, so columns line up and digits never shift width.</p>
+        </div>
+
+        <div class="type-scale">
+          <div class="type-row">
+            <span class="type-label">Display / 60</span>
+            <span class="t-4xl">Portfolio</span>
+            <span class="type-use">Hero</span>
+          </div>
+          <div class="type-row">
+            <span class="type-label">Page / 44</span>
+            <span class="t-3xl">Holdings</span>
+            <span class="type-use">Page title</span>
+          </div>
+          <div class="type-row">
+            <span class="type-label">Section / 32</span>
+            <span class="t-2xl">Allocation</span>
+            <span class="type-use">Section</span>
+          </div>
+          <div class="type-row">
+            <span class="type-label">Panel / 24</span>
+            <span class="t-xl">Rebalance</span>
+            <span class="type-use">Panel title</span>
+          </div>
+          <div class="type-row">
+            <span class="type-label">Lead / 20</span>
+            <span class="t-lg">As of 14:32 UTC</span>
+            <span class="type-use">Intro copy</span>
+          </div>
+          <div class="type-row">
+            <span class="type-label">Body / 16</span>
+            <span class="t-base">Net of fees and transfers.</span>
+            <span class="type-use">Body</span>
+          </div>
+          <div class="type-row">
+            <span class="type-label">Small / 14</span>
+            <span class="t-sm">Read-only account</span>
+            <span class="type-use">Interface</span>
+          </div>
+          <div class="type-row">
+            <span class="type-label">Micro / 12</span>
+            <span class="t-xs">L A S T &nbsp; S Y N C E D</span>
+            <span class="type-use">Labels</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Figures are mono</h3>
+            <span class="badge badge-neutral"><span class="dot"></span>Tabular numerals</span>
+          </div>
+          <table class="mini-table">
+            <thead>
+              <tr><th scope="col">Asset</th><th scope="col" class="num">Holdings</th><th scope="col" class="num">Price</th><th scope="col" class="num">Value</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>BTC</td><td class="num">0.8241</td><td class="num">$68,412.00</td><td class="num">$56,381.01</td></tr>
+              <tr><td>ETH</td><td class="num">10.6899</td><td class="num">$3,412.00</td><td class="num">$36,474.28</td></tr>
+              <tr><td>SOL</td><td class="num">112.482</td><td class="num">$172.40</td><td class="num">$19,392.01</td></tr>
+              <tr><td class="muted">Total</td><td class="num meta">&mdash;</td><td class="num meta">&mdash;</td><td class="num">$128,430.55</td></tr>
+            </tbody>
+          </table>
+          <p class="note">A missing value is an em dash, never zero. USD shows two decimals; crypto quantities show up to six significant digits. Sample data.</p>
+        </div>
+      </section>
+
+      <!-- 04 ─────────────────────────────────────────────────────────── -->
+      <section id="spacing" class="section" aria-labelledby="spacing-title">
+        <header class="section-head">
+          <p class="overline">04 &middot; Foundations</p>
+          <h2 id="spacing-title">Spacing &amp; grid</h2>
+          <p class="section-lede">A 4px rhythm, a 12-column grid, and three named section steps. Nothing in between.</p>
+        </header>
+
+        <h3 class="subhead">Scale</h3>
+        <div class="spacing-list">
+          <div class="spacing-row"><code>--space-1</code><span class="bar-sample" style="width: var(--space-1)"></span><span class="px">4</span></div>
+          <div class="spacing-row"><code>--space-2</code><span class="bar-sample" style="width: var(--space-2)"></span><span class="px">8</span></div>
+          <div class="spacing-row"><code>--space-3</code><span class="bar-sample" style="width: var(--space-3)"></span><span class="px">12</span></div>
+          <div class="spacing-row"><code>--space-4</code><span class="bar-sample" style="width: var(--space-4)"></span><span class="px">16</span></div>
+          <div class="spacing-row"><code>--space-5</code><span class="bar-sample" style="width: var(--space-5)"></span><span class="px">20</span></div>
+          <div class="spacing-row"><code>--space-6</code><span class="bar-sample" style="width: var(--space-6)"></span><span class="px">24</span></div>
+          <div class="spacing-row"><code>--space-8</code><span class="bar-sample" style="width: var(--space-8)"></span><span class="px">32</span></div>
+          <div class="spacing-row"><code>--space-12</code><span class="bar-sample" style="width: var(--space-12)"></span><span class="px">48</span></div>
+          <div class="spacing-row"><code>--space-16</code><span class="bar-sample" style="width: var(--space-16)"></span><span class="px">64</span></div>
+          <div class="spacing-row"><code>--space-20</code><span class="bar-sample" style="width: var(--space-20)"></span><span class="px">80</span></div>
+        </div>
+
+        <h3 class="subhead">Radius</h3>
+        <div class="radius-grid">
+          <div class="radius-tile"><span class="radius-demo r-sm"></span><code>--radius-sm &middot; 8</code></div>
+          <div class="radius-tile"><span class="radius-demo r-md"></span><code>--radius-md &middot; 14</code></div>
+          <div class="radius-tile"><span class="radius-demo r-lg"></span><code>--radius-lg &middot; 18</code></div>
+          <div class="radius-tile"><span class="radius-demo r-pill"></span><code>--radius-pill</code></div>
+        </div>
+
+        <h3 class="subhead">Elevation</h3>
+        <div class="elev-grid">
+          <div class="elev-tile"><span class="elev-demo e-flat">Flat</span><code>cards &amp; inputs</code></div>
+          <div class="elev-tile"><span class="elev-demo e-ring">Ring</span><code>hairline edges</code></div>
+          <div class="elev-tile"><span class="elev-demo e-raised">Raised</span><code>menus &amp; modals</code></div>
+        </div>
+
+        <p class="note">Grid: 12 columns inside a 1240px container, with 24px gutters desktop, 16px tablet, and 12px phone. The app shell is a 64px header and a 240px sidebar; content reserves matching padding. Section rhythm is 96px desktop, 64px tablet, 40px phone.</p>
+      </section>
+
+<!-- 05 ─────────────────────────────────────────────────────────── -->
+      <section id="components" class="section" aria-labelledby="components-title">
+        <header class="section-head">
+          <p class="overline">05 &middot; Interface</p>
+          <h2 id="components-title">Components</h2>
+          <p class="section-lede">The working parts of the product. Every component below is built from the tokens in <code>tokens.css</code> &mdash; no local hex values, no one-off spacing.</p>
+        </header>
+
+        <h3 class="subhead">Actions</h3>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="button">Connect a wallet</button>
+          <button class="btn btn-secondary" type="button">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+            Refresh data
+          </button>
+          <button class="btn btn-ghost" type="button">View details</button>
+          <button class="btn btn-danger" type="button">Remove account</button>
+          <button class="btn btn-primary" type="button" disabled>Connect a wallet</button>
+          <button class="btn btn-secondary btn-icon" type="button" aria-label="Refresh prices">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+          </button>
+        </div>
+        <p class="note">One primary action per view. Hover darkens the fill; the label never turns gray. Disabled controls keep their label and drop to 45% opacity.</p>
+
+        <h3 class="subhead">Inputs</h3>
+        <div class="field-grid">
+          <div class="field">
+            <label for="portfolio-name">Portfolio name</label>
+            <input id="portfolio-name" type="text" value="Long-term holdings">
+            <p class="hint">Visible only to you.</p>
+          </div>
+          <div class="field">
+            <label for="account-type">Account type</label>
+            <select id="account-type">
+              <option>Exchange (read-only)</option>
+              <option>Wallet address</option>
+            </select>
+            <p class="hint">Withdrawal permissions are never requested.</p>
+          </div>
+          <div class="field field-error">
+            <label for="wallet-address">Wallet address</label>
+            <input id="wallet-address" type="text" value="0x7f3a&hellip;c21" aria-invalid="true" aria-describedby="wallet-error">
+            <p class="hint hint-error" id="wallet-error">Enter the complete address &mdash; this one is truncated.</p>
+          </div>
+          <div class="field">
+            <label for="asset-search">Search assets</label>
+            <div class="input-with-icon">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input id="asset-search" type="text" placeholder="BTC, ETH, SOL">
+            </div>
+            <p class="hint">Search by name, symbol, or contract.</p>
+          </div>
+        </div>
+
+        <h3 class="subhead">Status &amp; badges</h3>
+        <div class="btn-row">
+          <span class="badge badge-success"><span class="dot"></span>Synced</span>
+          <span class="badge badge-warn"><span class="dot"></span>Stale &middot; 42 min</span>
+          <span class="badge badge-danger"><span class="dot"></span>Sync failed</span>
+          <span class="badge badge-neutral"><span class="dot"></span>Unpriced</span>
+          <span class="badge badge-warn"><span class="dot"></span>Outside target</span>
+          <span class="badge badge-success"><span class="dot"></span>Within guardrail</span>
+          <span class="badge badge-neutral"><span class="dot"></span>Sample data</span>
+          <span class="badge badge-accent"><span class="dot"></span>Read-only</span>
+        </div>
+        <p class="note">Every badge carries a dot and a word. Color is the third signal, never the first. "Unpriced" is a state, not an error &mdash; the asset is excluded from the total and disclosed next to it.</p>
+
+        <h3 class="subhead">Connected accounts</h3>
+        <div class="account-list">
+          <div class="account-row">
+            <span class="icon-tile" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M7 22l-4-4 4-4"/><path d="M21 6H8a3 3 0 0 0-3 3v2"/><path d="M3 18h13a3 3 0 0 0 3-3v-2"/></svg>
+            </span>
+            <div class="account-main">
+              <span class="account-name">OKX &middot; Main</span>
+              <span class="account-meta">Exchange &middot; Read-only API key</span>
+            </div>
+            <span class="badge badge-success"><span class="dot"></span>Synced</span>
+            <span class="account-time">2 min ago</span>
+          </div>
+          <div class="account-row">
+            <span class="icon-tile" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18v12H3z"/><path d="M3 7l2-3h14l2 3"/><path d="M16 13h3"/></svg>
+            </span>
+            <div class="account-main">
+              <span class="account-name">Ledger</span>
+              <span class="account-meta">Wallet &middot; Ethereum</span>
+            </div>
+            <span class="badge badge-warn"><span class="dot"></span>Stale &middot; 42 min</span>
+            <span class="account-time">42 min ago</span>
+          </div>
+        </div>
+        <p class="note">A connection row names the venue, the permission level, and the freshness. Stale data stays visible with a warning; it is never presented as live.</p>
+
+        <h3 class="subhead">Portfolio summary</h3>
+        <div class="grid-3">
+          <div class="kpi">
+            <span class="kpi-label">Total value</span>
+            <span class="kpi-value">$128,430.55</span>
+            <span class="kpi-delta">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7"/><path d="M7 7h10v10"/></svg>
+              +$2,184.20 (+1.73%)
+            </span>
+            <span class="kpi-foot">As of 14:32 UTC &middot; Sample data</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Largest drift</span>
+            <span class="kpi-value">+3.9 pp</span>
+            <span class="badge badge-warn" style="align-self: flex-start"><span class="dot"></span>Outside target</span>
+            <span class="kpi-foot">BTC &middot; target 40% &middot; Sample data</span>
+          </div>
+          <div class="kpi">
+            <span class="kpi-label">Accounts connected</span>
+            <span class="kpi-value">3 of 3</span>
+            <span class="badge badge-success" style="align-self: flex-start"><span class="dot"></span>Synced</span>
+            <span class="kpi-foot">Last sync 2 min ago &middot; Sample data</span>
+          </div>
+        </div>
+        <p class="note">A KPI is a number with provenance: label, value, change or state, and as-of time. Never show a balance without a timestamp.</p>
+
+<h3 class="subhead">View tabs</h3>
+        <div class="tabs" role="tablist" aria-label="Portfolio views">
+          <button class="tab" role="tab" id="tab-overview" aria-selected="true" aria-controls="panel-overview" tabindex="0">Overview</button>
+          <button class="tab" role="tab" id="tab-allocation" aria-selected="false" aria-controls="panel-allocation" tabindex="-1">Allocation</button>
+          <button class="tab" role="tab" id="tab-activity" aria-selected="false" aria-controls="panel-activity" tabindex="-1">Activity</button>
+        </div>
+        <div class="tabpanel" role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0">
+          <p>3 connected accounts &middot; 4 assets &middot; last end-of-day snapshot today at 00:00 UTC. <span class="badge badge-neutral"><span class="dot"></span>Sample data</span></p>
+        </div>
+        <div class="tabpanel" role="tabpanel" id="panel-allocation" aria-labelledby="tab-allocation" tabindex="0" hidden>
+          <div class="alloc-bar" role="img" aria-label="Sample allocation: BTC 43.9 percent, ETH 28.4 percent, SOL 15.1 percent, USDC 12.6 percent">
+            <span class="seg s1" style="width: 43.9%"></span>
+            <span class="seg s2" style="width: 28.4%"></span>
+            <span class="seg s3" style="width: 15.1%"></span>
+            <span class="seg s4" style="width: 12.6%"></span>
+          </div>
+          <ul class="legend">
+            <li><span class="legend-swatch" style="background: var(--chart-1)"></span><span class="legend-name">BTC</span><span class="legend-value">43.9%</span></li>
+            <li><span class="legend-swatch" style="background: var(--chart-2)"></span><span class="legend-name">ETH</span><span class="legend-value">28.4%</span></li>
+            <li><span class="legend-swatch" style="background: var(--chart-3)"></span><span class="legend-name">SOL</span><span class="legend-value">15.1%</span></li>
+            <li><span class="legend-swatch" style="background: var(--chart-4)"></span><span class="legend-name">USDC</span><span class="legend-value">12.6%</span></li>
+          </ul>
+        </div>
+        <div class="tabpanel" role="tabpanel" id="panel-activity" aria-labelledby="tab-activity" tabindex="0" hidden>
+          <ul class="activity">
+            <li><span class="activity-time">14:32</span><span>Prices refreshed &middot; 4 assets</span><span class="badge badge-success"><span class="dot"></span>OK</span></li>
+            <li><span class="activity-time">09:14</span><span>OKX sync failed &mdash; last known balances used</span><span class="badge badge-warn"><span class="dot"></span>Stale</span></li>
+            <li><span class="activity-time">00:00</span><span>End-of-day snapshot created</span><span class="badge badge-neutral"><span class="dot"></span>Snapshot</span></li>
+          </ul>
+        </div>
+        <p class="note">Tabs change the view, not the data. The active tab is marked by a 2px accent underline and a weight change, not a pill background. Arrow keys move between tabs.</p>
+
+        <h3 class="subhead">Recommendation</h3>
+        <aside class="callout" aria-labelledby="rec-title">
+          <div class="callout-head">
+            <span class="icon-tile" aria-hidden="true">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-5 7.5-8 9-3-1.5-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
+            </span>
+            <div>
+              <p class="overline">Recommendation &middot; sample</p>
+              <h3 id="rec-title">Trim BTC toward target</h3>
+            </div>
+            <span class="badge badge-warn"><span class="dot"></span>Outside target</span>
+          </div>
+          <p class="callout-copy">BTC is 3.9 percentage points above its 40% target &mdash; the largest drift in this portfolio. The proposed trade restores the band without touching the other assets.</p>
+          <dl class="trade">
+            <div><dt>Action</dt><dd>Sell 0.073 BTC</dd></div>
+            <div><dt>Estimated value</dt><dd>$5,010.00</dd></div>
+            <div><dt>Resulting weight</dt><dd>40.0%</dd></div>
+          </dl>
+          <div class="callout-actions">
+            <button class="btn btn-primary" type="button">Accept recommendation</button>
+            <button class="btn btn-secondary" type="button">Dismiss</button>
+          </div>
+          <p class="fineprint">Guardrail check: within the sample maximum trade size. Recommendations are advisory &mdash; nothing is executed automatically, and no exchange withdrawal permission is ever requested.</p>
+        </aside>
+        <p class="note">Callouts use a warm surface and a bordered icon tile &mdash; never a colored left-border strip. A recommendation states the action, the size, the result, and its guardrail status before asking for a decision.</p>
+
+        <h3 class="subhead">Empty state</h3>
+        <div class="empty">
+          <span class="icon-tile" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18v12H3z"/><path d="M3 7l2-3h14l2 3"/><path d="M16 13h3"/></svg>
+          </span>
+          <h4>No wallets connected</h4>
+          <p>Add a public address to start building this portfolio. Read-only &mdash; no keys, no withdrawals.</p>
+          <button class="btn btn-primary" type="button">Connect a wallet</button>
+        </div>
+      </section>
+
+<!-- 06 ─────────────────────────────────────────────────────────── -->
+      <section id="data" class="section" aria-labelledby="data-title">
+        <header class="section-head">
+          <p class="overline">06 &middot; Interface</p>
+          <h2 id="data-title">Data &amp; status</h2>
+          <p class="section-lede">Where the product earns trust. Every value carries a time, a source state, and an honest unit.</p>
+        </header>
+
+        <h3 class="subhead">Drift vs target</h3>
+        <div class="drift-card">
+          <div class="alloc-head" style="margin-bottom: var(--space-2)">
+            <div>
+              <span class="kpi-label">Allocation drift</span>
+              <p class="alloc-total">4 assets</p>
+            </div>
+            <span class="badge badge-neutral"><span class="dot"></span>Sample data</span>
+          </div>
+          <div class="drift-grid">
+            <div class="drift-row">
+              <span class="drift-asset">BTC</span>
+              <div class="drift-track"><span class="drift-fill" style="width: 43.9%; background: var(--chart-1)"></span><span class="drift-target" style="left: 40%"></span></div>
+              <span class="drift-value">+3.9 pp</span>
+              <span class="badge badge-warn"><span class="dot"></span>Outside</span>
+            </div>
+            <div class="drift-row">
+              <span class="drift-asset">ETH</span>
+              <div class="drift-track"><span class="drift-fill" style="width: 28.4%; background: var(--chart-2)"></span><span class="drift-target" style="left: 30%"></span></div>
+              <span class="drift-value">&minus;1.6 pp</span>
+              <span class="badge badge-success"><span class="dot"></span>Within</span>
+            </div>
+            <div class="drift-row">
+              <span class="drift-asset">SOL</span>
+              <div class="drift-track"><span class="drift-fill" style="width: 15.1%; background: var(--chart-3)"></span><span class="drift-target" style="left: 15%"></span></div>
+              <span class="drift-value">+0.1 pp</span>
+              <span class="badge badge-success"><span class="dot"></span>Within</span>
+            </div>
+            <div class="drift-row">
+              <span class="drift-asset">USDC</span>
+              <div class="drift-track"><span class="drift-fill" style="width: 12.6%; background: var(--chart-4)"></span><span class="drift-target" style="left: 15%"></span></div>
+              <span class="drift-value">&minus;2.4 pp</span>
+              <span class="badge badge-warn"><span class="dot"></span>Outside</span>
+            </div>
+          </div>
+        </div>
+        <p class="note">The fill shows actual weight; the dark tick marks the configured target. Drift is quoted in percentage points, signed. Guardrail thresholds come from the portfolio, not this guide &mdash; the sample states are illustrative.</p>
+
+        <h3 class="subhead">Trend</h3>
+        <div class="trend-card">
+          <div class="trend-head">
+            <div>
+              <span class="kpi-label">30-day value</span>
+              <p class="trend-value">$128,430.55</p>
+            </div>
+            <span class="badge badge-neutral"><span class="dot"></span>Sample data</span>
+          </div>
+          <p class="trend-change">+6.4% over 30 days</p>
+          <svg class="spark" viewBox="0 0 600 140" role="img" aria-labelledby="spark-title spark-desc">
+            <title id="spark-title">Thirty-day portfolio value trend</title>
+            <desc id="spark-desc">Sample trend rising from about 121,000 to 128,430 US dollars, with a shallow dip around day 12.</desc>
+            <line x1="0" y1="24" x2="600" y2="24" style="stroke: var(--border-soft)" stroke-width="1"/>
+            <line x1="0" y1="72" x2="600" y2="72" style="stroke: var(--border-soft)" stroke-width="1"/>
+            <line x1="0" y1="120" x2="600" y2="120" style="stroke: var(--border-soft)" stroke-width="1"/>
+            <polyline points="0,118 50,110 100,114 150,96 200,100 250,82 300,86 350,72 400,76 450,58 500,62 550,44 600,38" style="fill: none; stroke: var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p class="fineprint">Line in accent, gridlines in border-soft. No gradient fill, no glow, no load animation. Charts are drawn in code, not exported as images.</p>
+        </div>
+
+        <h3 class="subhead">Holdings</h3>
+        <div class="panel-head" style="margin-top: var(--space-4)">
+          <h3>Sample portfolio</h3>
+          <span class="badge badge-neutral"><span class="dot"></span>Sample data &mdash; illustrative only</span>
+        </div>
+        <div class="table-card">
+          <div class="table-wrap">
+            <table class="table">
+              <caption class="sr-only">Sample holdings with quantity, price, value, weight, and drift versus target</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Asset</th>
+                  <th scope="col" class="num">Holdings</th>
+                  <th scope="col" class="num">Price</th>
+                  <th scope="col" class="num">Value</th>
+                  <th scope="col" class="num">Weight</th>
+                  <th scope="col" class="num">Drift</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="asset-cell"><span class="asset-badge">BTC</span><span class="asset-text"><span class="asset-name">Bitcoin</span><span class="asset-symbol">BTC</span></span></span></td>
+                  <td class="num">0.8241</td><td class="num">$68,412.00</td><td class="num">$56,381.01</td><td class="num">43.9%</td><td class="num">+3.9 pp</td>
+                </tr>
+                <tr>
+                  <td><span class="asset-cell"><span class="asset-badge">ETH</span><span class="asset-text"><span class="asset-name">Ethereum</span><span class="asset-symbol">ETH</span></span></span></td>
+                  <td class="num">10.6899</td><td class="num">$3,412.00</td><td class="num">$36,474.28</td><td class="num">28.4%</td><td class="num">&minus;1.6 pp</td>
+                </tr>
+                <tr>
+                  <td><span class="asset-cell"><span class="asset-badge">SOL</span><span class="asset-text"><span class="asset-name">Solana</span><span class="asset-symbol">SOL</span></span></span></td>
+                  <td class="num">112.482</td><td class="num">$172.40</td><td class="num">$19,392.01</td><td class="num">15.1%</td><td class="num">+0.1 pp</td>
+                </tr>
+                <tr>
+                  <td><span class="asset-cell"><span class="asset-badge">USDC</span><span class="asset-text"><span class="asset-name">USD Coin</span><span class="asset-symbol">USDC</span></span></span></td>
+                  <td class="num">16,183.25</td><td class="num">$1.00</td><td class="num">$16,183.25</td><td class="num">12.6%</td><td class="num">&minus;2.4 pp</td>
+                </tr>
+                <tr>
+                  <td class="muted">Total</td>
+                  <td class="num meta">&mdash;</td>
+                  <td class="num meta">&mdash;</td>
+                  <td class="num">$128,430.55</td>
+                  <td class="num">100.0%</td>
+                  <td class="num meta">&mdash;</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p class="note">Numeric columns are right-aligned and tabular; numbers never wrap. On narrow screens the table scrolls inside its own container instead of squeezing values.</p>
+      </section>
+
+      <!-- 07 ─────────────────────────────────────────────────────────── -->
+      <section id="rules" class="section" aria-labelledby="rules-title">
+        <header class="section-head">
+          <p class="overline">07 &middot; Practice</p>
+          <h2 id="rules-title">Do &amp; don't</h2>
+          <p class="section-lede">The short version, for the moment before an artifact ships.</p>
+        </header>
+        <div class="grid-2" style="margin-top: var(--space-6)">
+          <div class="rule-card">
+            <p class="overline">Do</p>
+            <ul class="rule-list do">
+              <li><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><span>Show the as-of time and source state next to every value.</span></li>
+              <li><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><span>Use mono and right alignment for figures, and sign every change.</span></li>
+              <li><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><span>Label sample data and unpriced assets plainly.</span></li>
+              <li><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><span>Keep one primary action per view and one accent detail per screen.</span></li>
+            </ul>
+          </div>
+          <div class="rule-card">
+            <p class="overline">Don't</p>
+            <ul class="rule-list dont">
+              <li><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg><span>Use green or red without a word, a sign, and a shape.</span></li>
+              <li><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg><span>Add shadows to cards, inputs, or buttons.</span></li>
+              <li><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg><span>Use the accent for decoration, gradients, or glow.</span></li>
+              <li><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg><span>Invent balances, percentages, or metrics &mdash; label samples instead.</span></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+<!-- 08 ─────────────────────────────────────────────────────────── -->
+      <section id="brand" class="section" aria-labelledby="brand-title">
+        <header class="section-head">
+          <p class="overline">08 &middot; Practice</p>
+          <h2 id="brand-title">Brand mark</h2>
+          <p class="section-lede">A gilded seal: the PB monogram engraved in the system&rsquo;s gold, with the Gilded Ledger wordmark. Use it as shipped &mdash; never redrawn, recolored, or rotated.</p>
+        </header>
+        <div class="brand-demo">
+          <img src="logo.svg" alt="Gilded Ledger lockup: PB seal beside the Gilded Ledger wordmark" width="480" height="96">
+          <img src="logo-mark.svg" alt="Gilded Ledger emblem: PB monogram in a double gold ring" width="96" height="96">
+        </div>
+        <p class="note">The lockup ships as <code>logo.svg</code>; the emblem alone is <code>logo-mark.svg</code> and doubles as the favicon. Gold on lacquer only &mdash; never on gold or ivory. Clear space around the emblem equals the ring&rsquo;s radius, and the monogram never renders below 24px.</p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <span>Gilded Ledger v1.1 &middot; November 2026 &middot; Dark theme</span>
+    <span class="footer-files">
+      <code>DESIGN.md</code><code>tokens.css</code><code>index.html</code><code>manifest.json</code>
+    </span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var list = document.querySelector('[role="tablist"]');
+  if (!list) return;
+  var tabs = Array.prototype.slice.call(list.querySelectorAll('[role="tab"]'));
+  function select(tab) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      var panel = document.getElementById(t.getAttribute('aria-controls'));
+      if (panel) panel.hidden = !on;
+    });
+    tab.focus();
+  }
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener('click', function () { select(tab); });
+    tab.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      var next = (i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      select(tabs[next]);
+    });
+  });
+})();
+</script>
+</body>
+</html>

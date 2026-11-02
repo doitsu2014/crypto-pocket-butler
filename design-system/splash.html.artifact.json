@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "design-system/splash.html",
+  "entry": "design-system/splash.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-11-02T09:00:08.063Z",
+  "updatedAt": "2026-11-02T09:00:08.063Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

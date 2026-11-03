@@ -67,11 +67,12 @@ Define the security, privacy, compliance, and quality obligations that apply acr
 
 ### 4.1 Supabase platform security controls and shared responsibility
 
-The product consumes Supabase-managed infrastructure. **Supabase does not host the Rust
-services or the React SPA**; those run on the container host. Supabase is responsible for the
-managed runtime, patching, encryption primitives and backup mechanics. The product remains
-responsible for schema and role isolation, application authorisation, secret classification,
-data minimisation, log redaction, retention and restore drills.
+The product consumes Supabase as its database platform. **Supabase does not host the Rust
+services, the React SPA or the observability stack**; those run on the product's Docker Swarm
+cluster. Supabase is responsible for the managed database runtime, patching, encryption
+primitives and backup mechanics. The product remains responsible for schema and role
+isolation, application authorisation, secret classification, data minimisation, log redaction,
+retention and restore drills, and for operating the Swarm cluster itself.
 
 | Supabase service | Security control | Shared-responsibility boundary |
 |------------------|------------------|--------------------------------|
@@ -80,11 +81,11 @@ data minimisation, log redaction, retention and restore drills.
 | **Supabase Storage** | Private buckets for audit export and retention archives. Access is only through signed, access-controlled URLs; no public bucket is permitted. | Supabase operates storage and URL signing. The product owns bucket privacy, signed-URL lifetime, archive retention, access review and encryption expectations. |
 | **Supabase Vault** | pgsodium-backed secrets store with versioned encryption, per-credential data encryption keys and per-subject crypto-shredding keys. Secret values are resolved at runtime through the owning service's Postgres role and are never returned, logged or placed in briefs. | Supabase provides the encryption primitives and the secrets store. The product owns secret classification, least-privilege access, rotation runbooks, break-glass procedure and ensuring no plaintext leakage. |
 | **Supabase Cron (pg_cron)** | Scheduled SQL ticks the Job Orchestration Service through pg_net, runs retention triggers and hosts the dead-man check that calls the Operational Alerting Channel when scheduler heartbeats stop. | Supabase runs the scheduler. The product owns the real job semantics in Job Orchestration (due-ness, single-flight advisory locks, retries and outcomes) and the alert thresholds. |
-| **Supabase Logs & Metrics** | Platform logs, metrics, log drains and alerts with correlation and trace context. Credentials and tokens must never be written to logs. | Supabase collects telemetry. The product owns structured logging, correlation, health and readiness endpoints, metric selection, dashboards, alert routing and log-retention requirements. |
+| **Docker Swarm Observability Stack** | Swarm-hosted telemetry: Loki aggregates structured logs, Prometheus scrapes metrics and evaluates alert rules, Grafana Tempo stores traces (OTLP), Grafana serves dashboards and routes alerts to the Operational Alerting Channel. Credentials and tokens must never be written to logs. | The product operates the stack on its own Swarm cluster. The product owns structured logging, correlation, health and readiness endpoints, metric selection, dashboards, alert routing and log-retention requirements. |
 
-**Shared-responsibility summary.** Supabase secures the managed runtime and the primitives;
-the product secures how it uses them. Configuration of Supabase plan limits, PITR, Auth rate
-limits, log retention and network access is a product decision, not an implicit guarantee.
+**Shared-responsibility summary.** Supabase secures the managed database platform and its
+primitives; the product secures how it uses them. Configuration of Supabase plan limits, PITR,
+Auth rate limits and network access is a product decision, not an implicit guarantee.
 Restore drills and evidence for NFR-AVL-04/NFR-AVL-05 remain the product's obligation even
 though Supabase operates the backup mechanism.
 

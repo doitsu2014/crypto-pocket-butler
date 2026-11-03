@@ -16,7 +16,6 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
             supabaseStorage = softwareSystem "Supabase Storage" "Private buckets for audit export and retention archives, accessed only through signed, access-controlled URLs." "External,Supabase"
             supabaseVault = softwareSystem "Supabase Vault" "pgsodium-backed secrets store for exchange credentials, provider keys, the internal service token and per-subject encryption keys, with versioned encryption and no plaintext exposure to logs." "External,Supabase"
             supabaseCron = softwareSystem "Supabase Cron (pg_cron)" "Scheduled SQL that ticks the Job Orchestration Service through pg_net, runs retention SQL, and hosts the dead-man check that alerts when scheduler heartbeats stop." "External,Supabase"
-            supabaseLogs = softwareSystem "Supabase Logs & Metrics" "Platform logs, metrics, log drains and alerts for every service, with correlation context." "External,Supabase"
         }
 
         cpb = softwareSystem "Crypto Pocket Butler" "Single-tenant MVP platform that aggregates read-only holdings, values portfolios in USD, computes drift, proposes human-reviewed recommendations and publishes scheduled briefs." {
@@ -41,6 +40,8 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
 
             auditService = container "Audit Service" "Append-only audit store written through an insert-only Postgres role. Admin queries, privacy exports to Supabase Storage, erasure by crypto-shredding and partition retention." "Rust, Axum, sqlx" "Container"
 
+            observabilityStack = container "Observability Stack" "Self-hosted observability on the Swarm cluster: every service exports structured logs (Loki), metrics (Prometheus) and traces (Tempo) with correlation context; Grafana serves dashboards, monitors alert rules and routes alerts to the Operational Alerting Channel. No credentials or tokens are ever logged." "Prometheus, Loki, Grafana Tempo, OpenTelemetry" "Container"
+
             portfolioOwner -> reactSpa "Uses the dashboard, accounts, portfolios, valuation, recommendations and reporting screens" "HTTPS"
             administrator -> reactSpa "Administers chains, tokens, jobs, audit and privacy requests" "HTTPS"
             reactSpa -> apiGateway "Calls the REST API and the SSE sync-progress stream" "HTTPS/REST/JSON, Server-Sent Events"
@@ -56,12 +57,12 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
             apiGateway -> auditService "Routes admin audit queries and user privacy export and erasure requests" "Internal HTTP, forwarded Supabase JWT"
             apiGateway -> supabaseAuth "Validates Supabase JWTs against the JWKS endpoint with an in-memory cache" "HTTPS JWKS"
             apiGateway -> auditService "Records access-denied and rate-limited security events synchronously" "Internal HTTP"
-            apiGateway -> supabaseLogs "Logs, metrics and traces via log drain" "Log drain"
+            apiGateway -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             identityService -> supabaseAuth "Verifies webhook signatures, validates JWTs against JWKS and calls the Admin API for sessions, app_metadata and deletion" "HTTPS webhooks, JWKS and Admin API"
             identityService -> supabasePostgres "Reads and writes internal users, roles, status and session events" "Supabase Postgres (schema identity, role identity)"
             identityService -> auditService "Records user lifecycle, role and status audit events" "Internal HTTP"
-            identityService -> supabaseLogs "Logs, metrics and traces via log drain" "Log drain"
+            identityService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             accountService -> supabasePostgres "Reads and writes accounts, credential ciphertext, holdings, sync runs and the registry projection" "Supabase Postgres (schema account, role account)"
             accountService -> supabaseVault "Encrypts and decrypts read-only exchange credentials" "Supabase Vault (pgsodium)"
@@ -71,29 +72,29 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
             accountService -> assetRegistryService "Fetches the registry snapshot on cold start or reconciliation and posts unmapped observations to quarantine" "Internal HTTP"
             accountService -> portfolioService "Notifies versioned holdings replacements and account lifecycle changes after sync completion, with bounded retries" "Internal HTTP"
             accountService -> auditService "Records credential and account lifecycle audit events" "Internal HTTP"
-            accountService -> supabaseLogs "Logs, metrics and traces via log drain" "Log drain"
+            accountService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             assetRegistryService -> supabasePostgres "Reads and writes assets, contracts, decimals, chains, token registries and quarantine" "Supabase Postgres (schema registry, role registry)"
             assetRegistryService -> supabaseVault "Resolves RPC provider credentials" "Supabase Vault (pgsodium)"
             assetRegistryService -> auditService "Records registry change audit events" "Internal HTTP"
-            assetRegistryService -> supabaseLogs "Logs, metrics and traces via log drain" "Log drain"
+            assetRegistryService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             marketDataService -> supabasePostgres "Reads and writes price observations, partitioned history, provider mapping and freshness state" "Supabase Postgres (schema market, role market)"
             marketDataService -> supabaseVault "Resolves exchange API credentials" "Supabase Vault (pgsodium)"
             marketDataService -> okxExchange "Collects USD ticker observations, candle histories and instrument/pair metadata within a shared request budget" "HTTPS REST/JSON"
-            marketDataService -> supabaseLogs "Logs, metrics and traces via log drain" "Log drain"
+            marketDataService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             portfolioService -> supabasePostgres "Reads and writes portfolios, targets, guardrails, valuations, snapshots, recommendations and projections" "Supabase Postgres (schema portfolio, role portfolio)"
             portfolioService -> accountService "Rebuilds the holdings projection and validates account ownership and active status at link time" "Internal HTTP"
             portfolioService -> assetRegistryService "Rebuilds the asset projection after cold start or a reconciliation gap" "Internal HTTP"
             portfolioService -> marketDataService "Rebuilds the latest-price projection after cold start or schema change" "Internal HTTP"
             portfolioService -> auditService "Records recommendation decision and snapshot audit events" "Internal HTTP"
-            portfolioService -> supabaseLogs "Logs, metrics and traces via log drain" "Log drain"
+            portfolioService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             reportingService -> supabasePostgres "Reads and writes preferences, schedules, briefs, generation log and idempotency keys" "Supabase Postgres (schema reporting, role reporting)"
             reportingService -> portfolioService "Fetches a consistent single-owner brief data set once per brief" "Internal HTTP"
             reportingService -> auditService "Records generation and retention audit events" "Internal HTTP"
-            reportingService -> supabaseLogs "Logs, metrics and traces via log drain" "Log drain"
+            reportingService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             jobOrchestrationService -> supabasePostgres "Reads and writes job definitions, schedules, run records and heartbeats" "Supabase Postgres (schema job, role job)"
             jobOrchestrationService -> supabaseVault "Reads the shared internal service token used to authenticate run triggers" "Supabase Vault (pgsodium)"
@@ -105,13 +106,13 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
             jobOrchestrationService -> reportingService "Triggers scheduled brief runs" "Internal HTTP, service token"
             jobOrchestrationService -> auditService "Triggers scheduled retention runs and records manual-trigger audit events" "Internal HTTP, service token"
             jobOrchestrationService -> alertingChannel "Sends missed-run, failed-run, error-rate and stale-price alerts" "Alert webhook"
-            jobOrchestrationService -> supabaseLogs "Logs, metrics and traces via log drain" "Log drain"
+            jobOrchestrationService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             auditService -> supabasePostgres "Appends audit events through an insert-only role, applies archival retention through a separate privileged role, and queries for authorised admins" "Supabase Postgres (schema audit, role audit)"
             auditService -> supabaseStorage "Stores and retrieves export and retention archives in private buckets" "Supabase Storage API"
             auditService -> supabaseVault "Reads and destroys per-subject crypto-shredding keys during erasure" "Supabase Vault (pgsodium)"
             auditService -> identityService "Resolves user profile and owner mapping for exports and anonymisation" "Internal HTTP"
-            auditService -> supabaseLogs "Logs, metrics and traces via log drain" "Log drain"
+            auditService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
         }
 
@@ -124,7 +125,6 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
         cpb -> supabasePostgres "Stores every service's data in its own schema and role" "SQL over TLS via Supavisor"
         cpb -> supabaseStorage "Stores audit export and retention archives" "Supabase Storage API"
         cpb -> supabaseVault "Encrypts credentials and resolves scoped secret references" "Supabase Vault (pgsodium)"
-        cpb -> supabaseLogs "Emits structured logs, metrics and traces with correlation context" "Log drain"
         cpb -> alertingChannel "Routes missed-run, failed-schedule, error-rate and stale-price alerts" "Alert webhook"
         supabaseCron -> jobOrchestrationService "Ticks the scheduler every minute" "HTTPS via pg_net"
         supabaseCron -> supabasePostgres "Runs scheduled retention SQL" "SQL"
@@ -132,7 +132,7 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
 
         deploymentEnvironment "Production" {
 
-            containerHost = deploymentNode "Container Host" "Autoscaling container platform hosting the SPA static assets and every Rust service as separate process groups, with managed TLS, health checks and rolling deploys" "Fly.io / Render / Cloud Run" {
+            swarmCluster = deploymentNode "Docker Swarm Cluster" "Swarm-mode cluster hosting the SPA static assets, every Rust service and the observability stack as replicated Swarm services behind the ingress routing mesh, with rolling updates, health checks, restart policies and placement across manager and worker nodes" "Docker Swarm (SwarmKit)" {
 
                 containerInstance reactSpa
                 containerInstance apiGateway
@@ -144,6 +144,7 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
                 containerInstance reportingService
                 containerInstance jobOrchestrationService
                 containerInstance auditService
+                containerInstance observabilityStack
 
             }
 

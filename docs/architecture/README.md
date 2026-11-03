@@ -8,9 +8,10 @@ This README explains that model. If this document and the DSL disagree about str
 DSL is authoritative. If they disagree about a business rule, the [BRDs](../brds/README.md)
 are authoritative.
 
-The model describes a **Supabase-only managed infrastructure**: the Rust services and the
-React single-page application run on a container host, while authentication, relational data,
-object storage, secrets, scheduling and observability are consumed from Supabase.
+The model describes a **Supabase-as-database-platform + Docker Swarm** infrastructure: the Rust
+services, the React single-page application and the self-hosted observability stack run on a
+Docker Swarm cluster, while authentication, relational data, object storage, secrets and
+scheduling are consumed from Supabase.
 
 | Property | Value |
 | --- | --- |
@@ -18,12 +19,12 @@ object storage, secrets, scheduling and observability are consumed from Supabase
 | Requirements baseline | BRD-001 … BRD-012, Draft v1.0/v1.1 (aligned 2026-11-02) |
 | Simplified | 2026-11-02 (machinery stripped, topology kept; OpenClaw/Notion and price aggregators removed — see section 2) |
 | People | 2 |
-| External software systems | 10 (6 Supabase services + 4 third-party integrations) |
-| Containers | 10 (1 React SPA + 9 Rust services) |
+| External software systems | 9 (5 Supabase services + 4 third-party integrations) |
+| Containers | 11 (1 React SPA + 9 Rust services + 1 observability stack) |
 | Components | 0 — C4 levels 1–2 only; component detail lives in the code |
 | Views | 5 |
-| Relationships | 87 |
-| Deployment environments modelled | 1 (`Production`), one `Container Host` node |
+| Relationships | 86 |
+| Deployment environments modelled | 1 (`Production`), one Docker Swarm cluster node |
 
 ---
 
@@ -138,7 +139,9 @@ Exports are build artefacts, not part of the model of record.
 | Supabase Storage | Private buckets for audit export and retention archives |
 | Supabase Vault | pgsodium secrets: exchange credentials, provider keys, service token, per-subject encryption keys |
 | Supabase Cron (pg_cron) | Ticks the scheduler via pg_net, runs retention SQL, hosts the dead-man check |
-| Supabase Logs & Metrics | Platform observability with correlation context |
+
+Observability is **not** an external dependency: the Observability Stack (Prometheus, Loki,
+Tempo, Grafana) is an internal container deployed on the same Swarm cluster (section 5).
 
 ---
 
@@ -156,6 +159,7 @@ Exports are build artefacts, not part of the model of record.
 | Reporting Service | Reporting preferences, in-app brief composition (idempotent per owner/portfolio/period), generation log, retention | `reporting` |
 | Job Orchestration Service | Schedules, run triggering, single-flight advisory locks, run records, missed-run detection, bounded retries/backfill, alerts ≤15 min, heartbeat. No business data | `job` |
 | Audit Service | Append-only audit events (insert-only role), admin queries, privacy exports in Storage, erasure by crypto-shredding, partition retention | `audit` |
+| Observability Stack | Logs, metrics, traces, dashboards and alert evaluation, self-hosted on Swarm: Loki (log aggregation), Prometheus (metrics + alert rules), Grafana Tempo (traces via OTLP), Grafana (dashboards, alert routing). No schema — no business data | — |
 
 All backend services are Rust (Axum, sqlx); the SPA is React 18 + TypeScript 5.
 
@@ -236,6 +240,8 @@ view covers `Production` only; Supabase services are external systems, not deplo
 | Crypto-shredding kept for erasure | Per-subject Vault keys must be provisioned with the data they protect |
 | Exchange-sourced market data (OKX) instead of aggregators | Only exchange-listed pairs get prices; on-chain assets without an OKX pair go unpriced (labelled, excluded from totals). Revisit when a second exchange or an aggregator is genuinely needed |
 | In-app briefs instead of OpenClaw/Notion publication | No external narrative composition; briefs are deterministic templates rendered in the SPA |
+| Docker Swarm as the deployment platform (instead of a managed container platform) | The team operates the cluster: nodes, upgrades, TLS and the routing mesh; accepted for a small single-tenant MVP |
+| Self-hosted Swarm observability stack (Loki/Prometheus/Tempo/Grafana) instead of Supabase Logs & Metrics | One more stack to deploy, upgrade and back up; Supabase is scoped to the database platform; dashboards, alert rules and retention are fully under product control |
 
 ---
 
@@ -265,5 +271,7 @@ view covers `Production` only; Supabase services are external systems, not deplo
 - No relationship implies a queue, mTLS, a signed assertion, Notion or a price aggregator;
   if one appears, the model has drifted from sections 2 and 6.
 - The two dynamic views complete without a hop through Supabase Queues (it no longer exists).
+- Every service emits logs, metrics and traces to the Observability Stack; nothing logs
+  credentials or tokens.
 - Validate with the Docker-based CLI (section 3) before review; if validation fails, state it
   in the pull request rather than merging an unrenderable model.

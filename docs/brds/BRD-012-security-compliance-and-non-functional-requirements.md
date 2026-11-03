@@ -1,233 +1,127 @@
 # BRD-012 — Security, Compliance & Non-Functional Requirements
 
-| Field | Value |
-|-------|-------|
-| Document ID | BRD-012 |
-| Version | 1.1 |
-| Status | Draft — requires security and compliance sign-off |
-| Owner | Security / Compliance |
-| Last updated | 2026-11-02 |
-| Related documents | BRD-002, BRD-003, BRD-004, BRD-008, BRD-009, BRD-011 |
+Draft v1.1 · Security/Compliance · 2026-11-02. Cross-cutting obligations that constrain how every other capability is delivered. Post-MVP requirements must still be reachable from MVP decisions.
 
-## 1. Purpose
+**Out of scope:** physical security · HR compliance · jurisdiction-specific legal advice (external counsel validates) · smart-contract security (no contracts deployed in the MVP).
 
-Define the security, privacy, compliance, and quality obligations that apply across the product. These requirements are not optional features: they constrain how every other capability is delivered. Where a requirement is post-MVP, the MVP must still avoid decisions that make it unreachable.
+## Security principles
 
-## 2. Scope
+| ID | Principle |
+|----|-----------|
+| SP-01 | Read-only by default — no withdrawal, transfer, or trading permission anywhere in the MVP |
+| SP-02 | Least privilege for users, admins, jobs, and integrations |
+| SP-03 | No secret exposure — encrypted at rest, masked in UI, never returned or logged |
+| SP-04 | Defence in depth — AuthN, AuthZ, validation, rate limiting, encryption layered |
+| SP-05 | Deny by default |
+| SP-06 | Traceability — sensitive actions recorded with actor, time, outcome |
+| SP-07 | Privacy by design — collect and retain only what the purpose needs |
+| SP-08 | Safe failure — failures never expose data or silently corrupt valuations |
 
-### In scope
-
-- Authentication and authorisation obligations (detail in BRD-002/003).
-- Protection of exchange credentials and user data.
-- Read-only and least-privilege guarantees.
-- Audit logging and traceability.
-- Data retention, export, and deletion.
-- Availability, performance, accuracy, scalability, and observability targets.
-- Compliance capabilities planned for post-MVP.
-
-### Out of scope
-
-- Physical security of cloud or office infrastructure.
-- Employment and HR compliance.
-- Jurisdiction-specific legal advice; external counsel must validate obligations.
-- Smart-contract security (the product does not deploy contracts in the MVP).
-
-## 3. Security principles
-
-| ID | Principle | Implication |
-|----|-----------|-------------|
-| SP-01 | Read-only by default | No withdrawal, transfer, or trading permission is required or used in the MVP |
-| SP-02 | Least privilege | Users, admins, jobs, and integrations receive only the access needed |
-| SP-03 | No secret exposure | Credentials are encrypted at rest, masked in UI, and never returned or logged |
-| SP-04 | Defence in depth | AuthN, AuthZ, input validation, rate limiting, and encryption are layered |
-| SP-05 | Deny by default | Unlisted capabilities are denied until explicitly granted |
-| SP-06 | Traceability | Security-sensitive actions are recorded with actor, time, and outcome |
-| SP-07 | Privacy by design | Only data needed for the stated purpose is collected and retained |
-| SP-08 | Safe failure | Failures must not expose data or silently corrupt valuations |
-
-## 4. Security requirements
+## Security requirements
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| NFR-SEC-01 | All production traffic must use TLS; plaintext transport must be rejected. | Must |
-| NFR-SEC-02 | Exchange API keys, secrets, and passphrases must be encrypted at rest with Supabase Vault (pgsodium) keys and must never be stored in plaintext. | Must |
-| NFR-SEC-03 | Credential fields must never appear in API responses, logs, error messages, or analytics. | Must |
-| NFR-SEC-04 | The product must not request or store wallet private keys or seed phrases. | Must |
-| NFR-SEC-05 | Exchange integrations must use read-only permissions; the product must not enable withdrawals. | Must |
-| NFR-SEC-06 | All user-owned resources must enforce ownership checks on read and write. | Must |
-| NFR-SEC-07 | Administrative capabilities must require the explicit admin role projected by Supabase Auth into the `app_metadata.role` claim. | Must |
-| NFR-SEC-08 | Authentication tokens must be validated against Supabase Auth JWKS for signature, issuer, audience, and expiry. | Must |
-| NFR-SEC-09 | Authentication sessions must be managed by Supabase Auth; browser tokens must be held in memory and never persisted in localStorage. | Must |
-| NFR-SEC-10 | Public endpoints must be rate-limited per user/IP at the API Gateway; authentication and manual job triggers must be limited more strictly. | Must |
-| NFR-SEC-11 | Security-sensitive events must be logged without recording secrets. | Must |
-| NFR-SEC-12 | Dependencies and container images must be scanned for known vulnerabilities before release. | Should |
-| NFR-SEC-13 | Secrets must be supplied through Supabase Vault or Supabase project secrets, never committed to source control. | Must |
-| NFR-SEC-14 | Backups must be encrypted and access-controlled, using Supabase encrypted backups and point-in-time recovery (PITR) where configured. | Must |
-| NFR-SEC-15 | Multi-factor authentication must be available through Supabase Auth. | Should |
+| NFR-SEC-01 | TLS for all production traffic; plaintext rejected. | Must |
+| NFR-SEC-02 | Exchange keys/secrets/passphrases encrypted at rest (Supabase Vault/pgsodium), never plaintext. | Must |
+| NFR-SEC-03 | Credential fields never in API responses, logs, errors, or analytics. | Must |
+| NFR-SEC-04 | Never request or store wallet private keys or seed phrases. | Must |
+| NFR-SEC-05 | Exchange integrations read-only; withdrawals never enabled. | Must |
+| NFR-SEC-06 | Ownership checks on every read/write of user-owned resources. | Must |
+| NFR-SEC-07 | Admin capabilities require the `admin` role from Supabase `app_metadata.role`. | Must |
+| NFR-SEC-08 | Tokens validated against Supabase JWKS (signature, issuer, audience, expiry). | Must |
+| NFR-SEC-09 | Sessions via Supabase Auth; browser tokens in memory only, never localStorage. | Must |
+| NFR-SEC-10 | Rate-limit public endpoints per user/IP at the gateway; auth and manual triggers stricter. | Must |
+| NFR-SEC-11 | Security-sensitive events logged without secrets. | Must |
+| NFR-SEC-12 | Dependency and container-image vulnerability scanning before release. | Should |
+| NFR-SEC-13 | Secrets via Supabase Vault or project secrets, never in source control. | Must |
+| NFR-SEC-14 | Encrypted, access-controlled backups (Supabase encrypted backups + PITR where configured). | Must |
+| NFR-SEC-15 | MFA available through Supabase Auth. | Should |
 
-### 4.1 Supabase platform security controls and shared responsibility
+### Platform shared responsibility
 
-The product consumes Supabase-managed infrastructure. **Supabase does not host the Rust
-services or the React SPA**; those run on the container host. Supabase is responsible for the
-managed runtime, patching, encryption primitives and backup mechanics. The product remains
-responsible for schema and role isolation, application authorisation, secret classification,
-data minimisation, log redaction, retention and restore drills.
+Supabase is the **database platform** — it does not host the Rust services, the SPA, or the observability stack; those run on the product's **Docker Swarm** cluster. Supabase secures the managed runtime, patching, encryption primitives, and backup mechanics. The product owns schema/role isolation, authorisation, secret classification, data minimisation, log redaction, retention and restore drills, and the Swarm cluster itself.
 
-| Supabase service | Security control | Shared-responsibility boundary |
-|------------------|------------------|--------------------------------|
-| **Supabase Auth** | Passwords, MFA factors, sessions, JWT signing and refresh are managed by GoTrue. The Custom Access Token Hook projects `app_metadata.role = "admin"`. Services validate JWTs against the Supabase Auth JWKS and re-check the admin claim. Auth Hooks/webhooks for sign-up, sign-in, sign-out and user-update are verified with the standard-webhooks signature and idempotency. | Supabase secures the Auth engine and signing keys. The product owns role projection, admin gating, hook verification, user-lifecycle policy, disabled-user denial and session revocation through the Admin API. |
-| **Supabase Postgres** | Managed Postgres with one schema and one Postgres role per service (identity, account, registry, market, portfolio, reporting, job, audit) and no cross-schema grants. **Row Level Security is not used by services**, because a service connects as its own role rather than as an end user; ownership and admin rules are enforced in application use cases against the validated Supabase JWT principal forwarded unchanged by the gateway. | Supabase secures the engine, storage, encryption and backup mechanics. The product owns schema design, migrations, grants, connection budgets, advisory-lock usage, query safety, RLS decisions and per-service data minimisation. |
-| **Supabase Storage** | Private buckets for audit export and retention archives. Access is only through signed, access-controlled URLs; no public bucket is permitted. | Supabase operates storage and URL signing. The product owns bucket privacy, signed-URL lifetime, archive retention, access review and encryption expectations. |
-| **Supabase Vault** | pgsodium-backed secrets store with versioned encryption, per-credential data encryption keys and per-subject crypto-shredding keys. Secret values are resolved at runtime through the owning service's Postgres role and are never returned, logged or placed in briefs. | Supabase provides the encryption primitives and the secrets store. The product owns secret classification, least-privilege access, rotation runbooks, break-glass procedure and ensuring no plaintext leakage. |
-| **Supabase Cron (pg_cron)** | Scheduled SQL ticks the Job Orchestration Service through pg_net, runs retention triggers and hosts the dead-man check that calls the Operational Alerting Channel when scheduler heartbeats stop. | Supabase runs the scheduler. The product owns the real job semantics in Job Orchestration (due-ness, single-flight advisory locks, retries and outcomes) and the alert thresholds. |
-| **Supabase Logs & Metrics** | Platform logs, metrics, log drains and alerts with correlation and trace context. Credentials and tokens must never be written to logs. | Supabase collects telemetry. The product owns structured logging, correlation, health and readiness endpoints, metric selection, dashboards, alert routing and log-retention requirements. |
+| Service | Split |
+|---------|-------|
+| Supabase Auth | Supabase secures GoTrue, MFA, sessions, JWT signing. Product owns role projection (`app_metadata.role`), admin gating, webhook verification, user lifecycle, session revocation. |
+| Supabase Postgres | One schema + one role per service, no cross-schema grants; **RLS not used by services** (they connect as their own role; ownership enforced in use cases against the forwarded JWT). Product owns schema design, migrations, grants, query safety. |
+| Supabase Storage | Private buckets, signed URLs only. Product owns bucket privacy, URL lifetime, retention, access review. |
+| Supabase Vault | pgsodium secrets with per-credential and per-subject crypto-shredding keys. Product owns classification, rotation runbooks, break-glass, no-leak guarantees. |
+| Supabase Cron | Ticks jobs via pg_net; hosts the dead-man alert. Product owns job semantics (due-ness, single-flight, retries) and alert thresholds. |
+| Swarm Observability Stack | Loki/Prometheus/Tempo/Grafana on Swarm. Product operates it all: logging, correlation, metrics, dashboards, alert routing, log retention. |
 
-**Shared-responsibility summary.** Supabase secures the managed runtime and the primitives;
-the product secures how it uses them. Configuration of Supabase plan limits, PITR, Auth rate
-limits, log retention and network access is a product decision, not an implicit guarantee.
-Restore drills and evidence for NFR-AVL-04/NFR-AVL-05 remain the product's obligation even
-though Supabase operates the backup mechanism.
-
-## 5. Privacy and data protection
+## Privacy
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| NFR-PRV-01 | Collect only the personal data required to deliver the service (identity claims, account labels, wallet addresses). | Must |
-| NFR-PRV-02 | Document the purpose and retention period for each category of personal data. | Should |
-| NFR-PRV-03 | Provide a way to export a user's data on request. | Should |
-| NFR-PRV-04 | Provide a way to delete or anonymise a user's data on request, subject to legal retention. | Should |
-| NFR-PRV-05 | Do not sell or share personal data with third parties beyond the processors required to run the service. | Must |
-| NFR-PRV-06 | Disclose which external providers receive data (Supabase Auth, Supabase Postgres/Storage/Logs, exchanges, RPC providers). | Should |
-| NFR-PRV-07 | Apply data minimisation to logs and analytics. | Must |
+| NFR-PRV-01 | Collect only required personal data (identity claims, account labels, on-chain account addresses). | Must |
+| NFR-PRV-02 | Document purpose and retention per data category. | Should |
+| NFR-PRV-03 | User data export on request. | Should |
+| NFR-PRV-04 | User data deletion/anonymisation on request, subject to legal retention. | Should |
+| NFR-PRV-05 | No selling or sharing personal data beyond required processors. | Must |
+| NFR-PRV-06 | Disclose providers receiving data (Supabase, exchange, RPC providers). | Should |
+| NFR-PRV-07 | Data minimisation in logs and analytics. | Must |
 
-## 6. Audit logging
+## Audit logging
 
-The following events are security- or financially material and must be recorded:
+Record (append-only, protected from modification): sign-ins/out (from verified Supabase Auth hooks, not raw payloads) · account/portfolio/target/guardrail changes · credential changes (never the credential) · sync outcomes · order decisions (create/cancel) and trade recording · admin registry changes · manual job triggers · brief generation outcomes. Each event: actor (or system), action, target, timestamp, context, outcome.
 
-- Successful and failed sign-ins and sign-outs.
-- Creation, update, deactivation, or deletion of accounts, portfolios, targets, and guardrails.
-- Credential changes (without recording the credential).
-- Sync execution outcomes per account.
-- Recommendation generation, acceptance, and rejection.
-- Administrative chain/token changes.
-- Manual job triggers.
-- Reporting generation outcomes.
+## Compliance roadmap
 
-Sign-in, sign-in-failure, sign-out and user-update events are sourced from verified Supabase
-Auth hooks; the product records the verified event, not raw Auth payloads.
+Post-MVP: transaction export · capital-gains (FIFO/LIFO/HIFO) · staking income · sanctioned-address screening · KYC/AML · geographic restrictions. **Must define before launch:** retention and legal-hold policy. Launching in a jurisdiction without required controls needs explicit legal sign-off; advisory outputs reviewed against local investment-advice rules.
 
-Each event should record: actor (or system), action, target resource, timestamp, source context, and outcome. Audit records must be append-only and protected from modification by application users.
+## NFRs
 
-## 7. Compliance roadmap
+| Area | ID | Requirement | Target |
+|------|----|-------------|--------|
+| Accuracy | NFR-ACC-01 | Valuation vs. manual calculation | >99% |
+| | NFR-ACC-02 | Decimals normalisation errors | Zero; detected and surfaced |
+| | NFR-ACC-03 | Snapshots reproducible from stored inputs | 100% |
+| Performance | NFR-PERF-01 | Price freshness | See OQ-001 (cadence: 15 min) |
+| | NFR-PERF-02 | Dashboard p95 | <2s |
+| | NFR-PERF-03 | Single-account sync feedback | <30s typical |
+| | NFR-PERF-04 | Time to first value | <2 min |
+| | NFR-PERF-05 | Snapshot history p95 | <2s for 1 year |
+| Availability | NFR-AVL-01 | Monthly availability | ≥99.5% (proposed) |
+| | NFR-AVL-02 | Silent missed job runs | Alert ≤15 min |
+| | NFR-AVL-03 | Provider failure | Graceful degradation, last-known data |
+| | NFR-AVL-04/05 | RPO / RTO | ≤24h / ≤4h (proposed) |
+| Scalability | NFR-SCL-01 | Launch capacity | Defined; horizontal scaling |
+| | NFR-SCL-02/03 | Price collection / EOD within interval | <15 min / <1h |
+| | NFR-SCL-04 | Multi-tenant reachability | No blocker by design |
+| Observability | NFR-OBS-01–04 | Structured logs + correlation IDs; health/readiness; latency/error/job metrics; alerts | Must |
+| | NFR-OBS-05/06 | Run-the-system docs; business-rule test coverage | Must / Should |
+| Usability | NFR-UX-01–03 | Mobile+desktop; WCAG 2.1 AA where feasible; understandable errors | Must / Should / Must |
 
-| Capability | Description | MVP status |
-|------------|-------------|------------|
-| Transaction history export | CSV/PDF export of holdings and activity | Post-MVP |
-| Capital-gains reporting | FIFO, LIFO, HIFO methods; country-specific reports | Post-MVP |
-| Income and staking tracking | Classification of staking and other income | Post-MVP |
-| Sanctioned-address screening | OFAC and comparable list screening for wallet addresses | Post-MVP |
-| KYC/AML | Identity verification and monitoring where required | Post-MVP |
-| Geographic restrictions | Jurisdiction-based feature and access restrictions | Post-MVP |
-| Record retention | Defined retention and legal-hold policy | Must define before launch |
+## Risks
 
-> Launch in a jurisdiction without the required compliance controls requires explicit legal sign-off. Advisory outputs must be reviewed against local investment-advice rules.
+Credential compromise (critical) → Vault, read-only keys, rotation, no logging · cross-user leakage (critical) → ownership checks + tests + audit · Supabase outage/limits (high) → quota monitoring, PITR, restore drills · stale prices (high) → fallback, freshness labels, alerts · silent job failure (high) → heartbeats, run records · regulatory breach (high) → legal review, configurable restrictions · wrong decimals (high) → registry validation, reconciliation.
 
-## 8. Non-functional requirements
+## Pre-launch checklist
 
-### 8.1 Accuracy
+- [ ] Threat model reviewed
+- [ ] Pen test of authN, authZ, credential handling
+- [ ] Vault verified; no secrets in source or logs
+- [ ] Backups + PITR configured; restore drill exercised
+- [ ] Schema/role isolation verified (one per service, no cross-schema grants)
+- [ ] Supabase plan limits reviewed against launch capacity
+- [ ] Rate limiting validated
+- [ ] Audit coverage verified
+- [ ] Retention/deletion policy approved
+- [ ] Privacy notice and terms reviewed
+- [ ] Exchange and RPC provider terms reviewed
+- [ ] Jurisdictional legal review of order and reporting outputs
+- [ ] Incident-response process defined
+- [ ] Accessibility review of core flows
 
-| ID | Requirement | Target |
-|----|-------------|--------|
-| NFR-ACC-01 | Portfolio valuation accuracy versus a manual calculation | > 99% |
-| NFR-ACC-02 | Balance normalisation errors caused by incorrect decimals | Zero tolerance; errors must be detected and surfaced |
-| NFR-ACC-03 | Snapshot values must match the calculation at the recorded time | 100% reproducible from stored inputs |
-
-### 8.2 Freshness and performance
-
-| ID | Requirement | Target |
-|----|-------------|--------|
-| NFR-PERF-01 | Price data freshness for portfolio valuation | See open question OQ-001; documented job cadence is 15 minutes |
-| NFR-PERF-02 | Portfolio dashboard response time (p95) | < 2 seconds for typical portfolios |
-| NFR-PERF-03 | Account sync feedback for a single account | < 30 seconds typical, with progress/failure shown |
-| NFR-PERF-04 | Time to first value after sign-in and first account setup | < 2 minutes |
-| NFR-PERF-05 | Snapshot history query (p95) | < 2 seconds for 1 year of daily snapshots |
-
-### 8.3 Availability and reliability
-
-| ID | Requirement | Target |
-|----|-------------|--------|
-| NFR-AVL-01 | Monthly availability of the web application and API | ≥ 99.5% (proposed) |
-| NFR-AVL-02 | Scheduled jobs must not silently miss a run | Alert within 15 minutes |
-| NFR-AVL-03 | A failed external provider must not take down the whole product | Graceful degradation with last-known data |
-| NFR-AVL-04 | Recovery point objective (RPO) for portfolio data | ≤ 24 hours (proposed) |
-| NFR-AVL-05 | Recovery time objective (RTO) | ≤ 4 hours (proposed) |
-
-### 8.4 Scalability
-
-| ID | Requirement | Target |
-|----|-------------|--------|
-| NFR-SCL-01 | Support initial user base without architectural change | Define launch capacity; scale horizontally |
-| NFR-SCL-02 | Price collection must handle the tracked asset universe within its interval | < 15 minutes |
-| NFR-SCL-03 | EOD snapshots must scale with number of portfolios | < 1 hour at expected volume |
-| NFR-SCL-04 | The data model must not prevent future multi-tenant/team use | No blocker by design |
-
-### 8.5 Observability and maintainability
-
-| ID | Requirement | Target |
-|----|-------------|--------|
-| NFR-OBS-01 | Structured logs with correlation IDs for requests and jobs | Must |
-| NFR-OBS-02 | Health/readiness endpoints for all services | Must |
-| NFR-OBS-03 | Metrics for request latency, error rate, job outcomes, and external data-source failures | Must |
-| NFR-OBS-04 | Alerts for sustained error rates, job failures, and stale prices | Must |
-| NFR-OBS-05 | Documentation sufficient for a new engineer or operator to run the system | Must |
-| NFR-OBS-06 | Automated tests covering business rules in this BRD set | Should |
-
-### 8.6 Accessibility and usability
-
-| ID | Requirement | Target |
-|----|-------------|--------|
-| NFR-UX-01 | Core flows usable on mobile and desktop browsers | Must |
-| NFR-UX-02 | Colour contrast and keyboard navigation meet WCAG 2.1 AA where feasible | Should |
-| NFR-UX-03 | Errors and data-quality warnings are understandable to non-technical users | Must |
-
-## 9. Risks and mitigations
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Credential compromise | Critical | Supabase Vault encryption, read-only permissions, least privilege, secret rotation, no logging |
-| Data leakage between users | Critical | Ownership checks, row-level authorisation tests, audit |
-| Supabase plan limits or project outage | High | Monitor plan quotas, Auth rate limits and Postgres capacity; encrypted backups and PITR; documented degradation and restore procedure |
-| Market-data outage/stale prices | High | Last-known-price fallback, freshness labels, unpriced labelling, alerts |
-| Silent job failure | High | Heartbeat monitoring, alerts, run records |
-| Regulatory breach | High | Legal review before launch of tax/advice features; configurable restrictions |
-| Incorrect decimals/normalisation | High | Registry validation, reconciliation checks, anomaly alerts |
-| Insufficient backup/restore testing | High | Supabase PITR and encrypted backups, scheduled restore drills, documented RPO/RTO |
-
-## 10. Controls checklist (pre-launch)
-
-- [ ] Threat model completed and reviewed.
-- [ ] Penetration test of authentication, authorisation, and credential handling.
-- [ ] Supabase Vault and Supabase project secrets verified; no secrets in source control or logs.
-- [ ] Supabase encrypted backups and PITR configured, and a restore drill exercised successfully.
-- [ ] Schema/role isolation verified: one schema and role per service, no cross-schema grants, and RLS not relied on by services.
-- [ ] Supabase plan limits (MAU, database, storage, Auth rate limits, log retention) reviewed against launch capacity.
-- [ ] Rate limiting and abuse controls validated.
-- [ ] Audit log coverage verified for all sensitive events.
-- [ ] Data-retention and deletion policy approved.
-- [ ] Privacy notice and terms reviewed.
-- [ ] Provider terms of service reviewed (exchange, RPC).
-- [ ] Jurisdictional legal review completed for advisory/recommendation outputs.
-- [ ] Incident-response and breach-notification process defined.
-- [ ] Accessibility review completed for core flows.
-
-## 11. Open questions
+## Open questions
 
 | ID | Question | Owner |
 |----|----------|-------|
-| OQ-001 | BRD-001 targets <30-second price freshness, while BRD-011 specifies 15-minute collection. Which is the committed requirement? | Product |
-| OQ-002 | Which jurisdictions are in scope at launch? | Compliance |
-| OQ-003 | What retention periods apply to audit logs, snapshots, and personal data? | Compliance |
-| OQ-004 | What availability and recovery targets are commercially promised (SLA)? | Leadership |
-| OQ-005 | Is a third-party security audit required before launch? | Security |
-| OQ-006 | Which compliance capabilities (screening, KYC) are mandatory in the launch market? | Compliance |
-| OQ-007 | Which Supabase plan and add-ons (compute, PITR, Storage, log retention) are committed for launch, and do they meet the RPO/RTO and capacity targets? | Leadership / Security |
+| OQ-001 | Price freshness: BRD-001 says <30s, BRD-011 says 15-min collection — which is committed? | Product |
+| OQ-002 | Launch jurisdictions? | Compliance |
+| OQ-003 | Retention for audit logs, snapshots, personal data? | Compliance |
+| OQ-004 | Commercially promised SLA targets? | Leadership |
+| OQ-005 | Third-party security audit required pre-launch? | Security |
+| OQ-006 | Mandatory compliance capabilities (screening, KYC) in the launch market? | Compliance |
+| OQ-007 | Supabase plan/add-ons for launch; do they meet RPO/RTO and capacity? | Leadership/Security |

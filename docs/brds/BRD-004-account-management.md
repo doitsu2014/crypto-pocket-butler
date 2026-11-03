@@ -1,148 +1,82 @@
 # BRD-004 — Account Management
 
-| Field | Value |
-|-------|-------|
-| Document ID | BRD-004 |
-| Version | 1.0 |
-| Status | Draft — requires product and security sign-off |
-| Owner | Product |
-| Last updated | 2026-11-01 |
-| Related documents | BRD-002, BRD-005, BRD-006, BRD-010, BRD-011 |
+Draft v1.0 · Product · 2026-11-01. How users connect read-only holdings sources and how those connections are secured and synced.
 
-## 1. Purpose
+**In scope:** create/edit/deactivate/delete accounts · OKX exchange accounts with read-only credentials · on-chain accounts by public address · single and bulk sync · normalised balances, status, error reporting.
+**Out of scope:** withdrawals/transfers/trading · private-key import · additional exchanges · realtime streaming · cost basis (post-MVP).
 
-Define how users connect external holdings sources ("accounts"), how those connections are secured and synchronised, and what the business guarantees about freshness, normalisation, and ownership. An **account** is a read-only connection to an exchange or a public wallet address.
+## Account types
 
-## 2. Scope
+Two types; each account owns its own holdings.
 
-### In scope
+| Type | Data | Balances from |
+|------|------|---------------|
+| **Exchange account** (OKX in MVP) | Exchange name, API key/secret/passphrase — user-created, **read-only** | Exchange REST API |
+| **On-chain account** | Public address + enabled chains — never private keys | Blockchain JSON-RPC |
 
-- Creating, editing, deactivating, and deleting accounts.
-- Exchange accounts with read-only API credentials (OKX is the MVP exchange).
-- Wallet accounts identified by public address, with one or more enabled chains.
-- Single-account and bulk synchronisation.
-- Normalisation of balances into asset + quantity + availability.
-- Sync status, timestamps, and error reporting.
+Same asset across multiple chains is merged for portfolio math; chain detail is retained.
 
-### Out of scope
-
-- Withdrawals, deposits, transfers, or trading through the product.
-- Private-key or seed-phrase import.
-- Exchange accounts beyond the MVP exchange(s) — later BRD revision.
-- Real-time streaming balance updates (MVP uses on-demand and scheduled sync).
-- Cost basis and transaction history (post-MVP).
-
-## 3. Actors
-
-| Actor | Interaction |
-|-------|-------------|
-| Portfolio Owner | Creates and manages own accounts, triggers sync |
-| Admin | Can also manage own accounts; may trigger jobs |
-| System jobs | Refresh holdings/prices on a schedule |
-| Exchange / blockchain RPC | Provides balances to the product |
-
-## 4. Account types
-
-| Type | Required data | Authentication | Balance source |
-|------|---------------|----------------|----------------|
-| **Exchange** | Exchange name, API key, API secret, passphrase (where required) | Read-only API credentials, signed requests | Exchange REST API |
-| **Wallet** | Public wallet address, enabled chains | None (public data) | Blockchain JSON-RPC |
-
-### 4.1 Exchange account requirements
-
-- Credentials must be created by the user with **read-only** permissions.
-- The product must never request or accept withdrawal or trading permissions as a prerequisite.
-- Secrets must be encrypted before persistence and never returned in any API response.
-- The account must record the exchange name and the last successful sync time.
-
-### 4.2 Wallet account requirements
-
-- Only a public address is required; no private key material may ever be accepted.
-- The user must select one or more enabled chains from the configured chain registry.
-- Native balances and registered token balances must be read for each enabled chain.
-- Balances for the same asset across multiple chains must be merged for portfolio calculations, while chain-level detail may be retained.
-
-## 5. Functional requirements
+## Functional requirements
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-ACC-01 | A user must be able to create an exchange account with exchange name and read-only credentials. | Must |
-| FR-ACC-02 | A user must be able to create a wallet account with a public address and at least one enabled chain. | Must |
-| FR-ACC-03 | The system must validate the account type and required fields before saving. | Must |
-| FR-ACC-04 | The system must encrypt exchange credentials at rest before persistence. | Must |
-| FR-ACC-05 | The system must never return credential fields in API responses. | Must |
-| FR-ACC-06 | A user must be able to edit an account's name, credentials, and enabled chains. | Must |
-| FR-ACC-07 | Editing credentials must re-encrypt them and record the change. | Must |
-| FR-ACC-08 | A user must be able to activate or deactivate an account; inactive accounts must be excluded from sync and from portfolio aggregation. | Must |
-| FR-ACC-09 | A user must be able to delete an account; deletion must remove portfolio links without deleting the portfolios. | Must |
-| FR-ACC-10 | A user must be able to trigger a sync for one account. | Must |
-| FR-ACC-11 | A user must be able to trigger a sync for all their active accounts and receive per-account results. | Should |
-| FR-ACC-12 | Sync must replace the account's stored holdings with the freshly retrieved set and update the last-synced timestamp. | Must |
-| FR-ACC-13 | Sync must filter zero balances and normalise quantities to human-readable decimal values. | Must |
-| FR-ACC-14 | Sync failures must be reported per account without aborting other accounts in a bulk operation. | Must |
-| FR-ACC-15 | The UI must show holdings count and last-synced time per account. | Should |
-| FR-ACC-16 | The system should retain a record of the last sync attempt outcome (success/failure and reason). | Should |
+| FR-ACC-01 | Create an exchange account with name and read-only credentials. | Must |
+| FR-ACC-02 | Create an on-chain account with a public address and ≥1 enabled chain. | Must |
+| FR-ACC-03 | Validate type and required fields before saving. | Must |
+| FR-ACC-04 | Encrypt exchange credentials at rest. | Must |
+| FR-ACC-05 | Never return credential fields in API responses. | Must |
+| FR-ACC-06 | Edit name, credentials, and enabled chains. | Must |
+| FR-ACC-07 | Editing credentials re-encrypts and records the change. | Must |
+| FR-ACC-08 | Activate/deactivate; inactive accounts excluded from sync and aggregation. | Must |
+| FR-ACC-09 | Delete removes portfolio links, not portfolios. | Must |
+| FR-ACC-10 | Sync one account on demand. | Must |
+| FR-ACC-11 | Bulk-sync all active accounts with per-account results. | Should |
+| FR-ACC-12 | Sync replaces stored holdings and updates last-synced time. | Must |
+| FR-ACC-13 | Sync filters zero balances and normalises to decimals. | Must |
+| FR-ACC-14 | Per-account failure reporting; bulk sync continues. | Must |
+| FR-ACC-15 | Show holdings count and last-synced time per account. | Should |
+| FR-ACC-16 | Record last sync attempt outcome (success/failure + reason). | Should |
 
-## 6. Business rules
+## Business rules
 
 | ID | Rule |
 |----|------|
-| BR-ACC-01 | An account must belong to exactly one user. |
-| BR-ACC-02 | Exchange accounts require exchange name and complete credentials; wallet accounts require an address. |
-| BR-ACC-03 | All holdings quantities are stored as normalised decimal values, not raw on-chain integers. |
-| BR-ACC-04 | Token decimals must be applied when converting raw balances; unknown decimals must be treated as a sync error, not guessed silently. |
-| BR-ACC-05 | Available + frozen must equal the total quantity for exchange holdings. |
-| BR-ACC-06 | Frozen quantity must not exceed total quantity. |
-| BR-ACC-07 | Inactive accounts are not synchronised and do not contribute holdings to portfolios. |
-| BR-ACC-08 | Deleting an account cascades only to its portfolio links and sync metadata; portfolio records remain. |
-| BR-ACC-09 | A sync must be idempotent for a given point in time: repeating it must not create duplicate holdings. |
-| BR-ACC-10 | Exchange API credentials must never be logged, returned, or included in error messages. |
-| BR-ACC-11 | Wallet address validation must reject malformed addresses before any network call. |
+| BR-ACC-01 | An account belongs to exactly one user and owns its own holdings. |
+| BR-ACC-02 | Exchange accounts need name + complete credentials; on-chain accounts need an address. |
+| BR-ACC-03 | Quantities are stored as normalised decimals, never raw on-chain integers. |
+| BR-ACC-04 | Token decimals are applied on conversion; unknown decimals are a sync error, never a guess. |
+| BR-ACC-05 | Available + frozen = total for exchange holdings; frozen ≤ total. |
+| BR-ACC-06 | Inactive accounts don't sync and don't contribute holdings. |
+| BR-ACC-07 | Deleting an account cascades only to its portfolio links and sync metadata. |
+| BR-ACC-08 | Sync is idempotent per point in time — no duplicate holdings. |
+| BR-ACC-09 | Credentials are never logged, returned, or included in errors. |
+| BR-ACC-10 | Malformed on-chain addresses are rejected before any network call. |
 
-## 7. Data requirements
-
-| ID | Data element | Description | Sensitivity |
-|----|--------------|-------------|-------------|
-| DR-ACC-01 | Account ID | Stable identifier | Internal |
-| DR-ACC-02 | Owner user ID | Account owner | Internal |
-| DR-ACC-03 | Account type | Exchange or wallet | Internal |
-| DR-ACC-04 | Display name | User-defined label | Personal |
-| DR-ACC-05 | Exchange name | Provider identifier for exchange accounts | Internal |
-| DR-ACC-06 | Encrypted API key / secret / passphrase | Credentials for exchange access | Secret |
-| DR-ACC-07 | Wallet address | Public address for wallet accounts | Personal |
-| DR-ACC-08 | Enabled chains | List of chain identifiers for wallet accounts | Internal |
-| DR-ACC-09 | Holdings | Asset, total, available, frozen, decimals | Sensitive |
-| DR-ACC-10 | Last synced at | Timestamp of last successful sync | Internal |
-| DR-ACC-11 | Active flag | Whether the account participates in sync | Internal |
-
-## 8. Acceptance criteria
+## Acceptance criteria
 
 | ID | Given / When / Then |
 |----|---------------------|
-| AC-ACC-01 | Given valid exchange credentials, when a user creates an exchange account, then the account is saved with encrypted credentials and no secret is returned. |
-| AC-ACC-02 | Given a wallet address and selected chains, when the account is created, then it is saved as a wallet account with those chains enabled. |
-| AC-ACC-03 | Given missing credentials for an exchange account, when creation is attempted, then validation fails with a specific error. |
-| AC-ACC-04 | Given an exchange account with failing authentication, when sync runs, then the account is reported as failed and other accounts still process. |
-| AC-ACC-05 | Given a successful sync, when holdings are stored, then zero balances are excluded, quantities are normalised, and last-synced time is updated. |
-| AC-ACC-06 | Given a wallet with two enabled chains holding the same asset, when synced, then the asset appears once with the combined quantity. |
-| AC-ACC-07 | Given an inactive account linked to a portfolio, when allocation is calculated, then the account's holdings are excluded. |
-| AC-ACC-08 | Given an account linked to two portfolios, when deleted, then both links are removed and both portfolios remain. |
-| AC-ACC-09 | Given any API response, when inspected, then no credential field or encrypted secret value appears. |
+| AC-ACC-01 | Creating an exchange account saves encrypted credentials and returns no secret. |
+| AC-ACC-02 | An on-chain account saves with its address and selected chains. |
+| AC-ACC-03 | Missing exchange credentials fail validation with a specific error. |
+| AC-ACC-04 | A failing exchange auth is reported per-account; other accounts still sync. |
+| AC-ACC-05 | A successful sync stores normalised, zero-filtered holdings and updates last-synced. |
+| AC-ACC-06 | The same asset on two enabled chains appears once with the combined quantity. |
+| AC-ACC-07 | An inactive account's holdings are excluded from allocation. |
+| AC-ACC-08 | Deleting a linked account removes the link; the portfolio remains. |
+| AC-ACC-09 | No API response contains a credential field or secret value. |
 
-## 9. Assumptions, dependencies, constraints
+## Notes
 
-- OKX exposes read-only spot balances via its REST API with signed requests.
-- Blockchain RPC endpoints are configured by an Admin (BRD-010).
-- The token registry determines which tokens are queried for wallet accounts (BRD-005/BRD-010).
-- Exchange rate limits and RPC rate limits may require batching and backoff.
-- The MVP stores holdings as cached snapshots; it does not maintain a transaction ledger.
+- RPC endpoints are configured by an Admin (BRD-010); the token registry drives on-chain account queries (BRD-005/010).
+- Rate limits may require batching/backoff. Holdings are cached snapshots, not a transaction ledger.
 
-## 10. Open questions
+## Open questions
 
 | ID | Question | Owner |
 |----|----------|-------|
-| OQ-001 | Which additional exchanges are required after OKX, and in what order? | Product |
-| OQ-002 | Is bulk sync a launch requirement or a fast-follow? | Product |
-| OQ-003 | What is the maximum number of accounts/chains per user? | Product |
-| OQ-004 | Should account sync failures notify the user proactively? | Product |
-| OQ-005 | How should an unknown token with no registered decimals be handled (skip, exclude, alert)? | Data |
+| OQ-001 | Which exchanges after OKX, in what order? | Product |
+| OQ-002 | Bulk sync at launch or fast-follow? | Product |
+| OQ-003 | Max accounts/chains per user? | Product |
+| OQ-004 | Notify users proactively on sync failure? | Product |
+| OQ-005 | Unknown token with no decimals: skip, exclude, or alert? | Data |

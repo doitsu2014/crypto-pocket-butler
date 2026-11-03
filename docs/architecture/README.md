@@ -8,9 +8,10 @@ This README explains that model. If this document and the DSL disagree about str
 DSL is authoritative. If they disagree about a business rule, the [BRDs](../brds/README.md)
 are authoritative.
 
-The model describes a **Supabase-only managed infrastructure**: the Rust services and the
-React single-page application run on a container host, while authentication, relational data,
-object storage, secrets, scheduling and observability are consumed from Supabase.
+The model describes a **Supabase-as-database-platform + Docker Swarm** infrastructure: the Rust
+services, the React single-page application and the self-hosted observability stack run on a
+Docker Swarm cluster, while authentication, relational data, object storage, secrets and
+scheduling are consumed from Supabase.
 
 | Property | Value |
 | --- | --- |
@@ -18,12 +19,12 @@ object storage, secrets, scheduling and observability are consumed from Supabase
 | Requirements baseline | BRD-001 … BRD-012, Draft v1.0/v1.1 (aligned 2026-11-02) |
 | Simplified | 2026-11-02 (machinery stripped, topology kept; OpenClaw/Notion and price aggregators removed — see section 2) |
 | People | 2 |
-| External software systems | 10 (6 Supabase services + 4 third-party integrations) |
-| Containers | 10 (1 React SPA + 9 Rust services) |
+| External software systems | 9 (5 Supabase services + 4 third-party integrations) |
+| Containers | 11 (1 React SPA + 9 Rust services + 1 observability stack) |
 | Components | 0 — C4 levels 1–2 only; component detail lives in the code |
 | Views | 5 |
-| Relationships | 87 |
-| Deployment environments modelled | 1 (`Production`), one `Container Host` node |
+| Relationships | 86 |
+| Deployment environments modelled | 1 (`Production`), one Docker Swarm cluster node |
 
 ---
 
@@ -65,8 +66,8 @@ were stripped. The previous model remains in git history.
 **Kept on purpose** (business rules, not machinery): read-only credentials encrypted in
 Supabase Vault; decimal arithmetic for quantities and values; unpriced/unmapped assets
 labelled and excluded from valued totals; deterministic, explainable, human-reviewed
-recommendations; idempotent brief generation; append-only audit; crypto-shredding erasure;
-per-service schemas and roles.
+user-initiated orders and trades with immediate allocation effect; idempotent brief generation; append-only audit;
+crypto-shredding erasure; per-service schemas and roles.
 
 **BRD alignment (applied 2026-11-02).** The BRDs were revised to v1.1 wherever they mandated
 removed machinery or integrations: BRD-001 (goals, risks, metrics), BRD-005 (exchange-sourced
@@ -122,7 +123,7 @@ Exports are build artefacts, not part of the model of record.
 
 | Person | Role |
 | --- | --- |
-| Portfolio Owner | Connects read-only accounts, builds portfolios, reviews valuation, drift, snapshots and recommendations |
+| Portfolio Owner | Connects read-only accounts, builds portfolios, reviews valuation, drift, snapshots and orders |
 | Admin | Holds the `app_metadata.role` admin claim; manages registry, jobs, audit queries and privacy requests |
 
 **External systems**
@@ -138,7 +139,9 @@ Exports are build artefacts, not part of the model of record.
 | Supabase Storage | Private buckets for audit export and retention archives |
 | Supabase Vault | pgsodium secrets: exchange credentials, provider keys, service token, per-subject encryption keys |
 | Supabase Cron (pg_cron) | Ticks the scheduler via pg_net, runs retention SQL, hosts the dead-man check |
-| Supabase Logs & Metrics | Platform observability with correlation context |
+
+Observability is **not** an external dependency: the Observability Stack (Prometheus, Loki,
+Tempo, Grafana) is an internal container deployed on the same Swarm cluster (section 5).
 
 ---
 
@@ -149,13 +152,14 @@ Exports are build artefacts, not part of the model of record.
 | React Web Client (SPA) | UI; Supabase Auth flows in-browser; tokens in memory only | — |
 | API Gateway (BFF) | JWT validation, principal resolution (TTL cache), deny-by-default routing, admin-claim gating, rate limits, correlation IDs, SSE proxy. Stateless | — |
 | Identity Service | Internal users keyed by `auth.users.id`, roles from `app_metadata.role`, user status, session events, deletion/anonymisation, retention. No passwords or MFA state | `identity` |
-| Account Service | Read-only exchange/wallet accounts (public-address-only wallets), Vault-encrypted credentials, holdings sync pipeline (decimal, zero-filtered, cross-chain merged, fault-isolated), sync status + SSE progress, registry-projection rebuild | `account` |
+| Account Service | Read-only exchange and on-chain accounts (public-address-only), each owning its holdings, Vault-encrypted credentials, holdings sync pipeline (decimal, zero-filtered, cross-chain merged, fault-isolated), sync status + SSE progress, registry-projection rebuild | `account` |
 | Asset Registry Service | Canonical asset identity, chains and token registries, review-before-activation import, catalogue-to-registry sync, quarantine for unmapped observations | `registry` |
 | Market Data Service | USD observations from OKX tickers, candle histories and instrument/pair metadata, shared request budget, freshness, fallback to last stored price, maximum stale age → unpriced | `market` |
-| Portfolio Service | Portfolios (unique name, single default, 100% targets), valuation, drift, immutable snapshots, advisory recommendations, projections | `portfolio` |
+| Portfolio Service | Portfolios (unique name, single default, 100% targets), valuation, drift, immutable snapshots, user-initiated orders and trades (a trade affects allocation immediately), projections | `portfolio` |
 | Reporting Service | Reporting preferences, in-app brief composition (idempotent per owner/portfolio/period), generation log, retention | `reporting` |
 | Job Orchestration Service | Schedules, run triggering, single-flight advisory locks, run records, missed-run detection, bounded retries/backfill, alerts ≤15 min, heartbeat. No business data | `job` |
 | Audit Service | Append-only audit events (insert-only role), admin queries, privacy exports in Storage, erasure by crypto-shredding, partition retention | `audit` |
+| Observability Stack | Logs, metrics, traces, dashboards and alert evaluation, self-hosted on Swarm: Loki (log aggregation), Prometheus (metrics + alert rules), Grafana Tempo (traces via OTLP), Grafana (dashboards, alert routing). No schema — no business data | — |
 
 All backend services are Rust (Axum, sqlx); the SPA is React 18 + TypeScript 5.
 
@@ -204,7 +208,7 @@ backfills are bounded; alerts fire within 15 minutes. A separate pg_cron dead-ma
 alerts through pg_net if the scheduler's heartbeat row goes stale.
 
 Scheduled work: account syncs, catalogue sync and reconciliation, price collection,
-valuation, snapshots, recommendations, brief generation, retention (identity, reporting,
+valuation, snapshots, orders, brief generation, retention (identity, reporting,
 audit), portfolio reconciliation.
 
 ---
@@ -217,7 +221,7 @@ audit), portfolio reconciliation.
 | `Containers` | Containers | C4 level 2 |
 | `ProductionDeployment` | Production Deployment | Deployment (supplementary) |
 | `AccountSyncToValuation` | Account Sync to Valuation | Dynamic |
-| `RecommendationToReporting` | Recommendation to Reporting | Dynamic |
+| `OrderToReporting` | Order to Reporting | Dynamic |
 
 No service has a component view — component structure is a code concern. The deployment
 view covers `Production` only; Supabase services are external systems, not deployment nodes.
@@ -236,6 +240,8 @@ view covers `Production` only; Supabase services are external systems, not deplo
 | Crypto-shredding kept for erasure | Per-subject Vault keys must be provisioned with the data they protect |
 | Exchange-sourced market data (OKX) instead of aggregators | Only exchange-listed pairs get prices; on-chain assets without an OKX pair go unpriced (labelled, excluded from totals). Revisit when a second exchange or an aggregator is genuinely needed |
 | In-app briefs instead of OpenClaw/Notion publication | No external narrative composition; briefs are deterministic templates rendered in the SPA |
+| Docker Swarm as the deployment platform (instead of a managed container platform) | The team operates the cluster: nodes, upgrades, TLS and the routing mesh; accepted for a small single-tenant MVP |
+| Self-hosted Swarm observability stack (Loki/Prometheus/Tempo/Grafana) instead of Supabase Logs & Metrics | One more stack to deploy, upgrade and back up; Supabase is scoped to the database platform; dashboards, alert rules and retention are fully under product control |
 
 ---
 
@@ -243,14 +249,14 @@ view covers `Production` only; Supabase services are external systems, not deplo
 
 | BRD | Where it is satisfied |
 | --- | --- |
-| BRD-001 Product vision and scope | Whole model; read-only aggregation, USD valuation, advisory recommendations, briefs |
+| BRD-001 Product vision and scope | Whole model; read-only aggregation, USD valuation, orders, briefs |
 | BRD-002 Users, roles and permissions | Identity Service (roles from `app_metadata.role`), gateway deny-by-default + admin gating |
 | BRD-003 Authentication and sessions | Supabase Auth + SPA (PKCE, MFA, magic link), Identity webhooks, session revocation |
 | BRD-004 Account management | Account Service (read-only credentials, Vault encryption, sync pipeline) |
 | BRD-005 Asset catalog and market data | Asset Registry Service, Market Data Service (OKX-sourced tickers, candles, pairs) |
 | BRD-006 Portfolio management | Portfolio Service (lifecycle, unique name, single default, 100% targets) |
 | BRD-007 Valuation, allocation and snapshots | Portfolio Service (decimal valuation, unpriced labelling, immutable snapshots, drift) |
-| BRD-008 Rebalancing recommendations | Portfolio Service (deterministic, explainable, human accept/reject) |
+| BRD-008 Orders (buy/sell) | Portfolio Service (user-initiated orders and trades, immediate allocation effect per trade) |
 | BRD-009 Reporting and agent integration | Reporting Service (in-app briefs; external publication is Won't-MVP per FR-REP-15) |
 | BRD-010 Admin configuration | Registry admin (chains/tokens), Job admin, gateway admin-claim gating, audit queries |
 | BRD-011 Background jobs and data refresh | Job Orchestration Service + Supabase Cron, section 8 |
@@ -265,5 +271,7 @@ view covers `Production` only; Supabase services are external systems, not deplo
 - No relationship implies a queue, mTLS, a signed assertion, Notion or a price aggregator;
   if one appears, the model has drifted from sections 2 and 6.
 - The two dynamic views complete without a hop through Supabase Queues (it no longer exists).
+- Every service emits logs, metrics and traces to the Observability Stack; nothing logs
+  credentials or tokens.
 - Validate with the Docker-based CLI (section 3) before review; if validation fails, state it
   in the pull request rather than merging an unrenderable model.

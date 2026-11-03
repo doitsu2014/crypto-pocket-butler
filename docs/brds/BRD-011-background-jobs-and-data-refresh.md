@@ -1,124 +1,85 @@
 # BRD-011 — Background Jobs & Data Refresh
 
-| Field | Value |
-|-------|-------|
-| Document ID | BRD-011 |
-| Version | 1.1 |
-| Status | Draft — requires operations sign-off |
-| Owner | Operations / Product |
-| Last updated | 2026-11-02 |
-| Related documents | BRD-004, BRD-005, BRD-007, BRD-010, BRD-012 |
+Draft v1.1 · Operations/Product · 2026-11-02. The scheduled processing that keeps the catalogue, prices, and snapshots current, with idempotency, failure handling, and observability. Business-critical: if it stops, valuations go stale without anyone noticing.
 
-## 1. Purpose
+**In scope:** daily catalogue refresh · recurring price collection · EOD snapshots · manual admin triggers · scheduling, retries, idempotency, concurrency, run logs.
+**Out of scope:** realtime streaming feeds · on-demand user sync (BRD-004) · analytics pipelines · cost-basis processing.
 
-Define the scheduled processing that keeps the asset catalogue, prices, and portfolio history current, together with the guarantees around idempotency, failure handling, and observability. Scheduled processing is business-critical: if it stops, valuations become stale without users necessarily noticing.
+## Jobs
 
-## 2. Scope
+| Job | Purpose | Default (UTC) |
+|-----|---------|---------------|
+| Asset catalogue refresh | Update assets, contract mappings, instrument/pair metadata | Daily 00:00 |
+| Price collection | Fetch prices for tracked assets | Every 15 min |
+| EOD snapshots | Value every portfolio, record end-of-day snapshot | Daily 23:00 |
 
-### In scope
+Schedules are configuration items, not hard-coded facts; changes need operations approval and a BRD update.
 
-- Daily asset-catalogue refresh.
-- Recurring market-price collection.
-- End-of-day portfolio snapshot creation.
-- Manual job triggers for operations and support.
-- Scheduling, retries, idempotency, concurrency, and run logging.
-
-### Out of scope
-
-- Real-time streaming price feeds (future).
-- Per-user on-demand sync of exchange/wallet balances (covered by BRD-004; these jobs may invoke it in future).
-- Data-warehouse or analytics pipelines (post-MVP).
-- Cost-basis or transaction-ledger processing (post-MVP).
-
-## 3. Scheduled jobs
-
-| Job | Purpose | Default schedule (UTC) | Outputs |
-|-----|---------|------------------------|---------|
-| Asset catalogue refresh | Update assets and contract mappings; refresh instrument/pair metadata from the exchange | Daily at 00:00 | Asset records, contract mappings |
-| Price collection | Fetch current prices for tracked assets | Every 15 minutes | Price observations |
-| EOD portfolio snapshots | Value every portfolio and record an end-of-day snapshot | Daily at 23:00 | Snapshot per active portfolio |
-
-> Schedule times are the current documented defaults and are configuration items, not hard-coded business facts. Changes require operations approval and must be reflected in this BRD.
-
-## 4. Functional requirements
+## Functional requirements
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| FR-JOB-01 | The system must run the asset-catalogue refresh on a daily schedule. | Must |
-| FR-JOB-02 | The system must run price collection on the configured interval. | Must |
-| FR-JOB-03 | The system must create EOD snapshots for all active portfolios on a daily schedule. | Must |
-| FR-JOB-04 | Each job run must record start time, end time, outcome, and a summary of affected records. | Must |
-| FR-JOB-05 | A failed job run must be retryable without duplicating successful side effects. | Must |
-| FR-JOB-06 | Job execution must not require an interactive user session. | Must |
-| FR-JOB-07 | An Admin must be able to trigger each job manually. | Should |
-| FR-JOB-08 | Manual triggers must be authorized (admin role) and audited. | Must |
-| FR-JOB-09 | The system must prevent overlapping runs of the same job. | Must |
-| FR-JOB-10 | Price collection must tolerate per-asset failures and continue with the remaining assets. | Must |
-| FR-JOB-11 | EOD snapshot creation must continue for other portfolios when one portfolio fails. | Must |
-| FR-JOB-12 | The system should alert operators when a scheduled job fails or does not run. | Should |
-| FR-JOB-13 | The system should expose job status and last-run information to administrators. | Should |
-| FR-JOB-14 | The system should support configurable schedules without code changes. | Could |
-| FR-JOB-15 | The system should support backfilling missing price or snapshot data for a bounded period. | Could |
+| FR-JOB-01 | Run the catalogue refresh daily. | Must |
+| FR-JOB-02 | Run price collection on the configured interval. | Must |
+| FR-JOB-03 | Create EOD snapshots for all active portfolios daily. | Must |
+| FR-JOB-04 | Each run records start, end, outcome, and affected-record summary. | Must |
+| FR-JOB-05 | Failed runs retry without duplicating successful side effects. | Must |
+| FR-JOB-06 | No interactive user session required. | Must |
+| FR-JOB-07 | Admins can trigger each job manually. | Should |
+| FR-JOB-08 | Manual triggers are admin-authorized and audited. | Must |
+| FR-JOB-09 | No overlapping runs of the same job. | Must |
+| FR-JOB-10 | Price collection tolerates per-asset failure and continues. | Must |
+| FR-JOB-11 | EOD continues for other portfolios when one fails. | Must |
+| FR-JOB-12 | Alert operators on failure or non-run. | Should |
+| FR-JOB-13 | Expose job status and last-run info to admins. | Should |
+| FR-JOB-14 | Configurable schedules without code changes. | Could |
+| FR-JOB-15 | Bounded backfill of missing prices/snapshots. | Could |
 
-## 5. Business rules
+## Business rules
 
 | ID | Rule |
 |----|------|
-| BR-JOB-01 | Scheduled times are defined in UTC unless a documented exception exists. |
-| BR-JOB-02 | Price collection and EOD snapshots must use the latest successfully stored prices; they must not fabricate missing prices. |
-| BR-JOB-03 | EOD snapshots are idempotent per portfolio, date, and type; a re-run updates the existing record. |
-| BR-JOB-04 | A job failure must not corrupt existing data; partial writes must be avoided or clearly recorded. |
-| BR-JOB-05 | Jobs must process all users without leaking one user's data into another's record. |
-| BR-JOB-06 | Job logs must not contain credentials, tokens, or sensitive personal data. |
-| BR-JOB-07 | A missed schedule must be detectable; silent failure is not acceptable. |
-| BR-JOB-08 | Manual job triggers must be rate-limited to prevent operational abuse. |
-| BR-JOB-09 | Long-running jobs must be observable and interruptible without leaving inconsistent state. |
+| BR-JOB-01 | Scheduled times are UTC unless documented otherwise. |
+| BR-JOB-02 | Jobs use the latest stored prices; missing prices are never fabricated. |
+| BR-JOB-03 | EOD snapshots are idempotent per portfolio + date + type; re-runs update. |
+| BR-JOB-04 | Failures never corrupt data; partial writes are avoided or clearly recorded. |
+| BR-JOB-05 | Jobs process all users without leaking data across users. |
+| BR-JOB-06 | Job logs contain no credentials, tokens, or sensitive personal data. |
+| BR-JOB-07 | Missed schedules are detectable; silent failure is unacceptable. |
+| BR-JOB-08 | Manual triggers are rate-limited. |
+| BR-JOB-09 | Long-running jobs are observable and interruptible without inconsistent state. |
 
-## 6. Data requirements
-
-| ID | Data element | Description | Sensitivity |
-|----|--------------|-------------|-------------|
-| DR-JOB-01 | Job run record | Job name, start/end, outcome, counts, error summary | Internal |
-| DR-JOB-02 | Asset refresh results | Added/updated assets and contracts | Internal |
-| DR-JOB-03 | Price observations | Asset, price, source, timestamp | Internal |
-| DR-JOB-04 | Snapshot outputs | Portfolio, date, type, value | Sensitive |
-| DR-JOB-05 | Manual trigger audit | Actor, job, timestamp | Audit |
-| DR-JOB-06 | Alert events | Failure/absence notifications | Internal |
-
-## 7. Acceptance criteria
+## Acceptance criteria
 
 | ID | Given / When / Then |
 |----|---------------------|
-| AC-JOB-01 | Given the daily schedule, when the catalogue job runs, then asset and contract data are updated and a run record exists. |
-| AC-JOB-02 | Given price collection, when one asset fails, then the remaining assets are still updated and the failure is recorded. |
-| AC-JOB-03 | Given two overlapping triggers for the same job, when the second starts, then it is rejected or deferred, and only one run executes. |
-| AC-JOB-04 | Given an EOD snapshot already exists for today, when the job re-runs, then the existing snapshot is updated and no duplicate is created. |
-| AC-JOB-05 | Given a non-admin user, when a manual trigger is attempted, then access is denied. |
-| AC-JOB-06 | Given a job failure, when operations inspect the system, then the failure and affected scope are visible and an alert is produced. |
-| AC-JOB-07 | Given any job log, when inspected, then it contains no credentials or token values. |
+| AC-JOB-01 | The catalogue job updates asset/contract data and leaves a run record. |
+| AC-JOB-02 | One asset's price failure doesn't stop the others; the failure is recorded. |
+| AC-JOB-03 | Two overlapping triggers of the same job: one runs, the other is rejected/deferred. |
+| AC-JOB-04 | Re-running today's EOD updates the snapshot; no duplicate. |
+| AC-JOB-05 | A non-admin manual trigger is denied. |
+| AC-JOB-06 | A failure is visible to operations with scope, and an alert fires. |
+| AC-JOB-07 | No job log contains credentials or token values. |
 
-## 8. Non-functional requirements
+## NFRs
 
 | ID | Requirement | Target |
 |----|-------------|--------|
-| NFR-JOB-01 | Price collection completes within the schedule interval under normal load. | < 15 minutes |
-| NFR-JOB-02 | EOD snapshot creation completes before the next business day begins. | < 1 hour for expected portfolio volume |
-| NFR-JOB-03 | Job failure detection latency | < 15 minutes after expected completion |
-| NFR-JOB-04 | Job records are retained for operational review. | ≥ 90 days (proposed) |
+| NFR-JOB-01 | Price collection fits its interval | < 15 min |
+| NFR-JOB-02 | EOD completes before next business day | < 1 hour |
+| NFR-JOB-03 | Failure detection latency | < 15 min |
+| NFR-JOB-04 | Run-record retention | ≥ 90 days (proposed) |
 
-## 9. Assumptions, dependencies, constraints
+## Notes
 
-- The scheduler runs in the deployed environment and survives application restarts.
-- External providers enforce rate limits and may be unavailable; retries use backoff.
-- Snapshot generation depends on prices from the price job; ordering must be guaranteed.
-- Job execution shares the same data stores as the interactive application; load must be bounded.
+- The scheduler survives application restarts; providers rate-limit and fail — retries use backoff; snapshot ordering depends on the price job; job load is bounded alongside interactive traffic.
 
-## 10. Open questions
+## Open questions
 
 | ID | Question | Owner |
 |----|----------|-------|
-| OQ-001 | Is the price interval 15 minutes at launch, or must it meet the <30-second freshness goal in BRD-001? | Product |
-| OQ-002 | What is the acceptable backfill window after an outage? | Operations |
-| OQ-003 | Who receives job alerts, and through which channel? | Operations |
-| OQ-004 | Should EOD use a fixed UTC cutoff or each user's local midnight? | Product |
-| OQ-005 | What is the retention period for job logs? | Compliance |
+| OQ-001 | 15-minute price interval at launch, or meet BRD-001's <30s freshness goal? | Product |
+| OQ-002 | Acceptable backfill window after an outage? | Operations |
+| OQ-003 | Who receives job alerts, via which channel? | Operations |
+| OQ-004 | EOD cutoff: fixed UTC or user-local midnight? | Product |
+| OQ-005 | Job-log retention period? | Compliance |

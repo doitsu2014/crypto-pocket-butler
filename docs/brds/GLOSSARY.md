@@ -1,37 +1,67 @@
 # Business Glossary
 
-Shared terminology for the Crypto Pocket Butler business requirements. Where a term has a precise operational meaning, the defining BRD is referenced.
+One plain definition per term, grouped by business domain. The defining BRD is in parentheses.
 
-| Term | Definition | Reference |
-|------|------------|-----------|
-| **Account** | A read-only connection to an external source of holdings: either an exchange account with API credentials or a wallet account identified by a public address. | BRD-004 |
-| **Allocation** | The breakdown of a portfolio's value by asset, expressed as USD value and percentage weight. | BRD-007 |
-| **Analyst** | Post-MVP role with read-only access to analytics and shared portfolios. | BRD-002 |
-| **Asset** | A canonical, tradable unit in the product's catalogue (for example, BTC, ETH, USDC), identified by a unique symbol and resolved from chain-level tokens. | BRD-005 |
-| **Asset contract** | The chain-specific contract or mint address that represents an asset on a particular chain. | BRD-005 |
-| **Base currency** | The currency in which portfolio value is reported. The MVP uses USD. | BRD-001 |
-| **Brief** | A scheduled daily or weekly portfolio report, composed deterministically in-app and readable in the SPA. | BRD-009 |
-| **Chain** | A blockchain network. The product supports EVM chains and Solana. | BRD-010 |
-| **Decimals** | The precision of a token on-chain; used to convert raw integer balances into human-readable quantities. | BRD-005 |
-| **Default portfolio** | The portfolio a user designates as primary. Each user with at least one portfolio has exactly one default. | BRD-006 |
-| **Drift** | The difference between an asset's actual weight and its target weight, in percentage points. | BRD-007 |
-| **EOD snapshot** | An end-of-day point-in-time record of a portfolio's holdings and value. | BRD-007 |
-| **Exchange account** | An account connected through read-only API credentials to a centralized exchange (OKX in the MVP). | BRD-004 |
-| **Frozen** | A quantity held on an exchange that is not currently available for trading or withdrawal. | BRD-004 |
-| **Guardrails** | User-configured constraints that recommendations must respect, such as maximum deviation, minimum trade size, and allowed assets. | BRD-006 |
-| **Holding** | A quantity of an asset held in an account. | BRD-004 |
-| **Manual snapshot** | A snapshot created on user request at a point in time. | BRD-007 |
-| **Portfolio** | A user's strategic grouping of accounts with an optional target allocation and guardrails; the unit of valuation, drift, snapshots, and recommendations. | BRD-006 |
-| **Price observation** | A recorded market price for an asset at a timestamp, including its source. | BRD-005 |
-| **Recommendation** | A human-reviewed rebalancing proposal containing rationale, risk level, and suggested trades. Never executed automatically in the MVP. | BRD-008 |
-| **Snapshot** | An immutable point-in-time record of a portfolio's holdings, valuation, and weights. | BRD-007 |
-| **Stablecoin** | A crypto asset designed to maintain a stable value, typically pegged to a fiat currency. | BRD-005 |
-| **System job** | A scheduled process that refreshes data or creates snapshots without an interactive user session. | BRD-011 |
-| **Target allocation** | The user-defined intended percentage weight for each asset in a portfolio; must total 100% when defined. | BRD-006 |
-| **Token registry** | The maintained list of EVM and Solana tokens, contracts/mints, and decimals used during account sync. | BRD-010 |
-| **Unmapped asset** | A token found in an account that cannot be resolved to a canonical asset; excluded from valuation. | BRD-005 |
-| **Unpriced asset** | An asset with a quantity but no usable price; excluded from the valued total and reported separately. | BRD-007 |
-| **Valuation** | The calculation of an asset's or portfolio's value in USD using quantity and price. | BRD-007 |
-| **Viewer** | Post-MVP role with limited read-only access to specific shared portfolios. | BRD-002 |
-| **Wallet account** | An account connected by public address only, with one or more enabled chains. No private key material is accepted. | BRD-004 |
-| **Weight** | An asset's USD value divided by the portfolio's total USD value, expressed as a percentage. | BRD-007 |
+## Identity & Access
+
+- **Analyst** — post-MVP read-only role for analytics and shared portfolios. (BRD-002)
+- **Viewer** — post-MVP read-only role for specific shared portfolios. (BRD-002)
+
+## Account Management
+
+Two account types, each owning its own holdings:
+
+- **Account** — a read-only source of holdings, of two types: an exchange account or an on-chain account. Each account owns its own holdings. (BRD-004)
+- **Exchange account** — account connected to a centralized exchange (OKX in the MVP) via read-only API credentials. (BRD-004)
+- **On-chain account** — account identified by public address only, on one or more enabled chains; no private keys are ever accepted. (BRD-004)
+- **Holding** — a quantity of an asset held in an account; holdings belong to their account. (BRD-004)
+- **Frozen** — quantity on an exchange not currently available for trading or withdrawal. (BRD-004)
+
+## Asset Catalog & Market Data
+
+An **asset** (BTC is one asset) is the root: chain representations and metric series all belong to it.
+
+- **Asset** — one canonical, tradable unit, identified by a unique symbol (BTC, ETH, USDC). Everything below belongs to exactly one asset. (BRD-005)
+- **Asset contract** — the asset's representation on a particular chain: contract or mint address (EVM, Solana) or address format (native BTC taproot/legacy), with its decimals. One representation per asset per chain. (BRD-005)
+- **Asset metric series** — point-in-time observations of one fact about an asset, each with timestamp and source. A new metric is a new series, never a model change. (BRD-005)
+- **Price observation** — a metric series: the asset's USD market price at a timestamp. (BRD-005)
+- **Outstanding supply** — a metric series: the asset's total circulating quantity at a timestamp. (BRD-005, post-MVP collection)
+- **Inflation rate** — a metric series: the asset's annual rate of new supply issuance. (BRD-005, post-MVP collection)
+- **On-chain interest rate** — a metric series: the asset's yield in an on-chain product (lending, staking), one rate per chain per product. (BRD-005, post-MVP collection)
+- **Stablecoin** — a crypto asset designed to hold a stable value, typically fiat-pegged. (BRD-005)
+- **Unmapped asset** — a token that cannot be resolved to a canonical asset; excluded from valuation. (BRD-005)
+
+## Portfolio Management
+
+- **Portfolio** — a user's grouping of accounts, with an optional target allocation and guardrails; the unit of valuation, drift, snapshots, and orders. Links multiple accounts; each account links to one portfolio at a time. (BRD-006)
+- **Default portfolio** — the user's primary portfolio; exactly one per user. (BRD-006)
+- **Target allocation** — intended percentage weight per asset; must total 100% when defined. (BRD-006)
+- **Guardrails** — constraints orders and drift alerts must respect: maximum deviation, minimum and maximum order size, allowed assets. (BRD-006)
+
+## Valuation & Snapshots
+
+- **Valuation** — an asset's or portfolio's value in USD, from quantity × price. (BRD-007)
+- **Allocation** — a derived side object of a portfolio: the point-in-time breakdown of its priced value by asset, each asset's weight in percent — always totalling 100% (e.g. BTC 10%, USDT 90%). (BRD-007)
+- **Weight** — an asset's share of the portfolio's priced total, as a percentage; weights always sum to 100%. (BRD-007)
+- **Drift** — an asset's actual weight minus its target weight, in percentage points. (BRD-007)
+- **Base currency** — the currency value is reported in; USD in the MVP. (BRD-001)
+- **Snapshot** — an immutable point-in-time record of holdings, valuation, and weights. **EOD** snapshots are taken on schedule, **manual** snapshots on request. (BRD-007)
+- **Unpriced asset** — an asset with quantity but no usable price; excluded from the valued total and reported separately. (BRD-007)
+
+## Orders & Trades
+
+- **Order** — a user-created buy/sell instruction for an asset in a portfolio, created from the portfolio view. An instruction only: pending, filled, or cancelled — it never changes allocation by itself. (BRD-008)
+- **Trade** — the executed transaction that fills an order: asset, side, quantity, venue (chain or exchange), execution time. A trade's effect on the portfolio allocation is immediate. (BRD-008)
+
+## Reporting
+
+- **Brief** — a scheduled daily or weekly portfolio report, composed in-app and readable in the SPA. (BRD-009)
+
+## Administration
+
+- **Chain** — a blockchain network; the MVP supports EVM chains and Solana. (BRD-010)
+- **Token registry** — the maintained list of tokens, contracts/mints, and decimals used during sync. (BRD-010)
+
+## Background Jobs
+
+- **System job** — a scheduled process that refreshes data or creates snapshots without a user session. (BRD-011)

@@ -1,6 +1,8 @@
 /* ─────────────────────────────────────────────────────────────────────────
- * tokens.css — Gilded Ledger
- * Luxury design system for Crypto Pocket Butler.
+ * tokens.css — Parchment Ledger
+ * Design system for Crypto Pocket Butler, themed on the Claude
+ * (Anthropic) design language: warm parchment canvas, terracotta accent,
+ * exclusively warm-toned neutrals, serif display / sans UI split.
  *
  * Paste the `:root { … }` block verbatim into the first <style> of every
  * artifact generated against this system, then reference tokens with
@@ -8,85 +10,93 @@
  *
  * The values here are the machine-readable form of DESIGN.md. If a value
  * changes, change both files in the same edit.
+ *
+ * Adaptations from the Claude package fixture (for WCAG AA on parchment):
+ *   --meta, --success, --warn darkened one warm step (4.5:1+ as text);
+ *   --chart-1…5, --space-16/20, --tracking-label, --header-height,
+ *   --sidebar-width added for this product's charts and app shell.
  * ─────────────────────────────────────────────────────────────────────── */
 
 :root {
   /* ─── Surfaces ──────────────────────────────────────────────────────
-   * Black lacquer, never pure black on large fields. The bg → surface step
-   * is what gives cards lift without a shadow. `--surface-warm` is the
-   * only third tier: recommendation panels, selected rows, inset areas. */
-  --bg: #080706;
-  --surface: #151310;
-  --surface-warm: #241e14;
+   * Parchment (bg) → Ivory (surface) → Warm Sand (surface-warm).
+   * Never pure white as a page background — the warm cream is the
+   * personality. The warm tier is for recommendation panels, selected
+   * rows, insets, and prominent interactive surfaces. */
+  --bg: #f5f4ed;
+  --surface: #faf9f5;
+  --surface-warm: #e8e6dc;
 
   /* ─── Foreground ramp (4 levels) ────────────────────────────────────
-   * Ivory, never pure white. Use fg for headings and primary copy,
-   * fg-2 for secondary copy, muted for labels, meta for timestamps and
-   * footnotes. All four clear 4.5:1 on bg, surface, and surface-warm. */
-  --fg: #fff8ea;
-  --fg-2: #d8cdb7;
-  --muted: #9f927c;
-  --meta: #b3a58c;
+   * Every gray carries a yellow-brown undertone; no cool blue-grays.
+   * Use fg for headings and primary copy, fg-2 for secondary copy and
+   * links, muted for body/labels, meta for timestamps and footnotes. */
+  --fg: #141413;
+  --fg-2: #3d3d3a;
+  --muted: #5e5d59;
+  --meta: #6f6e67;
 
   /* ─── Borders ───────────────────────────────────────────────────────
-   * `--border` is a card or input edge; `--border-soft` is a row
-   * separator inside a table or list. Never use a border as decoration. */
-  --border: #3a3020;
-  --border-soft: #282217;
+   * Cream-tinted — the gentlest possible containment. `--border` is a
+   * card or input edge; `--border-soft` is a row separator or divider. */
+  --border: #f0eee6;
+  --border-soft: #e8e6dc;
 
   /* ─── Accent ────────────────────────────────────────────────────────
-   * Champagne gold. Primary actions, links, the active tab, and the
-   * focus base. At most one primary action and one accent detail per
-   * screen; gold is a signal of importance, never a wash. */
-  --accent: #c6a15b;
-  --accent-on: #080706;
+   * Terracotta — the only chromatic element on most screens. Primary
+   * CTA, links on dark surfaces, the active tab, one brand moment per
+   * screen. Earthy and deliberately un-tech; never a wash. */
+  --accent: #c96442;
+  --accent-on: #faf9f5;
   --accent-hover: color-mix(in oklab, var(--accent), black 8%);
   --accent-active: color-mix(in oklab, var(--accent), black 14%);
 
   /* ─── Semantic ──────────────────────────────────────────────────────
-   * State only, never decoration. Keep semantic color under 5% of the
-   * visible surface. Every use is paired with a text label. */
-  --success: #6fae7a;
-  --warn: #d8a94f;
-  --danger: #e06a60;
+   * State only, never decoration. Warm-toned; every use is paired with
+   * a text label so color never carries meaning alone. */
+  --success: #15803d;
+  --warn: #a16207;
+  --danger: #b53333;
 
   /* ─── Data visualisation ────────────────────────────────────────────
-   * Categorical series for allocation and trend charts. Order is fixed:
-   * series 1 is always the largest holding, and the legend carries the
-   * label so color is never the only signal. Semantic states do not
-   * borrow these slots. All five clear 4.5:1 on bg and surface. */
-  --chart-1: #c6a15b;
-  --chart-2: #d8cdb7;
-  --chart-3: #7fb0a4;
-  --chart-4: #a8875a;
-  --chart-5: #8c9db0;
+   * Categorical series for allocation and trend charts, drawn from the
+   * Claude palette (terracotta, olive, muted green, ochre, stone).
+   * Order is fixed: series 1 is always the largest holding, and the
+   * legend carries the label so color is never the only signal. All
+   * five clear 3:1 on bg and surface. */
+  --chart-1: #c96442;
+  --chart-2: #5e5d59;
+  --chart-3: #67764f;
+  --chart-4: #8a6d3b;
+  --chart-5: #6f6e67;
 
   /* ─── Typography ────────────────────────────────────────────────────
-   * Didone serif for display and page titles, geometric sans for
-   * interface copy, mono for every figure. Load Playfair Display
-   * (400/500/600/700), Jost (400/500/600), and IBM Plex Mono (400/500);
-   * the stacks below are the offline fallback. */
-  --font-display: "Playfair Display", "Didot", "Bodoni 72", Georgia, serif;
-  --font-body: "Jost", "Avenir Next", -apple-system, "Segoe UI", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+   * Fraunces — a modern soft serif — for display at weight 500–600.
+   * Instrument Sans for UI and body. JetBrains Mono strictly for
+   * figures. Load all three from Google Fonts; the stacks below are
+   * the offline fallbacks. */
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-body: "Instrument Sans", "Arial", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
 
-  --text-xs: 12px;
+  /* Type scale — 64px hero → 52px section → 32px sub → 25px small. */
+  --text-xs: 10px;
   --text-sm: 14px;
   --text-base: 16px;
   --text-lg: 20px;
-  --text-xl: 24px;
+  --text-xl: 25px;
   --text-2xl: 32px;
-  --text-3xl: 44px;
-  --text-4xl: 60px;
+  --text-3xl: 52px;
+  --text-4xl: 64px;
 
-  --leading-body: 1.55;
-  --leading-tight: 1.12;
-  --tracking-display: -0.015em;
-  --tracking-label: 0.06em;
+  --leading-body: 1.6;
+  --leading-tight: 1.1;
+  --tracking-display: 0em;
+  --tracking-label: 0.05em;
 
-  /* ─── Spacing (4px base) ────────────────────────────────────────────
-   * Only these steps. Section rhythm is named separately because it
-   * changes by breakpoint; luxury reads as generous, so sections breathe. */
+  /* ─── Spacing (8px base) ────────────────────────────────────────────
+   * Editorial pacing — generous like a magazine spread. Section rhythm
+   * is named separately because it changes by breakpoint. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -100,43 +110,42 @@
 
   --section-y-desktop: 96px;
   --section-y-tablet: 64px;
-  --section-y-phone: 40px;
+  --section-y-phone: 48px;
 
   /* ─── Radius ────────────────────────────────────────────────────────
-   * Softened but precise. Small for controls, medium for cards, large for
-   * modals and inset panels. Pill is for chips and badges only. */
+   * Softness is core to the identity: comfortably rounded standard,
+   * generously rounded primary, very rounded featured containers.
+   * No sharp corners on buttons or cards. */
   --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
   --radius-pill: 9999px;
 
   /* ─── Elevation ─────────────────────────────────────────────────────
-   * Flat by default. Ring for hairline separation where a border would
-   * shift layout. Raised only for overlays: menus, modals, popovers —
-   * a deep lacquer shadow, never a light glow. Cards, inputs, and
-   * buttons never carry a shadow. */
+   * Ring shadows instead of drop shadows — a border-like halo that is
+   * softer than a border. Drop shadows only as a whisper (0.05) for
+   * elevated content. */
   --elev-flat: none;
   --elev-ring: 0 0 0 1px var(--border);
-  --elev-raised:
-    0 1px 2px rgba(0, 0, 0, 0.6),
-    0 16px 48px rgba(0, 0, 0, 0.5);
+  --elev-raised: rgba(0, 0, 0, 0.05) 0px 4px 24px;
 
   /* ─── Focus ring ────────────────────────────────────────────────────
-   * One indicator for every focusable element. Implemented as a
-   * box-shadow so it layers outside the element without layout shift. */
-  --focus-ring: 0 0 0 3px color-mix(in oklab, var(--accent), transparent 62%);
+   * Focus Blue is the ONLY cool color in the system, reserved
+   * exclusively for keyboard focus. Implemented as a box-shadow so it
+   * layers outside the element without layout shift. */
+  --focus-ring: 0 0 0 3px rgba(56, 152, 236, 0.3);
 
   /* ─── Motion ────────────────────────────────────────────────────────
-   * Short and purposeful. Entrances use base, exits use fast (~70%).
+   * Short, purposeful, calm. Entrances use base, exits use fast (~70%).
    * Respect prefers-reduced-motion by removing transitions entirely. */
-  --motion-fast: 140ms;
+  --motion-fast: 150ms;
   --motion-base: 200ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* ─── Layout ────────────────────────────────────────────────────────
    * 12-column grid inside container-max. The app shell adds a fixed
    * sidebar; content reserves matching padding. */
-  --container-max: 1240px;
+  --container-max: 1200px;
   --container-gutter-desktop: 24px;
   --container-gutter-tablet: 16px;
   --container-gutter-phone: 12px;

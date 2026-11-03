@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Gilded Ledger — Splash</title>
-<meta name="description" content="Loading splash screen for Crypto Pocket Butler, built on the Gilded Ledger design system.">
+<title>Parchment Ledger — Splash</title>
+<meta name="description" content="Loading splash screen for Crypto Pocket Butler, built on the Parchment Ledger design system.">
 <link rel="icon" type="image/svg+xml" href="logo-mark.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Jost:wght@400;500;600&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="tokens.css">
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   *, *::before, *::after { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100svh;
@@ -68,7 +68,7 @@
    * element until its delayed animation starts, so the seal reads as
    * an engraving being cut: ring first, then gilding, then the name. */
   .play .seal-tile  { animation: rise 300ms var(--ease-standard) backwards; }
-  .play .ring-outer { stroke-dasharray: 207.3; animation: draw-ring 900ms var(--ease-standard) 100ms backwards; }
+  .play .ring-outer { stroke-dasharray: 188.5; animation: draw-ring 900ms var(--ease-standard) 100ms backwards; }
   .play .ring-inner { animation: fade 300ms var(--ease-standard) 700ms backwards; }
   .play .diamond    { animation: pop 200ms var(--ease-standard) 850ms backwards; }
   .play .monogram   { animation: rise-svg 300ms var(--ease-standard) 950ms backwards; }
@@ -78,7 +78,7 @@
   .play .progress-sweep { animation: fade 300ms var(--ease-standard) 1600ms backwards, sweep 1200ms cubic-bezier(0.4, 0, 0.2, 1) 1900ms infinite; }
   .play .replay     { animation: rise 300ms var(--ease-standard) 1800ms backwards; }
 
-  @keyframes draw-ring { from { stroke-dashoffset: 207.3; } to { stroke-dashoffset: 0; } }
+  @keyframes draw-ring { from { stroke-dashoffset: 188.5; } to { stroke-dashoffset: 0; } }
   @keyframes rise     { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @keyframes rise-svg { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   @keyframes pop      { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
@@ -92,21 +92,25 @@
 </style>
 </head>
 <body>
-  <main class="stage play" aria-label="Gilded Ledger loading screen">
-    <svg class="seal-svg" viewBox="0 0 96 96" role="img" aria-label="Gilded Ledger emblem">
+  <main class="stage play" aria-label="Parchment Ledger loading screen">
+    <svg class="seal-svg" viewBox="0 0 96 96" role="img" aria-label="Parchment Ledger emblem">
       <g class="seal-tile">
         <rect width="96" height="96" rx="20" fill="var(--surface)"/>
         <rect x="0.5" y="0.5" width="95" height="95" rx="19.5" fill="none" stroke="var(--border)"/>
       </g>
-      <circle class="ring-outer" cx="48" cy="48" r="33" fill="none" stroke="var(--accent)" stroke-width="1.5" transform="rotate(-90 48 48)"/>
-      <circle class="ring-inner" cx="48" cy="48" r="29" fill="none" stroke="var(--accent)" stroke-width="0.75" opacity="0.7"/>
-      <g class="diamond">
-        <rect x="45.5" y="12.5" width="5" height="5" transform="rotate(45 48 15)" fill="var(--surface)"/>
-        <rect x="46.25" y="13.25" width="3.5" height="3.5" transform="rotate(45 48 15)" fill="var(--accent)"/>
+      <circle class="ring-outer" cx="48" cy="51" r="30" fill="none" stroke="var(--accent)" stroke-width="2" transform="rotate(-90 48 51)"/>
+      <g class="ring-inner">
+        <circle cx="48" cy="51" r="26.5" fill="none" stroke="var(--accent)" stroke-width="0.75" opacity="0.7"/>
+        <line x1="21.5" y1="51" x2="24.5" y2="51" stroke="var(--accent)" stroke-width="1"/>
+        <line x1="71.5" y1="51" x2="74.5" y2="51" stroke="var(--accent)" stroke-width="1"/>
       </g>
-      <text class="monogram" x="48" y="58.5" text-anchor="middle" font-family="var(--font-display)" font-weight="600" font-size="30" letter-spacing="1" fill="var(--accent)">PB</text>
+      <g class="diamond">
+        <circle cx="48" cy="11" r="3.5" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+        <line x1="48" y1="14.5" x2="48" y2="21" stroke="var(--accent)" stroke-width="1.5"/>
+      </g>
+      <text class="monogram" x="48" y="59.5" text-anchor="middle" font-family="var(--font-display)" font-weight="600" font-size="24" letter-spacing="0.5" fill="var(--accent)">PB</text>
     </svg>
-    <h1 class="wordmark">Gilded Ledger</h1>
+    <h1 class="wordmark">Parchment Ledger</h1>
     <p class="status" role="status">Preparing your ledger</p>
     <div class="progress" aria-hidden="true"><span class="progress-sweep"></span></div>
     <button class="replay" type="button">Replay</button>

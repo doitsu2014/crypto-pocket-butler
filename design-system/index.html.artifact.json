@@ -1,8 +1,8 @@
 {
   "version": 1,
   "kind": "html",
-  "title": "design-system/index.html",
-  "entry": "design-system/index.html",
+  "title": "index.html",
+  "entry": "index.html",
   "renderer": "html",
   "status": "complete",
   "exports": [
@@ -10,8 +10,8 @@
     "pdf",
     "zip"
   ],
-  "createdAt": "2026-11-02T09:00:08.061Z",
-  "updatedAt": "2026-11-02T09:00:08.061Z",
+  "createdAt": "2026-11-02T07:12:27.185Z",
+  "updatedAt": "2026-11-03T06:46:17.892Z",
   "metadata": {
     "inferred": true,
     "reconciled": true

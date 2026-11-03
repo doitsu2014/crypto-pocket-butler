@@ -4,7 +4,7 @@ description: >
   Implement the Crypto Pocket Butler web app with React 18 + TypeScript 5
   (Vite), Tailwind CSS v4, TanStack Query, Recharts, and @supabase/supabase-js
   for auth. Use when writing or reviewing SPA code: screens, components, data
-  fetching, routing, styling with Tailwind against the Gilded Ledger tokens.
+  fetching, routing, styling with Tailwind against the Parchment Ledger tokens.
   Visual design rules live in the frontend-design skill; this skill covers the
   implementation stack.
 argument-hint: "[screen, component, or feature to implement]"
@@ -12,7 +12,7 @@ argument-hint: "[screen, component, or feature to implement]"
 
 # React Web App — Implementation Stack
 
-Visual rules: the `frontend-design` skill (Gilded Ledger). This skill is how the SPA is built.
+Visual rules: the `frontend-design` skill (Parchment Ledger). This skill is how the SPA is built.
 
 ## Stack (fixed)
 
@@ -25,7 +25,7 @@ Visual rules: the `frontend-design` skill (Gilded Ledger). This skill is how the
 | Charts | Recharts, colors from `--chart-1…5` tokens |
 | Backend calls | **One** `src/lib/api.ts` module — the only place that talks to the API Gateway |
 
-## Tailwind + Gilded Ledger tokens
+## Tailwind + Parchment Ledger tokens
 
 Tailwind utilities must resolve to design tokens — never raw hex, px steps, or default-gray
 classes (`bg-gray-800` etc. are banned). Set up once in `src/main.css`:

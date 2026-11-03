@@ -11,3 +11,5 @@ aidlc/spaces/*/intents/*/.active-intent
 # Structurizr build artefacts (see docs/architecture/README.md)
 docs/architecture/workspace.json
 docs/architecture/.structurizr/
+# macOS
+.DS_Store

@@ -1,0 +1,13 @@
+# BEGIN my-aidlc:claude
+# my-aidlc workspace runtime
+aidlc/.my-aidlc-sessions/
+aidlc/config.local.json
+aidlc/active-space
+aidlc/spaces/*/.active-space
+aidlc/spaces/*/intents/*/.active-intent
+# Claude Code per-machine settings
+.claude/settings.local.json
+# END my-aidlc:claude
+# Structurizr build artefacts (see docs/architecture/README.md)
+docs/architecture/workspace.json
+docs/architecture/.structurizr/

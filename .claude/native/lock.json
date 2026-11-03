@@ -1,0 +1,387 @@
+{
+  "repository": "awslabs/aidlc-workflows",
+  "version": "2.11.0",
+  "tag": "v2.11.0",
+  "commit": "6a378b53c0a4fe0641ed7d8de8dfff94264d5b6a",
+  "asset": "aidlc-workflows-2.11.0.tar.gz",
+  "assetUrl": "https://codeload.github.com/awslabs/aidlc-workflows/tar.gz/refs/tags/v2.11.0",
+  "archiveSha256": "170243fdddfeaf0a7d04eb45481a49ae280716ab2f4dd93e8360aecd95cf74f3",
+  "archiveVerified": true,
+  "sourcePath": "core",
+  "stages": 33,
+  "agents": 14,
+  "scopes": 11,
+  "protocols": 9,
+  "files": [
+    {
+      "path": "ADAPTATION.md",
+      "sha256": "c359f9a05629ab9baeff639903aeacbcd4811d91537bcf738a9462fa681f7da8",
+      "bytes": 2363
+    },
+    {
+      "path": "README.md",
+      "sha256": "8f679ac5bf1083d62f9db8aa82f50a52149561079845ff492e1df616d814bd6b",
+      "bytes": 1309
+    },
+    {
+      "path": "agents/aidlc-architect-agent.md",
+      "sha256": "fe49ef3008d128d4ed207ab3581754e50875509d78a4aac5eb8b333cd63c3849",
+      "bytes": 5373
+    },
+    {
+      "path": "agents/aidlc-architecture-reviewer-agent.md",
+      "sha256": "96482d13a1308b8e50e40ba917dc30a9fb1c75a9a2cf0bf3e0617c1504019597",
+      "bytes": 7979
+    },
+    {
+      "path": "agents/aidlc-aws-platform-agent.md",
+      "sha256": "e3a59d79732d40101db5ea4e9e2af67b172b9193d22a3284b7ae4e5d0825bf56",
+      "bytes": 4793
+    },
+    {
+      "path": "agents/aidlc-compliance-agent.md",
+      "sha256": "cb36e15f0b8de2d6c47ffafbb4c6fa1e088acbbf896e250fe8336720ce548769",
+      "bytes": 5067
+    },
+    {
+      "path": "agents/aidlc-composer-agent.md",
+      "sha256": "6d3a127e4b456d54decc8b0a9804b1069df0c039f43b47bca61373f17d078c6c",
+      "bytes": 61749
+    },
+    {
+      "path": "agents/aidlc-delivery-agent.md",
+      "sha256": "43095e892f457ec98e4f0a5d09b65c969bc0fa5e28a1120defa159877ec0ac12",
+      "bytes": 4732
+    },
+    {
+      "path": "agents/aidlc-design-agent.md",
+      "sha256": "a8e80b7d67fe0777c5235c6dc143058ac306b63bbe561219fa728d988cc1c9ee",
+      "bytes": 3964
+    },
+    {
+      "path": "agents/aidlc-developer-agent.md",
+      "sha256": "41eca8dc3fe796e258a777453b3f7ca604e99001141dc09d0106a4997396348d",
+      "bytes": 4594
+    },
+    {
+      "path": "agents/aidlc-devsecops-agent.md",
+      "sha256": "8abba85622c5556350935d138bfec616edbfb86e8ac3e3095a965d4e80b8962b",
+      "bytes": 4450
+    },
+    {
+      "path": "agents/aidlc-operations-agent.md",
+      "sha256": "ff074c589fe95d56c977be6f09249509538ed56ac03d42f249ae86453940e39c",
+      "bytes": 5494
+    },
+    {
+      "path": "agents/aidlc-pipeline-deploy-agent.md",
+      "sha256": "70a3f1a697ecef5c900f810d81c8709283676f11e642eaac25d86ddc131dddca",
+      "bytes": 6526
+    },
+    {
+      "path": "agents/aidlc-product-agent.md",
+      "sha256": "e6eec8d4b677d2ce70ee5248bd5c1e130f405d5841bc5ae88abcc4e7f0cea391",
+      "bytes": 4395
+    },
+    {
+      "path": "agents/aidlc-product-lead-agent.md",
+      "sha256": "517abbbc96b1aaf45626616455960e4e8c715e9119e12449ae8a7f3353881a7c",
+      "bytes": 6585
+    },
+    {
+      "path": "agents/aidlc-quality-agent.md",
+      "sha256": "a1119a0b93e46dce0b93f10c39181ec798c0e38fbe3cfc26829eac88f86acec6",
+      "bytes": 3890
+    },
+    {
+      "path": "phases/construction.md",
+      "sha256": "f6c9e45f73d6291726cdc127a77c0aea06b4b4e63888c00a42f10daeb8d0e55d",
+      "bytes": 1003
+    },
+    {
+      "path": "phases/ideation.md",
+      "sha256": "f193091ccfebd5d4bf3bc9671b6d3be96e8f5c79901db5fcbc49bc9f64a6cc02",
+      "bytes": 1128
+    },
+    {
+      "path": "phases/inception.md",
+      "sha256": "c0e4524d7f750922cdcf554381ee3bb380f4aa87a34a0437163e4e1fa179534a",
+      "bytes": 1199
+    },
+    {
+      "path": "phases/initialization.md",
+      "sha256": "41824618b67b1aeae6d47be070af527c41f6be8a3ffba2d83ce1de454f5a9465",
+      "bytes": 791
+    },
+    {
+      "path": "phases/operation.md",
+      "sha256": "a2f7d7e2c7b39aba93d0bb476c7bfd9596884ea8ac89f7059b3f123b55e85df7",
+      "bytes": 1096
+    },
+    {
+      "path": "protocols/stage-definition.md",
+      "sha256": "5d6ec4a449ac8c7cc7bcedce8d6dc966956e3edad032eef73b89848f2456307c",
+      "bytes": 16543
+    },
+    {
+      "path": "protocols/stage-protocol-construction.md",
+      "sha256": "1fd050f62f1812bea1a50f9910c0ada9f3a29d6a55b53b803e15917420e5822e",
+      "bytes": 90325
+    },
+    {
+      "path": "protocols/stage-protocol-ensemble.md",
+      "sha256": "ffe43e8287bda559a0db5d84971b431b5b2d50aba4553befea72ba1b430f32c4",
+      "bytes": 34857
+    },
+    {
+      "path": "protocols/stage-protocol-governance.md",
+      "sha256": "768e12c2754493a91a50142d9ef2e68b314b7a2ff24cd78be89615470e6d6372",
+      "bytes": 2098
+    },
+    {
+      "path": "protocols/stage-protocol-learnings.md",
+      "sha256": "a18c9b7f9f55de6ab43faea9ebbaa9f3defc503e9ac9e17ce3b2036aa48523c5",
+      "bytes": 15318
+    },
+    {
+      "path": "protocols/stage-protocol-recovery.md",
+      "sha256": "62e76a7e5f17202f7b96144d92efe20cfccc00e8e3e0bf15aea1ffd57e5e268c",
+      "bytes": 18042
+    },
+    {
+      "path": "protocols/stage-protocol-reviewer.md",
+      "sha256": "703abb164439a830e0d7cd89c82ccb7a1f1bdc432c08b22414aad4145d157d49",
+      "bytes": 46279
+    },
+    {
+      "path": "protocols/stage-protocol-swarm.md",
+      "sha256": "6a4786e861be478663964a6750c0a134b3d13d2016caa45a9943620b4bf2cbd6",
+      "bytes": 77172
+    },
+    {
+      "path": "protocols/stage-protocol.md",
+      "sha256": "cebc18520edb468a64404c49619ab711a5a58ce95e1ac7abf906d9bb601f7c63",
+      "bytes": 103313
+    },
+    {
+      "path": "scopes/bugfix.md",
+      "sha256": "96fac9e575ffd94c6fbf69d08d64e4bf6914f3b6c40d7804463df975a7f60b75",
+      "bytes": 2193
+    },
+    {
+      "path": "scopes/classic.md",
+      "sha256": "c80b65bc9d86c91a4ce090bf435055322c4465165c6e0f5e0f1ce3fbfaabc2ad",
+      "bytes": 3163
+    },
+    {
+      "path": "scopes/enterprise.md",
+      "sha256": "04210660646c91c8bd606cf43d66a3985015dc3eb26a473ddfe0bc210a006e37",
+      "bytes": 1463
+    },
+    {
+      "path": "scopes/express.md",
+      "sha256": "296bcffd3eb227ea33450807c8721d87576c32529f213815d50343fbff75da8b",
+      "bytes": 2251
+    },
+    {
+      "path": "scopes/feature.md",
+      "sha256": "b401441adae1ba06dd45f89ce57b7bce02574a7aaaed92ccaeadfa53bca7bd60",
+      "bytes": 1346
+    },
+    {
+      "path": "scopes/infra.md",
+      "sha256": "d687ee85d8b724101b0a638b2e147b1356654b0fdf36b7501c24bc1841ecdd45",
+      "bytes": 1758
+    },
+    {
+      "path": "scopes/mvp.md",
+      "sha256": "2a94d5267446a32dab01c1f01778e71fcb0807da2a27854c7e0741eb0cc7d2fa",
+      "bytes": 1537
+    },
+    {
+      "path": "scopes/poc.md",
+      "sha256": "cbd95ea0dbdf822381fbfa8939fbc3fa1d4bcba6c4621c20dc0e3090ce72db07",
+      "bytes": 1681
+    },
+    {
+      "path": "scopes/refactor.md",
+      "sha256": "64998bbaff629f73f8cca4b841a1d67461c36b2ab4e80ed64ddda3e88912dd83",
+      "bytes": 1772
+    },
+    {
+      "path": "scopes/security-patch.md",
+      "sha256": "e6fe5589a345da9150c71f07192ea3fc9d761ab620f243c7e2a74c9a61751e33",
+      "bytes": 1947
+    },
+    {
+      "path": "scopes/workshop.md",
+      "sha256": "0a40a53e0840925e6898179339f723777d25559013a5e14d92374f64ae0e0e8a",
+      "bytes": 1770
+    },
+    {
+      "path": "stages/construction/build-and-test.md",
+      "sha256": "967ab12c4ce8f63c9349c686a9c6172c9c3271bbb0778b4db17e0d1b6ae5b919",
+      "bytes": 14273
+    },
+    {
+      "path": "stages/construction/ci-pipeline.md",
+      "sha256": "01cadbec87ba60690a1f6ac4959eb2c8f3e1b45a3bb26aa65bc97abe392a2581",
+      "bytes": 4264
+    },
+    {
+      "path": "stages/construction/code-generation.md",
+      "sha256": "32230fc197a5f80fffff19e3e0b3189332c45d90ee4c12346cc71c113a74c914",
+      "bytes": 32139
+    },
+    {
+      "path": "stages/construction/functional-design.md",
+      "sha256": "cf99023581bbbfbff984ae0eeb989de64fd5d441b9a052e9a3aa6f26b4a9e6a8",
+      "bytes": 9855
+    },
+    {
+      "path": "stages/construction/infrastructure-design.md",
+      "sha256": "2d7311da29733d2869a6433bdac04dbf3818c4e06b71d06fc72b154f4d85b219",
+      "bytes": 10298
+    },
+    {
+      "path": "stages/construction/nfr-design.md",
+      "sha256": "119a67287cbe849f2ed709608aea840ed4b802b1929e2c420ca1768b2b291dae",
+      "bytes": 9280
+    },
+    {
+      "path": "stages/construction/nfr-requirements.md",
+      "sha256": "b523c4a5b60b756688e96f7de4d4aecc5ae003bd0669a97a913eb9c84844fc29",
+      "bytes": 7803
+    },
+    {
+      "path": "stages/ideation/approval-handoff.md",
+      "sha256": "69fe1e9b2927873998259911f0b93936c3ae5f3cd7da202e5aa640f54b69bef9",
+      "bytes": 4236
+    },
+    {
+      "path": "stages/ideation/feasibility.md",
+      "sha256": "9752107eb9f5819022c21419e80367684da67df43811b43fed73df27b114364d",
+      "bytes": 3540
+    },
+    {
+      "path": "stages/ideation/intent-capture.md",
+      "sha256": "a12912ca9d0789ab59218cc2403331902b271e950dbbce6df95a2c502e2de9bf",
+      "bytes": 13121
+    },
+    {
+      "path": "stages/ideation/market-research.md",
+      "sha256": "65db738c95e5b3c52e56dfcf58e9f6b7852fa1171ba551723a310e7abfeba440",
+      "bytes": 2958
+    },
+    {
+      "path": "stages/ideation/rough-mockups.md",
+      "sha256": "ef4ad3f58a9cb4c8e438fb55d5416b77cb32d656f8ed1b0ba0e5b7c9de96001a",
+      "bytes": 3555
+    },
+    {
+      "path": "stages/ideation/scope-definition.md",
+      "sha256": "0a2969b505f8c555ade2b7ee671b666cbce65e9a5f51db463af6f08d361a9551",
+      "bytes": 2974
+    },
+    {
+      "path": "stages/ideation/team-formation.md",
+      "sha256": "111159a4be8ee7a6daa65fdbf6880a8c23272257e63ec4ed24bdb6703383d368",
+      "bytes": 3133
+    },
+    {
+      "path": "stages/inception/contract-design.md",
+      "sha256": "a749fa48ecb9c6d9837b90ab844d1f0723947b6dd4ba266fc29fb819ce7ed8e6",
+      "bytes": 6577
+    },
+    {
+      "path": "stages/inception/delivery-planning.md",
+      "sha256": "b371771f4452929a58567e6c5cf2946566be75d10d498a1354f35808d4bd0c8d",
+      "bytes": 18217
+    },
+    {
+      "path": "stages/inception/domain-design.md",
+      "sha256": "0bb94fb7eadb6fb221322ef3ce7fb975ba69cab21797c76e6a53f51c417c5a3d",
+      "bytes": 11448
+    },
+    {
+      "path": "stages/inception/practices-discovery.md",
+      "sha256": "c38bd80b0f726b25d9714742ed04f93031587d7d9dd8be51223f3b05cd0c44c5",
+      "bytes": 13009
+    },
+    {
+      "path": "stages/inception/refined-mockups.md",
+      "sha256": "25659004c18be0bcc543588f55fc4edadf225928c4b4973bca980a24ca91cee0",
+      "bytes": 4021
+    },
+    {
+      "path": "stages/inception/requirements-analysis.md",
+      "sha256": "c93deb77289337240fef5989165536cee3b6c85d45c37fd68121dced9af3b3a0",
+      "bytes": 14489
+    },
+    {
+      "path": "stages/inception/reverse-engineering.md",
+      "sha256": "0c54d3d91d9a11519916e334406eb6df8680b838fb1bba7b521acaf2761c09d7",
+      "bytes": 27590
+    },
+    {
+      "path": "stages/inception/units-generation.md",
+      "sha256": "cd885221c70b7c6914e3a17c52318892d303f8cd80c0062aac51cce6eb16335c",
+      "bytes": 10672
+    },
+    {
+      "path": "stages/inception/user-stories.md",
+      "sha256": "fbe840fa39b25f936fadb3b3fc745e3b0f5d2f96303b6c34c3e2757f81117eec",
+      "bytes": 10393
+    },
+    {
+      "path": "stages/initialization/state-init.md",
+      "sha256": "5f88093d67b928871afe745e4e8e130c3482a2d64c34dc4453a835ae6118a7d0",
+      "bytes": 4273
+    },
+    {
+      "path": "stages/initialization/workspace-detection.md",
+      "sha256": "ef2570bc9f178be154cebf537f4629c9cfd2a7bd480645886670a2f8e0cbe004",
+      "bytes": 8484
+    },
+    {
+      "path": "stages/initialization/workspace-scaffold.md",
+      "sha256": "093366b2f8b865d59ef0eb341372da578919f555dd2f35cd9284dc7d303e81ec",
+      "bytes": 4881
+    },
+    {
+      "path": "stages/operation/deployment-execution.md",
+      "sha256": "6c986999d4d9c27a1082aca4419f827e5e93cc4d1e94f9a93a05505baa79406a",
+      "bytes": 4292
+    },
+    {
+      "path": "stages/operation/deployment-pipeline.md",
+      "sha256": "1e4357f701832034ea234c413a01e25732087f04d607b626141be96de1316f57",
+      "bytes": 3651
+    },
+    {
+      "path": "stages/operation/environment-provisioning.md",
+      "sha256": "f0ee0d6fdb7f1a547b1a5cbc79c1989c6df3d6dd87e136d76a826f93c03f202b",
+      "bytes": 3031
+    },
+    {
+      "path": "stages/operation/feedback-optimization.md",
+      "sha256": "ecb34af46c6a3605c48cb62da57432a541cf6996d203efa12d7c785c6e5b37fc",
+      "bytes": 3495
+    },
+    {
+      "path": "stages/operation/incident-response.md",
+      "sha256": "a4b154629d1efb3c81afff3419c2a1ad02af877ac87ab92305e354e4d52f7ebd",
+      "bytes": 3051
+    },
+    {
+      "path": "stages/operation/observability-setup.md",
+      "sha256": "42a979120763d609582d7e832f54c5d539cd67d815783fb0ddbd053834cb2602",
+      "bytes": 3770
+    },
+    {
+      "path": "stages/operation/performance-validation.md",
+      "sha256": "7bbe0b0f816051264294af9c351949af8c26a8b238ecc8ae8883751baf7a6e7a",
+      "bytes": 3316
+    }
+  ]
+}

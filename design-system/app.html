@@ -1,0 +1,1718 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crypto Pocket Butler — Parchment Ledger App</title>
+<meta name="description" content="Working prototype of the Crypto Pocket Butler app: consolidated portfolio view, drift, rebalancing decisions, accounts, and briefs — built on the Parchment Ledger design system.">
+<link rel="icon" type="image/svg+xml" href="logo-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* ── Staged layout primitives (subset of OD-LAYOUT-PRIMITIVES v1) ── */
+  @layer od-layout {
+    [hidden]:not([hidden="until-found" i]) { display: none !important; }
+    dialog:not([open]) { display: none !important; }
+    .od-stack { display: flex; flex-direction: column; gap: var(--od-gap, 8px); }
+    .od-row   { display: flex; align-items: center; gap: var(--od-gap, 8px); }
+    .od-icon  { display: inline-block; inline-size: var(--od-icon-size, 1em); block-size: var(--od-icon-size, 1em); flex: none; }
+    .od-nowrap { white-space: nowrap; }
+    .od-truncate { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  }
+
+  :root { color-scheme: light; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; min-height: 100svh;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--font-body); font-size: var(--text-base);
+    line-height: var(--leading-body);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { margin: 0; font-family: var(--font-display); font-weight: 600; line-height: var(--leading-tight); letter-spacing: var(--tracking-display); }
+  h1 { font-size: var(--text-2xl); }
+  h2 { font-size: var(--text-xl); }
+  h3 { font-size: var(--text-lg); }
+  p { margin: 0; }
+  a { color: var(--accent); }
+  code { font-family: var(--font-mono); font-size: 0.86em; }
+  .num, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .skip {
+    position: absolute; left: var(--space-4); top: -80px; z-index: 100;
+    background: var(--surface); color: var(--fg); padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: var(--text-sm);
+    transition: top var(--motion-fast) var(--ease-standard);
+  }
+  .skip:focus { top: var(--space-4); }
+
+  .overline {
+    font-size: var(--text-xs); font-weight: 600; letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--meta);
+  }
+  .meta-line { font-size: var(--text-xs); color: var(--meta); }
+
+  /* ── Buttons ─────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+    height: 40px; padding: 0 var(--space-5);
+    border-radius: var(--radius-sm); border: 1px solid transparent;
+    font-family: var(--font-body); font-size: var(--text-sm); font-weight: 600;
+    cursor: pointer;
+    transition: background-color var(--motion-fast) var(--ease-standard),
+                border-color var(--motion-fast) var(--ease-standard);
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-on); }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:active { background: var(--accent-active); }
+  .btn-secondary { background: var(--surface); color: var(--fg-2); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--fg); }
+  .btn-ghost { background: none; color: var(--accent); }
+  .btn-ghost:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+
+  /* ── Badges ──────────────────────────────────────────────────── */
+  .badge {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    padding: 3px var(--space-3); border-radius: var(--radius-pill);
+    font-size: var(--text-xs); font-weight: 500; white-space: nowrap;
+  }
+  .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+  .badge-neutral { background: color-mix(in oklab, var(--meta), transparent 88%); color: var(--fg-2); }
+  .badge-success { background: color-mix(in oklab, var(--success), transparent 88%); color: var(--success); }
+  .badge-warn    { background: color-mix(in oklab, var(--warn), transparent 88%); color: var(--warn); }
+  .badge-danger  { background: color-mix(in oklab, var(--danger), transparent 88%); color: var(--danger); }
+  .badge-gold    { background: color-mix(in oklab, var(--accent), transparent 86%); color: var(--accent); }
+
+  /* ── Cards & panels ──────────────────────────────────────────── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: var(--space-6);
+  }
+  .panel-warm { background: var(--surface-warm); }
+  .card h3 { margin-bottom: var(--space-3); }
+  .card-note { margin-top: var(--space-4); font-size: var(--text-xs); color: var(--meta); }
+
+  /* ── App shell ───────────────────────────────────────────────── */
+  .app-header {
+    position: sticky; top: 0; z-index: 30;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .header-inner {
+    max-width: var(--container-max); margin: 0 auto;
+    min-height: var(--header-height);
+    padding: var(--space-2) var(--container-gutter-desktop);
+    display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: var(--space-3); color: var(--fg); }
+  .brand svg { width: 28px; height: 28px; flex: none; }
+  .brand-name { font-family: var(--font-display); font-weight: 600; font-size: var(--text-base); line-height: 1.15; }
+  .brand-sub {
+    display: block; font-size: var(--text-xs); color: var(--meta);
+    letter-spacing: var(--tracking-label); text-transform: uppercase;
+  }
+  .header-meta { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+  .portfolio-select {
+    height: 36px; padding: 0 var(--space-3);
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-family: var(--font-body); font-size: var(--text-sm);
+  }
+
+  .app-body {
+    max-width: var(--container-max); margin: 0 auto;
+    padding: var(--space-6) var(--container-gutter-desktop) var(--space-12);
+    display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    gap: var(--space-8); align-items: start;
+  }
+  .sidebar {
+    position: sticky; top: calc(var(--header-height) + var(--space-6));
+    display: flex; flex-direction: column; gap: var(--space-1);
+  }
+  .nav-btn {
+    display: flex; align-items: center; gap: var(--space-3);
+    width: 100%; padding: var(--space-3) var(--space-3);
+    background: none; border: none; border-left: 2px solid transparent;
+    color: var(--muted); font-family: var(--font-body);
+    font-size: var(--text-sm); font-weight: 500; text-align: left; cursor: pointer;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    transition: color var(--motion-fast) var(--ease-standard),
+                border-color var(--motion-fast) var(--ease-standard);
+  }
+  .nav-btn:hover { color: var(--fg); }
+  .nav-btn[aria-current="page"] { color: var(--accent); border-left-color: var(--accent); }
+  .nav-btn .od-icon { --od-icon-size: 18px; }
+  .sidebar-sep { height: 1px; background: var(--border-soft); margin: var(--space-3) 0; }
+  .sidebar-foot { font-size: var(--text-xs); color: var(--meta); padding: 0 var(--space-3); }
+  .nav-group {
+    font-size: var(--text-xs); font-weight: 600; letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--meta);
+    padding: var(--space-4) var(--space-3) var(--space-1); margin: 0;
+  }
+  .sidebar > .nav-group:first-child { padding-top: 0; }
+  .btn-sm { height: 32px; padding: 0 var(--space-3); font-size: var(--text-xs); }
+  .table tr.row-inactive td, .table tr.row-inactive th { opacity: 0.55; }
+  .table .empty-row td { text-align: center; color: var(--muted); padding: var(--space-8) var(--space-4); }
+  .card-head-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3);
+  }
+  .card-head-row h3 { margin: 0; }
+  .search-input {
+    height: 36px; padding: 0 var(--space-3); width: 100%; max-width: 320px;
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-family: var(--font-body); font-size: var(--text-sm);
+  }
+  .search-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+
+  .screen-head { margin-bottom: var(--space-6); }
+  .screen-head .overline { margin-bottom: var(--space-2); }
+  .screen-lede { margin-top: var(--space-2); color: var(--fg-2); max-width: 62ch; }
+  .screen { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+  [tabindex="-1"]:focus { outline: none; box-shadow: none; }
+
+  /* ── KPI tiles ───────────────────────────────────────────────── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); }
+  .kpi { display: flex; flex-direction: column; gap: var(--space-2); }
+  .kpi-value { font-size: 28px; font-weight: 500; color: var(--fg); }
+  .kpi-delta { font-size: var(--text-sm); font-weight: 500; }
+  .kpi-delta.up { color: var(--success); }
+  .kpi-delta.down { color: var(--danger); }
+
+  /* ── Allocation bar ──────────────────────────────────────────── */
+  .alloc-bar {
+    display: flex; height: 12px; gap: 2px;
+    border-radius: var(--radius-pill); overflow: hidden;
+  }
+  .alloc-seg { min-width: 2px; }
+  .alloc-legend {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--space-2) var(--space-4); margin-top: var(--space-4);
+  }
+  .legend-item { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-2); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .legend-item .mono { margin-left: auto; color: var(--fg); }
+
+  /* ── Tables ──────────────────────────────────────────────────── */
+  .table-scroll { overflow-x: auto; }
+  .table { width: 100%; border-collapse: collapse; }
+  .table caption { text-align: left; padding-bottom: var(--space-3); }
+  .table th {
+    text-align: left; padding: var(--space-2) var(--space-4);
+    font-size: var(--text-xs); font-weight: 600; letter-spacing: var(--tracking-label);
+    text-transform: uppercase; color: var(--meta);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .table td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-soft); }
+  .table tr:last-child td { border-bottom: none; }
+  .table .r { text-align: right; }
+  .table td.r { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .asset-cell { display: flex; flex-direction: column; line-height: 1.3; }
+  .asset-sym { font-weight: 600; color: var(--fg); }
+  .asset-name { font-size: var(--text-xs); color: var(--meta); }
+
+  /* ── Forms ───────────────────────────────────────────────────── */
+  .field { display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-4); }
+  .field label { font-size: 13px; font-weight: 500; color: var(--fg-2); }
+  .field .hint { font-size: var(--text-xs); color: var(--muted); }
+  .field .error { font-size: var(--text-xs); color: var(--danger); }
+  .field input, .field select {
+    height: 40px; padding: 0 var(--space-3);
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-family: var(--font-body); font-size: var(--text-base); width: 100%;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+  .field.invalid input, .field.invalid select { border-color: var(--danger); }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 var(--space-4); }
+  .form-sum { font-size: var(--text-sm); color: var(--fg-2); margin: var(--space-2) 0 var(--space-4); }
+  .form-sum.bad { color: var(--danger); }
+
+  /* ── Recommendation cards ────────────────────────────────────── */
+  .rec-list { display: flex; flex-direction: column; gap: var(--space-4); }
+  .rec-card { display: flex; flex-direction: column; gap: var(--space-3); }
+  .rec-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+  .rec-title { font-size: var(--text-base); font-weight: 600; color: var(--fg); font-family: var(--font-body); }
+  .rec-rationale { color: var(--fg-2); font-size: var(--text-sm); max-width: 68ch; }
+  .rec-meta { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+  .rec-actions { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); }
+  .rec-done { font-size: var(--text-sm); color: var(--meta); font-style: italic; }
+
+  /* ── Sign-in ─────────────────────────────────────────────────── */
+  .signin-wrap { min-height: 100svh; display: grid; place-items: center; padding: var(--space-6) var(--space-4); }
+  .signin-card { width: min(420px, 100%); display: flex; flex-direction: column; gap: var(--space-4); }
+  .signin-brand { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); text-align: center; }
+  .signin-brand svg { width: 72px; height: 72px; }
+
+  /* ── Briefs / reports ────────────────────────────────────────── */
+  .brief { max-width: 72ch; }
+  .brief p, .brief li { color: var(--fg-2); font-size: var(--text-sm); }
+  .brief ul { margin: var(--space-2) 0 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
+  .brief-figure { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--fg); }
+
+  /* ── Trend ───────────────────────────────────────────────────── */
+  .trend-svg { display: block; width: 100%; height: auto; }
+
+  /* ── Toast ───────────────────────────────────────────────────── */
+  .toast {
+    position: fixed; left: 50%; bottom: var(--space-6); transform: translateX(-50%);
+    z-index: 50; max-width: min(480px, calc(100vw - 32px));
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: var(--space-3) var(--space-5);
+    font-size: var(--text-sm); color: var(--fg-2);
+    box-shadow: var(--elev-raised);
+  }
+
+  /* ── Responsive ──────────────────────────────────────────────── */
+  @media (max-width: 1023px) {
+    .app-body { grid-template-columns: minmax(0, 1fr); gap: var(--space-6); padding-left: var(--container-gutter-tablet); padding-right: var(--container-gutter-tablet); }
+    .sidebar { position: static; flex-direction: row; gap: var(--space-1); overflow-x: auto; padding-bottom: var(--space-2); }
+    .nav-btn { width: auto; white-space: nowrap; border-left: none; border-bottom: 2px solid transparent; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+    .nav-btn[aria-current="page"] { border-left-color: transparent; border-bottom-color: var(--accent); }
+    .sidebar-sep, .sidebar-foot, .nav-group { display: none; }
+  }
+  @media (max-width: 639px) {
+    .app-body { padding-left: var(--container-gutter-phone); padding-right: var(--container-gutter-phone); }
+    .header-inner { padding: var(--space-2) var(--container-gutter-phone); }
+    .kpi-grid { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<!-- ══ Sign-in screen ══════════════════════════════════════════ -->
+<section id="signin" class="signin-wrap" aria-labelledby="signin-title">
+  <div class="card signin-card">
+    <div class="signin-brand">
+      <svg viewBox="0 0 96 96" role="img" aria-label="Parchment Ledger emblem">
+        <rect width="96" height="96" rx="20" fill="var(--bg)"/>
+        <rect x="0.5" y="0.5" width="95" height="95" rx="19.5" fill="none" stroke="var(--border)"/>
+        <circle cx="48" cy="11" r="3.5" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+        <line x1="48" y1="14.5" x2="48" y2="21" stroke="var(--accent)" stroke-width="1.5"/>
+        <circle cx="48" cy="51" r="30" fill="none" stroke="var(--accent)" stroke-width="2"/>
+        <circle cx="48" cy="51" r="26.5" fill="none" stroke="var(--accent)" stroke-width="0.75" opacity="0.7"/>
+        <line x1="21.5" y1="51" x2="24.5" y2="51" stroke="var(--accent)" stroke-width="1"/>
+        <line x1="71.5" y1="51" x2="74.5" y2="51" stroke="var(--accent)" stroke-width="1"/>
+        <text x="48" y="59.5" text-anchor="middle" font-family="var(--font-display)" font-weight="600" font-size="24" letter-spacing="0.5" fill="var(--accent)">PB</text>
+      </svg>
+      <div>
+        <h1 id="signin-title">Crypto Pocket Butler</h1>
+        <p class="meta-line">Read-only aggregation &middot; human decisions</p>
+      </div>
+    </div>
+    <form id="signin-form" novalidate>
+      <div class="field" id="f-email">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required>
+        <p class="error" hidden></p>
+      </div>
+      <div class="field" id="f-password">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <p class="error" hidden></p>
+        <p class="hint">Sample sign-in &mdash; any credentials work. No real authentication in this prototype.</p>
+      </div>
+      <button class="btn btn-primary" id="signin-btn" type="submit" style="width:100%">Sign in</button>
+    </form>
+    <p class="meta-line" style="text-align:center">Sample data &mdash; illustrative only</p>
+  </div>
+</section>
+
+<!-- ══ App shell ═══════════════════════════════════════════════ -->
+<div id="app" hidden>
+  <header class="app-header">
+    <div class="header-inner">
+      <a class="brand" href="#main" aria-label="Crypto Pocket Butler, skip to content">
+        <svg viewBox="0 0 96 96" aria-hidden="true" focusable="false">
+          <rect width="96" height="96" rx="20" fill="var(--bg)"/>
+          <rect x="0.5" y="0.5" width="95" height="95" rx="19.5" fill="none" stroke="var(--border)"/>
+          <circle cx="48" cy="11" r="3.5" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+          <line x1="48" y1="14.5" x2="48" y2="21" stroke="var(--accent)" stroke-width="1.5"/>
+          <circle cx="48" cy="51" r="30" fill="none" stroke="var(--accent)" stroke-width="2"/>
+          <circle cx="48" cy="51" r="26.5" fill="none" stroke="var(--accent)" stroke-width="0.75" opacity="0.7"/>
+          <line x1="21.5" y1="51" x2="24.5" y2="51" stroke="var(--accent)" stroke-width="1"/>
+          <line x1="71.5" y1="51" x2="74.5" y2="51" stroke="var(--accent)" stroke-width="1"/>
+          <text x="48" y="59.5" text-anchor="middle" font-family="var(--font-display)" font-weight="600" font-size="24" letter-spacing="0.5" fill="var(--accent)">PB</text>
+        </svg>
+        <span>
+          <span class="brand-name">Pocket Butler</span>
+          <span class="brand-sub">Crypto portfolio</span>
+        </span>
+      </a>
+      <div class="header-meta">
+        <label class="sr-only" for="portfolio-select">Active portfolio</label>
+        <select id="portfolio-select" class="portfolio-select"></select>
+        <span class="badge badge-neutral"><span class="dot"></span>Sample data</span>
+        <span class="badge badge-gold"><span class="dot"></span>Admin</span>
+        <button class="btn btn-ghost" id="signout-btn" type="button">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <nav class="sidebar" aria-label="App sections">
+      <p class="nav-group">Portfolio</p>
+      <button class="nav-btn" type="button" data-screen="dashboard" aria-current="page">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h7v7H3z"/><path d="M14 3h7v7h-7z"/><path d="M3 14h7v7H3z"/><path d="M14 14h7v7h-7z"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-btn" type="button" data-screen="portfolios">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13.5l9 5 9-5"/></svg>
+        Portfolios
+      </button>
+      <button class="nav-btn" type="button" data-screen="rebalancing">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M8 21h8"/><path d="M6 7h12"/><path d="M6 7l-3 6h6z"/><path d="M18 7l-3 6h6z"/></svg>
+        Rebalancing
+      </button>
+      <button class="nav-btn" type="button" data-screen="accounts">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07L11.5 4.4"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.5-1.47"/></svg>
+        Accounts
+      </button>
+      <button class="nav-btn" type="button" data-screen="reports">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h14v18l-7-4-7 4z"/></svg>
+        Reports
+      </button>
+      <p class="nav-group">Catalog</p>
+      <button class="nav-btn" type="button" data-screen="assets">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
+        Asset catalog
+      </button>
+      <p class="nav-group">Admin</p>
+      <button class="nav-btn" type="button" data-screen="registry">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+        Registry
+      </button>
+      <button class="nav-btn" type="button" data-screen="jobs">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        Jobs
+      </button>
+      <p class="nav-group">Reference</p>
+      <button class="nav-btn" type="button" data-screen="map">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4l6 2 6-2v14l-6 2-6-2-6 2V6z"/><path d="M9 4v14"/><path d="M15 6v14"/></svg>
+        Page map
+      </button>
+      <div class="sidebar-sep" aria-hidden="true"></div>
+      <p class="sidebar-foot">Parchment Ledger v1.3<br>Read-only by design</p>
+    </nav>
+
+    <main id="main">
+
+      <!-- ── Dashboard ─────────────────────────────────────────── -->
+      <section class="screen" id="screen-dashboard" aria-labelledby="dashboard-title">
+        <header class="screen-head">
+          <p class="overline">BRD-007 &middot; Valuation, allocation &amp; snapshots</p>
+          <h2 id="dashboard-title" tabindex="-1">Dashboard</h2>
+          <p class="screen-lede" id="dashboard-lede"></p>
+        </header>
+        <div class="kpi-grid" id="kpi-grid"></div>
+        <div class="card">
+          <h3>Allocation</h3>
+          <div class="alloc-bar" id="alloc-bar" role="img" aria-label="Allocation by asset"></div>
+          <div class="alloc-legend" id="alloc-legend"></div>
+        </div>
+        <div class="card">
+          <h3>Drift against target</h3>
+          <div class="table-scroll">
+            <table class="table" id="drift-table">
+              <caption class="sr-only">Actual weight against target weight per asset, with drift in percentage points and guardrail state</caption>
+              <thead><tr><th scope="col">Asset</th><th scope="col" class="r">Actual</th><th scope="col" class="r">Target</th><th scope="col" class="r">Drift</th><th scope="col">Guardrail</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Holdings</h3>
+          <div class="table-scroll">
+            <table class="table" id="holdings-table">
+              <caption class="sr-only">Holdings by asset with quantity, price, USD value, and weight</caption>
+              <thead><tr><th scope="col">Asset</th><th scope="col">Account</th><th scope="col" class="r">Quantity</th><th scope="col" class="r">Price</th><th scope="col" class="r">Value</th><th scope="col" class="r">Weight</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="card-note" id="unpriced-note"></p>
+        </div>
+        <div class="card">
+          <div class="od-row" style="justify-content:space-between; flex-wrap:wrap; gap:var(--space-3)">
+            <div>
+              <h3 style="margin:0">Value trend</h3>
+              <p class="meta-line">Total value &middot; last snapshots</p>
+            </div>
+            <button class="btn btn-secondary" id="snapshot-btn" type="button">Take snapshot</button>
+          </div>
+          <svg class="trend-svg" id="trend-svg" viewBox="0 0 260 72" preserveAspectRatio="none" role="img" aria-label="Total value trend across recent snapshots"></svg>
+          <div class="table-scroll" style="margin-top:var(--space-4)">
+            <table class="table" id="snapshot-table">
+              <caption class="sr-only">Immutable snapshot history</caption>
+              <thead><tr><th scope="col">Snapshot</th><th scope="col">Kind</th><th scope="col" class="r">Total (USD)</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Rebalancing ───────────────────────────────────────── -->
+      <section class="screen" id="screen-rebalancing" aria-labelledby="rebalancing-title" hidden>
+        <header class="screen-head">
+          <p class="overline">BRD-008 &middot; Rebalancing recommendations</p>
+          <h2 id="rebalancing-title" tabindex="-1">Rebalancing</h2>
+          <p class="screen-lede">Drift-based suggestions. Accepting records your decision &mdash; the butler never executes trades. Every trade is yours to place, manually, on your own venue.</p>
+        </header>
+        <div class="rec-list" id="rec-list"></div>
+        <div class="card">
+          <h3>Decision history</h3>
+          <div class="table-scroll">
+            <table class="table" id="rec-history">
+              <caption class="sr-only">Recorded recommendation decisions with decision time</caption>
+              <thead><tr><th scope="col">Recommendation</th><th scope="col">Decision</th><th scope="col">Decided</th><th scope="col">Rationale</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="card-note">Every decision is recorded with time and acting user; the butler never executes trades.</p>
+        </div>
+      </section>
+
+      <!-- ── Accounts ──────────────────────────────────────────── -->
+      <section class="screen" id="screen-accounts" aria-labelledby="accounts-title" hidden>
+        <header class="screen-head">
+          <p class="overline">BRD-004 &middot; Account management</p>
+          <h2 id="accounts-title" tabindex="-1">Accounts</h2>
+          <p class="screen-lede">Read-only exchange keys and public on-chain addresses. Credentials are encrypted at rest and never displayed again after saving.</p>
+        </header>
+        <div class="card">
+          <div class="card-head-row">
+            <h3>Connected accounts</h3>
+            <button class="btn btn-secondary" id="sync-all-btn" type="button">Sync all active</button>
+          </div>
+          <div class="table-scroll">
+            <table class="table" id="accounts-table">
+              <caption class="sr-only">Connected accounts with type, portfolio, detail, and sync status</caption>
+              <thead><tr><th scope="col">Account</th><th scope="col">Type</th><th scope="col">Portfolio</th><th scope="col">Detail</th><th scope="col">Sync</th><th scope="col" class="r">Last sync</th><th scope="col">Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Add an account</h3>
+          <form id="account-form" novalidate>
+            <div class="form-grid">
+              <div class="field" id="f-acct-type">
+                <label for="acct-type">Account type</label>
+                <select id="acct-type">
+                  <option value="exchange">Exchange &mdash; OKX (read-only)</option>
+                  <option value="wallet-evm">On-chain &mdash; EVM chain</option>
+                  <option value="wallet-sol">On-chain &mdash; Solana</option>
+                </select>
+              </div>
+              <div class="field" id="f-acct-name">
+                <label for="acct-name">Display name</label>
+                <input id="acct-name" type="text" placeholder="e.g. OKX — main">
+                <p class="error" hidden></p>
+              </div>
+              <div class="field" id="f-acct-key">
+                <label for="acct-key">API key</label>
+                <input id="acct-key" type="text" autocomplete="off" spellcheck="false">
+                <p class="hint">Read-only key. Stored encrypted &mdash; never displayed again.</p>
+                <p class="error" hidden></p>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="acct-save" type="submit">Connect account</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ── Reports ───────────────────────────────────────────── -->
+      <section class="screen" id="screen-reports" aria-labelledby="reports-title" hidden>
+        <header class="screen-head">
+          <p class="overline">BRD-009 &middot; Reporting</p>
+          <h2 id="reports-title" tabindex="-1">Reports</h2>
+          <p class="screen-lede">Portfolio briefs composed in-app from the current state &mdash; no manual assembly.</p>
+        </header>
+        <div class="od-row" style="justify-content:flex-end">
+          <button class="btn btn-secondary" id="weekly-btn" type="button">Generate weekly brief</button>
+        </div>
+        <div class="rec-list" id="brief-list"></div>
+      </section>
+
+      <!-- ── Settings ──────────────────────────────────────────── -->
+      <section class="screen" id="screen-portfolios" aria-labelledby="portfolios-title" hidden>
+        <header class="screen-head">
+          <p class="overline">BRD-006 &middot; Portfolio management</p>
+          <h2 id="portfolios-title" tabindex="-1">Portfolios</h2>
+          <p class="screen-lede">Create and manage portfolios, link accounts, and set the target allocation and guardrails for the active portfolio. Edits recompute drift everywhere on save.</p>
+        </header>
+        <div class="card">
+          <div class="card-head-row">
+            <h3>Portfolios</h3>
+            <div class="od-row" style="flex-wrap:wrap">
+              <label class="sr-only" for="port-search">Search portfolios</label>
+              <input id="port-search" class="search-input" type="search" placeholder="Search portfolios" style="max-width:220px">
+              <label class="sr-only" for="port-filter">Filter by state</label>
+              <select id="port-filter" class="portfolio-select">
+                <option value="all">All</option>
+                <option value="active">Active</option>
+                <option value="inactive">Deactivated</option>
+              </select>
+              <button class="btn btn-primary" id="add-port-btn" type="button" aria-expanded="false" aria-controls="portfolio-create-card">Add portfolio</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="table" id="portfolios-table">
+              <caption class="sr-only">Portfolios with assets, linked accounts, priced total, drift, state, and actions</caption>
+              <thead><tr><th scope="col">Portfolio</th><th scope="col" class="r">Assets</th><th scope="col" class="r">Accounts</th><th scope="col" class="r">Priced total</th><th scope="col" class="r">Max drift</th><th scope="col">State</th><th scope="col">Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="card-note">A portfolio links zero or more accounts; each account links to one portfolio at a time. Deleting a portfolio unlinks its accounts &mdash; never deletes them.</p>
+        </div>
+
+        <div class="card" id="portfolio-detail" hidden>
+          <div class="card-head-row">
+            <h3 id="portfolio-detail-title" tabindex="-1">Edit portfolio &mdash; <span id="detail-port-name"></span></h3>
+            <button class="btn btn-secondary" id="detail-done-btn" type="button">Done</button>
+          </div>
+          <form id="portfolio-edit-form" novalidate>
+            <div class="form-grid">
+              <div class="field" id="f-edit-port-name">
+                <label for="edit-port-name">Name</label>
+                <input id="edit-port-name" type="text">
+                <p class="error" hidden></p>
+              </div>
+              <div class="field" id="f-edit-port-desc">
+                <label for="edit-port-desc">Description (optional)</label>
+                <input id="edit-port-desc" type="text">
+              </div>
+            </div>
+            <button class="btn btn-primary" type="submit">Save changes</button>
+          </form>
+          <p class="card-note">Names unique per user (case-insensitive). Saving re-renders valuation and drift everywhere.</p>
+        </div>
+
+        <div class="card" id="link-panel" hidden>
+          <div class="card-head-row">
+            <h3 id="link-panel-title" tabindex="-1">Link accounts &mdash; <span id="link-port-name"></span></h3>
+            <button class="btn btn-secondary" id="link-done-btn" type="button">Done</button>
+          </div>
+          <div class="table-scroll">
+            <table class="table" id="link-accounts-table">
+              <caption class="sr-only">Accounts with their current portfolio, assignable to this portfolio</caption>
+              <thead><tr><th scope="col">Account</th><th scope="col">Type</th><th scope="col">Current portfolio</th><th scope="col">Action</th></tr></thead>
+              <tbody id="linked-accounts"></tbody>
+            </table>
+          </div>
+          <p class="card-note">An account links to one portfolio at a time. Linking an account already linked elsewhere is rejected &mdash; unlink it there first. Unlinked accounts stay in the Accounts screen.</p>
+        </div>
+
+        <div class="card" id="portfolio-create-card" hidden>
+          <h3>Create a portfolio</h3>
+          <form id="portfolio-create-form" novalidate>
+            <div class="form-grid">
+              <div class="field" id="f-new-port-name">
+                <label for="new-port-name">Name</label>
+                <input id="new-port-name" type="text" placeholder="e.g. Long-term holdings">
+                <p class="error" hidden></p>
+              </div>
+              <div class="field" id="f-new-port-desc">
+                <label for="new-port-desc">Description (optional)</label>
+                <input id="new-port-desc" type="text" placeholder="What this portfolio is for">
+              </div>
+            </div>
+            <button class="btn btn-primary" type="submit">Create portfolio</button>
+          </form>
+          <p class="card-note">Names must be unique per user. New portfolios start with a sample equal-weight target &mdash; edit it below. Mockup note: holdings stay static.</p>
+        </div>
+
+        <div class="card">
+          <h3>Target allocation &amp; guardrails</h3>
+          <form id="target-form" novalidate>
+            <div class="form-grid" id="target-inputs"></div>
+            <p class="form-sum" id="target-sum"></p>
+            <div class="field" id="f-guardrail" style="max-width:220px">
+              <label for="guardrail">Guardrail (&plusmn; pp)</label>
+              <input id="guardrail" type="number" min="1" max="20" step="0.5">
+              <p class="hint">Drift beyond this many percentage points leaves the &ldquo;within&rdquo; state.</p>
+              <p class="error" hidden></p>
+            </div>
+            <p class="error" id="target-form-error" hidden></p>
+            <button class="btn btn-primary" id="target-save" type="submit">Save &amp; recompute drift</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ── Asset catalog (BRD-005) ─────────────────────────────── -->
+      <section class="screen" id="screen-assets" aria-labelledby="assets-title" hidden>
+        <header class="screen-head">
+          <p class="overline">BRD-005 &middot; Asset catalog &amp; market data</p>
+          <h2 id="assets-title" tabindex="-1">Asset catalog</h2>
+          <p class="screen-lede">Canonical assets with contract mappings, decimals, and the price source and timestamp behind every figure. Unmapped assets are excluded from valuation &mdash; never silently zero.</p>
+        </header>
+        <div class="card">
+          <div class="card-head-row">
+            <h3>Canonical assets</h3>
+            <div>
+              <label class="sr-only" for="asset-search">Search assets</label>
+              <input id="asset-search" class="search-input" type="search" placeholder="Search symbol or name">
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="table" id="assets-table">
+              <caption class="sr-only">Canonical asset catalog with chain, contract, decimals, price, source, and mapping state</caption>
+              <thead><tr><th scope="col">Asset</th><th scope="col">Chain</th><th scope="col">Contract / mint</th><th scope="col" class="r">Decimals</th><th scope="col" class="r">Price (USD)</th><th scope="col">Source</th><th scope="col" class="r">Updated</th><th scope="col">State</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="card-note">Sample catalogue &mdash; illustrative only. Prices fall back to the last known value when collection fails.</p>
+        </div>
+      </section>
+
+      <!-- ── Registry (BRD-010) ──────────────────────────────────── -->
+      <section class="screen" id="screen-registry" aria-labelledby="registry-title" hidden>
+        <header class="screen-head">
+          <p class="overline">BRD-010 &middot; Admin configuration</p>
+          <h2 id="registry-title" tabindex="-1">Registry</h2>
+          <p class="screen-lede">Chains and tokens, administered by the admin role only. Duplicate contract or mint addresses on the same chain are rejected.</p>
+        </header>
+        <div class="card">
+          <h3>EVM chains</h3>
+          <div class="table-scroll">
+            <table class="table" id="chains-table">
+              <caption class="sr-only">Configured EVM chains</caption>
+              <thead><tr><th scope="col" class="r">Chain ID</th><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">State</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Token registry</h3>
+          <div class="table-scroll">
+            <table class="table" id="tokens-table">
+              <caption class="sr-only">Registered EVM and Solana tokens</caption>
+              <thead><tr><th scope="col">Symbol</th><th scope="col">Chain</th><th scope="col">Contract / mint</th><th scope="col" class="r">Decimals</th><th scope="col">State</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Add a token</h3>
+          <form id="token-form" novalidate>
+            <div class="form-grid">
+              <div class="field" id="f-token-sym">
+                <label for="token-sym">Symbol</label>
+                <input id="token-sym" type="text" placeholder="e.g. ARB">
+                <p class="error" hidden></p>
+              </div>
+              <div class="field" id="f-token-chain">
+                <label for="token-chain">Chain</label>
+                <select id="token-chain">
+                  <option value="Ethereum">Ethereum</option>
+                  <option value="Base">Base</option>
+                  <option value="Solana">Solana</option>
+                </select>
+              </div>
+              <div class="field" id="f-token-contract">
+                <label for="token-contract">Contract / mint</label>
+                <input id="token-contract" type="text" autocomplete="off" spellcheck="false" placeholder="0x… or Solana mint">
+                <p class="error" hidden></p>
+              </div>
+              <div class="field" id="f-token-decimals">
+                <label for="token-decimals">Decimals</label>
+                <input id="token-decimals" type="number" min="0" max="18" step="1" value="18">
+                <p class="error" hidden></p>
+              </div>
+            </div>
+            <button class="btn btn-primary" type="submit">Add token</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ── Jobs (BRD-011) ──────────────────────────────────────── -->
+      <section class="screen" id="screen-jobs" aria-labelledby="jobs-title" hidden>
+        <header class="screen-head">
+          <p class="overline">BRD-011 &middot; Background jobs &amp; data refresh</p>
+          <h2 id="jobs-title" tabindex="-1">Jobs</h2>
+          <p class="screen-lede">Scheduled jobs with their last run and outcome. Admins can trigger a manual run; overlapping runs of the same job are prevented.</p>
+        </header>
+        <div class="card">
+          <h3>Scheduled jobs</h3>
+          <div class="table-scroll">
+            <table class="table" id="jobs-table">
+              <caption class="sr-only">Scheduled jobs with schedule, last run, outcome, and manual trigger</caption>
+              <thead><tr><th scope="col">Job</th><th scope="col">Schedule</th><th scope="col">Last run</th><th scope="col" class="r">Duration</th><th scope="col">Outcome</th><th scope="col">Summary</th><th scope="col">Actions</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="card-note">Every run records start, end, outcome, and affected records. Manual triggers are authorized and audited. Sample jobs &mdash; illustrative only.</p>
+        </div>
+      </section>
+
+      <!-- ── Page map (BRD reference) ────────────────────────────── -->
+      <section class="screen" id="screen-map" aria-labelledby="map-title" hidden>
+        <header class="screen-head">
+          <p class="overline">Reference &middot; BRD map</p>
+          <h2 id="map-title" tabindex="-1">Page map</h2>
+          <p class="screen-lede">Every page in this prototype, traced to the BRD it implements. Cross-cutting BRDs govern all pages.</p>
+        </header>
+        <div class="card">
+          <h3>Pages &harr; BRDs</h3>
+          <div class="table-scroll">
+            <table class="table" id="map-table">
+              <caption class="sr-only">Map of prototype pages to business requirement documents</caption>
+              <thead><tr><th scope="col">Page</th><th scope="col">BRD</th><th scope="col">Covers</th><th scope="col">Open</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+
+<script>
+'use strict';
+/* ── Sample state ───────────────────────────────────────────────
+ * All figures are sample data — illustrative only. */
+const PRICES = { BTC: 98420.50, ETH: 3612.80, SOL: 214.35, LINK: 22.80, USDC: 1.00, MEME: null };
+
+const state = {
+  user: null,
+  screen: 'dashboard',
+  activePortfolioId: 'p1',
+  defaultPortfolioId: 'p1',
+  role: 'admin',
+  confirmDeleteId: null,
+  portSearch: '',
+  portFilter: 'all',
+  linkTargetId: null,
+  detailId: null,
+  portfolios: [
+    { id: 'p1', name: 'Core portfolio', description: 'Long-term holdings', guardrailPp: 5, active: true,
+      target: { BTC: 55, ETH: 20, SOL: 12, LINK: 5, USDC: 8 } },
+    { id: 'p2', name: 'Trading book', description: 'Active positions', guardrailPp: 8, active: true,
+      target: { BTC: 30, ETH: 25, SOL: 25, USDC: 20 } },
+  ],
+  accounts: [
+    { id: 'a1', type: 'exchange', venue: 'OKX', name: 'OKX — main', detail: 'Read-only API key', status: 'synced', syncNote: '4 min ago', active: true, portfolioId: 'p1' },
+    { id: 'a2', type: 'wallet', venue: 'Ethereum', name: 'Ledger', detail: '0x71C7…9F2a', status: 'synced', syncNote: '12 min ago', active: true, portfolioId: 'p1' },
+    { id: 'a3', type: 'wallet', venue: 'Solana', name: 'Phantom', detail: '9WzE…pQ4t', status: 'stale', syncNote: '42 min ago', active: true, portfolioId: 'p2' },
+  ],
+  holdings: {
+    p1: [
+      { sym: 'BTC', name: 'Bitcoin', qty: 0.9214, account: 'Ledger' },
+      { sym: 'ETH', name: 'Ethereum', qty: 4.512, account: 'Ledger' },
+      { sym: 'SOL', name: 'Solana', qty: 38.4, account: 'Phantom' },
+      { sym: 'LINK', name: 'Chainlink', qty: 120, account: 'OKX — main' },
+      { sym: 'USDC', name: 'USD Coin', qty: 2500, account: 'OKX — main' },
+      { sym: 'MEME', name: 'Sample token', qty: 1000000, account: 'Ledger', unpriced: true },
+    ],
+    p2: [
+      { sym: 'BTC', name: 'Bitcoin', qty: 0.12, account: 'OKX — main' },
+      { sym: 'ETH', name: 'Ethereum', qty: 1.85, account: 'OKX — main' },
+      { sym: 'SOL', name: 'Solana', qty: 210, account: 'Phantom' },
+      { sym: 'USDC', name: 'USD Coin', qty: 8000, account: 'OKX — main' },
+    ],
+  },
+  snapshots: {
+    p1: [
+      { label: 'Nov 2 · 15:42 UTC', total: 120455.72, kind: 'Manual' },
+      { label: 'Nov 1 · EOD', total: 119210.18, kind: 'EOD' },
+      { label: 'Oct 31 · EOD', total: 118004.63, kind: 'EOD' },
+      { label: 'Oct 30 · EOD', total: 115742.90, kind: 'EOD' },
+      { label: 'Oct 29 · EOD', total: 116988.35, kind: 'EOD' },
+      { label: 'Oct 28 · EOD', total: 114310.72, kind: 'EOD' },
+    ],
+    p2: [ { label: 'Nov 1 · EOD', total: 69940.10, kind: 'EOD' } ],
+  },
+  recommendations: {
+    p1: [
+      { id: 'r1', action: 'sell', sym: 'BTC', usd: 20000, risk: 'low', guardrail: 'breached', status: 'pending',
+        rationale: 'BTC weighs 75.3% against a 55% target (+20.3pp). Selling about $20,000 brings it inside the guardrail in one step.' },
+      { id: 'r2', action: 'buy', sym: 'ETH', usd: 4500, risk: 'low', guardrail: 'outside', status: 'pending',
+        rationale: 'ETH sits 6.5pp under target. A single buy here restores most of the gap without chasing momentum.' },
+      { id: 'r3', action: 'buy', sym: 'SOL', usd: 3200, risk: 'medium', guardrail: 'outside', status: 'pending',
+        rationale: 'SOL is 5.2pp under target after this week’s move. One disciplined buy is enough; the rest can wait for a better window.' },
+      { id: 'r4', action: 'buy', sym: 'USDC', usd: 3000, risk: 'low', guardrail: 'outside', status: 'pending',
+        rationale: 'The cash buffer is 5.9pp under target. Topping up keeps dry powder available for the next rebalance.' },
+    ],
+    p2: [
+      { id: 'r5', action: 'sell', sym: 'SOL', usd: 12000, risk: 'medium', guardrail: 'breached', status: 'pending',
+        rationale: 'SOL weighs 62.9% against a 25% target (+37.9pp) — well beyond the 8pp guardrail. Trimming about $12,000 is the first step back.' },
+    ],
+  },
+  briefs: {
+    p1: [ { id: 'b1', type: 'Daily brief', label: 'Nov 2 · 07:00 UTC' } ],
+    p2: [],
+  },
+  assets: [
+    { sym: 'BTC', name: 'Bitcoin', chain: 'Native', contract: '—', decimals: 8, price: 98420.50, src: 'OKX', ts: '15:40 UTC', mapped: true },
+    { sym: 'ETH', name: 'Ethereum', chain: 'Ethereum', contract: 'Native', decimals: 18, price: 3612.80, src: 'OKX', ts: '15:40 UTC', mapped: true },
+    { sym: 'SOL', name: 'Solana', chain: 'Solana', contract: 'Native', decimals: 9, price: 214.35, src: 'OKX', ts: '15:40 UTC', mapped: true },
+    { sym: 'LINK', name: 'Chainlink', chain: 'Ethereum', contract: '0x5149…77e8', decimals: 18, price: 22.80, src: 'OKX', ts: '15:40 UTC', mapped: true },
+    { sym: 'USDC', name: 'USD Coin', chain: 'Ethereum', contract: '0xA0b8…eB48', decimals: 6, price: 1.00, src: 'OKX', ts: '15:40 UTC', mapped: true },
+    { sym: 'MEME', name: 'Sample token', chain: 'Ethereum', contract: '0x71C7…9F2a', decimals: 18, price: null, src: '—', ts: '—', mapped: false },
+  ],
+  chains: [
+    { id: 1, name: 'Ethereum', kind: 'EVM', state: 'active' },
+    { id: 8453, name: 'Base', kind: 'EVM', state: 'active' },
+  ],
+  tokens: [
+    { sym: 'USDC', chain: 'Ethereum', contract: '0xA0b8…eB48', decimals: 6, state: 'active' },
+    { sym: 'LINK', chain: 'Ethereum', contract: '0x5149…77e8', decimals: 18, state: 'active' },
+    { sym: 'JUP', chain: 'Solana', contract: 'JUPyi…Lunz', decimals: 6, state: 'active' },
+  ],
+  jobs: [
+    { id: 'catalog', name: 'Asset catalogue refresh', schedule: 'Daily · 02:00 UTC', last: 'Nov 2 · 02:00 UTC', dur: '41 s', outcome: 'success', summary: '6 assets checked, 3 updated', running: false },
+    { id: 'prices', name: 'Price collection', schedule: 'Every 5 min', last: 'Nov 2 · 15:40 UTC', dur: '2.1 s', outcome: 'success', summary: '6 prices collected', running: false },
+    { id: 'eod', name: 'EOD snapshots', schedule: 'Daily · 23:59 UTC', last: 'Nov 1 · 23:59 UTC', dur: '12 s', outcome: 'partial', summary: '1 of 2 portfolios snapshotted — retry scheduled', running: false },
+  ],
+};
+
+const AS_OF = 'Nov 2 · 15:42 UTC';
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+/* ── Formatting ───────────────────────────────────────────────── */
+const usd = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const qty = n => Number(n.toPrecision(6)).toLocaleString('en-US', { maximumFractionDigits: 6 });
+const pp  = n => (n > 0 ? '+' : '') + n.toFixed(1) + ' pp';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const nowUtc = () => new Date().toISOString().slice(0, 16).replace('T', ' · ') + ' UTC';
+
+/* ── Derived values ───────────────────────────────────────────── */
+function portfolio() {
+  return state.portfolios.find(p => p.id === state.activePortfolioId);
+}
+function computePortfolio(pId) {
+  const rows = state.holdings[pId].map(h => {
+    const price = PRICES[h.sym];
+    const value = price == null ? null : h.qty * price;
+    return { ...h, price, value };
+  });
+  const priced = rows.filter(r => r.value != null);
+  const total = priced.reduce((s, r) => s + r.value, 0);
+  const unpriced = rows.filter(r => r.value == null);
+  const weights = {};
+  priced.forEach(r => { weights[r.sym] = total > 0 ? (r.value / total) * 100 : 0; });
+  const own = state.portfolios.find(p => p.id === pId) || portfolio();
+  const target = own.target;
+  const guard = own.guardrailPp;
+  const drift = Object.keys(target).map(sym => {
+    const actual = weights[sym] ?? 0;
+    const d = actual - target[sym];
+    const ad = Math.abs(d);
+    const gs = ad <= guard ? 'within' : ad <= guard * 2 ? 'outside' : 'breached';
+    return { sym, actual, target: target[sym], d, gs };
+  });
+  const prev = state.snapshots[pId][0]?.total ?? total;
+  return { rows, priced, total, unpriced, weights, drift, prev, guard };
+}
+const CHART = { BTC: 'var(--chart-1)', ETH: 'var(--chart-2)', SOL: 'var(--chart-3)', LINK: 'var(--chart-4)', USDC: 'var(--chart-5)', MEME: 'var(--muted)' };
+const GUARD_LABEL = { within: ['Within', 'success'], outside: ['Outside', 'warn'], breached: ['Breached', 'danger'] };
+const SYNC_LABEL = { synced: ['Synced', 'success'], stale: ['Stale', 'warn'], pending: ['Pending', 'neutral'] };
+
+/* ── Toast ────────────────────────────────────────────────────── */
+let toastTimer = null;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3800);
+}
+
+/* ── Renderers ────────────────────────────────────────────────── */
+function renderPortfolioSelect() {
+  const sel = $('#portfolio-select');
+  sel.innerHTML = state.portfolios
+    .map(p => `<option value="${p.id}"${p.id === state.activePortfolioId ? ' selected' : ''}>${esc(p.name)}</option>`)
+    .join('');
+}
+
+function renderDashboard() {
+  const c = computePortfolio(state.activePortfolioId);
+  $('#dashboard-lede').textContent = `Every figure below is consolidated across connected accounts, priced in USD. As of ${AS_OF} · live sample.`;
+
+  const delta = c.total - c.prev;
+  const deltaPct = c.prev ? (delta / c.prev) * 100 : 0;
+  const open = state.recommendations[state.activePortfolioId].filter(r => r.status === 'pending').length;
+  const outside = c.drift.filter(d => d.gs !== 'within').length;
+  $('#kpi-grid').innerHTML = `
+    <div class="card kpi">
+      <p class="overline">Priced total</p>
+      <p class="kpi-value mono num">${usd(c.total)}</p>
+      <p class="kpi-delta ${delta >= 0 ? 'up' : 'down'}">${delta >= 0 ? '▲' : '▼'} ${usd(Math.abs(delta))} (${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(2)}%) ${delta >= 0 ? 'Up' : 'Down'} · 24h</p>
+      <p class="meta-line">As of ${AS_OF}</p>
+    </div>
+    <div class="card kpi">
+      <p class="overline">Assets outside guardrail</p>
+      <p class="kpi-value mono num">${outside}<span style="font-size:var(--text-lg);color:var(--meta)"> / ${c.drift.length}</span></p>
+      <p class="kpi-delta ${outside ? 'down' : 'up'}">${outside ? '▲ Drift needs attention' : '▼ All within'}</p>
+      <p class="meta-line">Guardrail ±${portfolio().guardrailPp} pp</p>
+    </div>
+    <div class="card kpi">
+      <p class="overline">Open recommendations</p>
+      <p class="kpi-value mono num">${open}</p>
+      <p class="kpi-delta">${open ? 'Decisions waiting' : 'None waiting'}</p>
+      <p class="meta-line">Human accept / reject required</p>
+    </div>`;
+
+  const segs = c.priced
+    .slice().sort((a, b) => b.value - a.value)
+    .map(r => `<div class="alloc-seg" style="width:${(r.value / c.total * 100).toFixed(2)}%;background:${CHART[r.sym] || 'var(--muted)'}" title="${esc(r.sym)} ${(r.value / c.total * 100).toFixed(1)}%"></div>`)
+    .join('');
+  $('#alloc-bar').innerHTML = segs;
+  $('#alloc-bar').setAttribute('aria-label', 'Allocation by asset: ' + c.priced.map(r => `${r.sym} ${(r.value / c.total * 100).toFixed(1)}%`).join(', '));
+  $('#alloc-legend').innerHTML = c.priced
+    .slice().sort((a, b) => b.value - a.value)
+    .map(r => `<div class="legend-item"><span class="legend-dot" style="background:${CHART[r.sym] || 'var(--muted)'}"></span>${esc(r.sym)}<span class="mono num">${(r.value / c.total * 100).toFixed(1)}%</span></div>`)
+    .join('');
+
+  $('#drift-table tbody').innerHTML = c.drift.map(d => `
+    <tr>
+      <th scope="row"><span class="asset-cell"><span class="asset-sym">${esc(d.sym)}</span></span></th>
+      <td class="r">${d.actual.toFixed(1)}%</td>
+      <td class="r">${d.target.toFixed(0)}%</td>
+      <td class="r" style="color:${d.d > 0 ? 'var(--success)' : d.d < 0 ? 'var(--danger)' : 'var(--fg-2)'}">${pp(d.d)}</td>
+      <td><span class="badge badge-${GUARD_LABEL[d.gs][1]}"><span class="dot"></span>${GUARD_LABEL[d.gs][0]}</span></td>
+    </tr>`).join('');
+
+  $('#holdings-table tbody').innerHTML = c.rows.map(r => `
+    <tr>
+      <th scope="row"><span class="asset-cell"><span class="asset-sym">${esc(r.sym)}</span><span class="asset-name">${esc(r.name)}${r.unpriced ? ' · <span style="color:var(--warn)">Unpriced</span>' : ''}</span></span></th>
+      <td>${esc(r.account)}</td>
+      <td class="r">${qty(r.qty)}</td>
+      <td class="r">${r.price == null ? '—' : usd(r.price)}</td>
+      <td class="r">${r.value == null ? '—' : usd(r.value)}</td>
+      <td class="r">${r.value == null ? '—' : (r.value / c.total * 100).toFixed(1) + '%'}</td>
+    </tr>`).join('');
+  if (!c.rows.length) $('#holdings-table tbody').innerHTML = '<tr class="empty-row"><td colspan="6">No holdings yet — link an account and sync it.</td></tr>';
+  $('#unpriced-note').textContent = c.unpriced.length
+    ? `${c.unpriced.length} unpriced asset${c.unpriced.length > 1 ? 's' : ''} (${c.unpriced.map(r => r.sym).join(', ')}) excluded from the total and disclosed here — never silently valued at zero.`
+    : 'All assets are priced. Sample data — illustrative only.';
+
+  renderTrend();
+  $('#snapshot-table tbody').innerHTML = state.snapshots[state.activePortfolioId].map(s => `
+    <tr>
+      <th scope="row" class="mono" style="font-weight:400">${esc(s.label)}</th>
+      <td>${s.kind === 'Manual' ? 'Manual' : 'End of day'}</td>
+      <td class="r">${usd(s.total)}</td>
+    </tr>`).join('');
+}
+
+function renderTrend() {
+  const snaps = state.snapshots[state.activePortfolioId].slice(0, 8).reverse();
+  const svg = $('#trend-svg');
+  if (snaps.length < 2) { svg.innerHTML = ''; return; }
+  const vals = snaps.map(s => s.total);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const span = max - min || 1;
+  const pts = vals.map((v, i) => {
+    const x = 4 + (i / (vals.length - 1)) * 252;
+    const y = 66 - ((v - min) / span) * 58;
+    return [x, y];
+  });
+  const last = pts[pts.length - 1];
+  svg.innerHTML =
+    `<polyline points="${pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="var(--chart-1)" stroke-width="1.5" stroke-linejoin="round"/>` +
+    `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.5" fill="var(--chart-1)"/>` +
+    `<line x1="4" y1="70.5" x2="256" y2="70.5" stroke="var(--border)" stroke-width="1"/>`;
+}
+
+function renderRebalancing() {
+  const recs = state.recommendations[state.activePortfolioId];
+  const list = $('#rec-list');
+  if (!recs.length) {
+    list.innerHTML = `
+      <div class="card" style="text-align:center; padding:var(--space-12) var(--space-6)">
+        <h3>No recommendations yet</h3>
+        <p style="color:var(--fg-2); margin-top:var(--space-2)">This portfolio has no drift-based suggestions right now. Recommendations appear when allocation drifts from its target.</p>
+      </div>`;
+    return;
+  }
+  list.innerHTML = recs.map(r => {
+    const actionLabel = r.action === 'sell' ? ['Sell', 'danger'] : ['Buy', 'success'];
+    const riskLabel = { low: 'Low risk', medium: 'Medium risk', high: 'High risk' }[r.risk] || r.risk;
+    const done = r.status !== 'pending';
+    return `
+    <article class="card rec-card" data-rec="${r.id}">
+      <div class="rec-head">
+        <span class="badge badge-${actionLabel[1]}"><span class="dot"></span>${actionLabel[0]}</span>
+        <p class="rec-title">${actionLabel[0]} ${esc(r.sym)} &mdash; <span class="mono num">${usd(r.usd)}</span></p>
+        ${done ? `<span class="badge badge-${r.status === 'accepted' ? 'success' : 'neutral'}"><span class="dot"></span>${r.status === 'accepted' ? 'Accepted — recorded' : 'Rejected'}</span>` : ''}
+      </div>
+      <p class="rec-rationale">${esc(r.rationale)}</p>
+      <div class="rec-meta">
+        <span class="badge badge-neutral"><span class="dot"></span>${riskLabel}</span>
+        <span class="badge badge-${GUARD_LABEL[r.guardrail][1]}"><span class="dot"></span>Guardrail: ${GUARD_LABEL[r.guardrail][0]}</span>
+      </div>
+      ${done
+        ? `<p class="rec-done">${r.status === 'accepted' ? 'Decision recorded. Execute manually on your venue — the butler never trades.' : 'Rejected. This suggestion stays dismissed; a new one may appear if drift grows.'}</p>`
+        : `<div class="rec-actions">
+             <button class="btn btn-primary" type="button" data-rec-action="accept" data-rec-id="${r.id}">Accept &amp; record</button>
+             <button class="btn btn-ghost" type="button" data-rec-action="reject" data-rec-id="${r.id}">Reject</button>
+           </div>`}
+    </article>`;
+  }).join('');
+  renderRecHistory();
+}
+
+function renderAccounts() {
+  $('#accounts-table tbody').innerHTML = state.accounts.map(a => {
+    const typeLabel = a.type === 'exchange' ? `Exchange · ${esc(a.venue)}` : `On-chain · ${esc(a.venue)}`;
+    const inactive = a.active === false;
+    const syncing = a.status === 'pending';
+    const port = state.portfolios.find(p => p.id === a.portfolioId);
+    return `
+    <tr${inactive ? ' class="row-inactive"' : ''}>
+      <th scope="row"><span class="asset-cell"><span class="asset-sym">${esc(a.name)}</span></span></th>
+      <td>${typeLabel}</td>
+      <td>${esc(port ? port.name : '—')}</td>
+      <td class="mono" style="font-size:var(--text-sm)">${esc(a.detail)}</td>
+      <td><span class="badge badge-${SYNC_LABEL[a.status][1]}"><span class="dot"></span>${SYNC_LABEL[a.status][0]}</span></td>
+      <td class="r">${esc(a.syncNote)}</td>
+      <td>
+        <div class="od-row" style="--od-gap:6px">
+          <button class="btn btn-secondary btn-sm" type="button" data-acct-action="sync" data-acct-id="${a.id}"${inactive || syncing ? ' disabled' : ''}>Sync now</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-acct-action="toggle" data-acct-id="${a.id}">${inactive ? 'Activate' : 'Deactivate'}</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderReports() {
+  const c = computePortfolio(state.activePortfolioId);
+  const briefs = state.briefs[state.activePortfolioId];
+  const list = $('#brief-list');
+  if (!briefs.length) {
+    list.innerHTML = `
+      <div class="card" style="text-align:center; padding:var(--space-12) var(--space-6)">
+        <h3>No briefs yet</h3>
+        <p style="color:var(--fg-2); margin-top:var(--space-2)">Generate a brief above — it composes from the current portfolio state.</p>
+      </div>`;
+    return;
+  }
+  const outside = c.drift.filter(d => d.gs !== 'within');
+  const open = state.recommendations[state.activePortfolioId].filter(r => r.status === 'pending');
+  const delta = c.total - c.prev;
+  list.innerHTML = briefs.map(b => `
+    <article class="card brief">
+      <div class="rec-head">
+        <span class="badge badge-gold"><span class="dot"></span>${esc(b.type)}</span>
+        <p class="meta-line">${esc(b.label)}</p>
+      </div>
+      <ul>
+        <li>Priced total <span class="brief-figure">${usd(c.total)}</span> as of ${AS_OF}, ${delta >= 0 ? 'up' : 'down'} <span class="brief-figure">${usd(Math.abs(delta))}</span> from the previous snapshot.</li>
+        <li>${outside.length
+              ? `${outside.length} asset${outside.length > 1 ? 's' : ''} outside the ±${portfolio().guardrailPp} pp guardrail: ${outside.map(d => `${esc(d.sym)} ${pp(d.d)}`).join(', ')}.`
+              : `All assets within the ±${portfolio().guardrailPp} pp guardrail.`}</li>
+        <li>${open.length
+              ? `${open.length} recommendation${open.length > 1 ? 's' : ''} awaiting your decision (${open.map(r => esc(r.sym)).join(', ')}).`
+              : 'No recommendations awaiting decision.'}</li>
+        <li>${state.snapshots[state.activePortfolioId].length} snapshots on record; history is immutable.</li>
+      </ul>
+      <p class="card-note">Composed in-app from current state. Sample data — illustrative only.</p>
+    </article>`).join('');
+}
+
+function renderPortfolios() {
+  $('#portfolios-table tbody').innerHTML = state.portfolios.map(p => {
+    const isActive = p.id === state.activePortfolioId;
+    const isDefault = p.id === state.defaultPortfolioId;
+    const holdings = state.holdings[p.id] || [];
+    const total = holdings.reduce((s, h) => PRICES[h.sym] == null ? s : s + h.qty * PRICES[h.sym], 0);
+    const linked = state.accounts.filter(a => a.portfolioId === p.id).length;
+    const c = computePortfolio(p.id);
+    const worst = c.drift.length ? c.drift.reduce((m, d) => Math.abs(d.d) > Math.abs(m.d) ? d : m) : null;
+    return `
+    <tr>
+      <th scope="row"><span class="asset-cell"><span class="asset-sym">${esc(p.name)}</span>${isDefault ? '<span class="asset-name">Default</span>' : ''}</span></th>
+      <td class="r">${holdings.length}</td>
+      <td class="r"><button class="btn btn-ghost btn-sm" type="button" data-port-action="manage" data-port-id="${p.id}" aria-expanded="${state.linkTargetId === p.id}" aria-controls="link-panel">${linked}</button></td>
+      <td class="r">${usd(total)}</td>
+      <td class="r">${worst ? `${esc(worst.sym)} ${pp(worst.d)}` : '—'}</td>
+      <td>${isActive ? '<span class="badge badge-gold"><span class="dot"></span>Active</span>' : '<span class="badge badge-neutral"><span class="dot"></span>Available</span>'}</td>
+      <td>
+        <div class="od-row" style="--od-gap:6px">
+          <button class="btn btn-ghost btn-sm" type="button" data-port-action="detail" data-port-id="${p.id}" aria-expanded="${state.detailId === p.id}" aria-controls="portfolio-detail">Edit</button>
+          ${!isDefault ? `<button class="btn btn-ghost btn-sm" type="button" data-port-action="default" data-port-id="${p.id}">Set default</button>` : ''}
+          ${state.confirmDeleteId === p.id
+            ? `<button class="btn btn-secondary btn-sm" type="button" data-port-action="cancel-delete" data-port-id="${p.id}">Keep</button><button class="btn btn-primary btn-sm" type="button" data-port-action="delete" data-port-id="${p.id}" style="background:var(--danger);color:var(--accent-on)">Confirm delete</button>`
+            : `<button class="btn btn-ghost btn-sm" type="button" data-port-action="ask-delete" data-port-id="${p.id}"${state.portfolios.length < 2 || isActive ? ' disabled' : ''}>Delete</button>`}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const target = state.portfolios.find(p => p.id === state.linkTargetId) || portfolio();
+  $('#link-panel').hidden = !state.linkTargetId;
+  $('#linked-port-name').textContent = target.name;
+  $('#linked-accounts').innerHTML = state.accounts.map(a => {
+    const here = a.portfolioId === target.id;
+    const current = state.portfolios.find(p => p.id === a.portfolioId);
+    const typeLabel = a.type === 'exchange' ? 'Exchange · ' + esc(a.venue) : 'On-chain · ' + esc(a.venue);
+    return `
+    <tr>
+      <th scope="row"><span class="asset-cell"><span class="asset-sym">${esc(a.name)}</span></span></th>
+      <td>${typeLabel}</td>
+      <td>${current ? esc(current.name) : '<span style="color:var(--muted)">Not linked</span>'}</td>
+      <td><div class="od-row" style="--od-gap:6px">${here
+        ? '<span class="badge badge-gold"><span class="dot"></span>Linked</span><button class="btn btn-ghost btn-sm" type="button" data-link-action="unlink" data-acct-id="${a.id}">Unlink</button>'
+        : `<button class="btn btn-secondary btn-sm" type="button" data-link-action="link" data-acct-id="${a.id}">Link</button>`}</div></td>
+    </tr>`;
+  }).join('');
+  $('#portfolio-detail').hidden = !state.detailId;
+  const detailPort = state.portfolios.find(p => p.id === state.detailId);
+  if (detailPort) $('#detail-port-name').textContent = detailPort.name;
+
+  const t = portfolio().target;
+  const syms = Object.keys(t);
+  $('#target-inputs').innerHTML = syms.map(s => `
+    <div class="field">
+      <label for="target-${s}">${esc(s)} target (%)</label>
+      <input id="target-${s}" type="number" min="0" max="100" step="0.5" value="${t[s]}" data-target-sym="${s}">
+    </div>`).join('');
+  $('#guardrail').value = portfolio().guardrailPp;
+  updateTargetSum();
+}
+
+function updateTargetSum() {
+  const sum = $$('#target-inputs input').reduce((s, i) => s + (parseFloat(i.value) || 0), 0);
+  const el = $('#target-sum');
+  el.textContent = `Target sum: ${sum.toFixed(1)}% — must equal 100%.`;
+  el.classList.toggle('bad', Math.abs(sum - 100) > 0.001);
+  return sum;
+}
+
+function renderAll() {
+  renderDashboard();
+  renderRebalancing();
+  renderAccounts();
+  renderReports();
+  renderPortfolios();
+  renderAssets();
+  renderRegistry();
+  renderJobs();
+  renderMap();
+}
+
+/* ── Screen navigation ────────────────────────────────────────── */
+function showScreen(name, focus = true) {
+  state.screen = name;
+  $$('.nav-btn').forEach(b => {
+    if (b.dataset.screen === name) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+  ['dashboard', 'portfolios', 'rebalancing', 'accounts', 'reports', 'assets', 'registry', 'jobs', 'map'].forEach(s => {
+    const el = $('#screen-' + s);
+    el.hidden = s !== name;
+  });
+  if (focus) {
+    const h = $('#screen-' + name + ' h2');
+    if (h) h.focus();
+  }
+}
+
+/* ── Sign-in / sign-out ───────────────────────────────────────── */
+function setFieldError(fieldEl, msg) {
+  const err = $('.error', fieldEl);
+  if (msg) { err.textContent = msg; err.hidden = false; fieldEl.classList.add('invalid'); }
+  else { err.textContent = ''; err.hidden = true; fieldEl.classList.remove('invalid'); }
+}
+
+$('#signin-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const email = $('#email').value.trim();
+  const pass = $('#password').value;
+  let ok = true;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setFieldError($('#f-email'), 'Enter a valid email address.'); ok = false; }
+  else setFieldError($('#f-email'), null);
+  if (!pass) { setFieldError($('#f-password'), 'Enter your password.'); ok = false; }
+  else setFieldError($('#f-password'), null);
+  if (!ok) return;
+  const btn = $('#signin-btn');
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  setTimeout(() => {
+    state.user = email;
+    $('#signin').hidden = true;
+    $('#app').hidden = false;
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
+    showScreen('dashboard');
+    toast('Signed in as ' + email + ' — sample session.');
+  }, 700);
+});
+['email', 'password'].forEach(id => {
+  $('#' + id).addEventListener('blur', () => {
+    if (id === 'email' && $('#email').value.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('#email').value.trim()))
+      setFieldError($('#f-email'), 'Enter a valid email address.');
+  });
+});
+
+$('#signout-btn').addEventListener('click', () => {
+  state.user = null;
+  $('#app').hidden = true;
+  $('#signin').hidden = false;
+  $('#email').focus();
+});
+
+/* ── Header & nav wiring ──────────────────────────────────────── */
+$('#portfolio-select').addEventListener('change', e => {
+  state.activePortfolioId = e.target.value;
+  renderAll();
+  toast('Switched to ' + portfolio().name + '.');
+});
+
+$$('.nav-btn').forEach(b => b.addEventListener('click', () => showScreen(b.dataset.screen)));
+
+/* ── Snapshot ─────────────────────────────────────────────────── */
+$('#snapshot-btn').addEventListener('click', () => {
+  const c = computePortfolio(state.activePortfolioId);
+  state.snapshots[state.activePortfolioId].unshift({ label: nowUtc(), total: c.total, kind: 'Manual' });
+  renderDashboard();
+  toast('Snapshot recorded — immutable. Total ' + usd(c.total) + '.');
+});
+
+/* ── Recommendations: accept / reject ─────────────────────────── */
+$('#rec-list').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-rec-action]');
+  if (!btn) return;
+  const rec = state.recommendations[state.activePortfolioId].find(r => r.id === btn.dataset.recId);
+  if (!rec || rec.status !== 'pending') return;
+  rec.status = btn.dataset.recAction === 'accept' ? 'accepted' : 'rejected';
+  rec.decidedAt = nowUtc();
+  renderRebalancing();
+  renderDashboard();
+  renderReports();
+  if (rec.status === 'accepted')
+    toast('Decision recorded — execute manually on your venue. The butler never trades.');
+  else
+    toast('Recommendation rejected.');
+});
+
+/* ── Add account ──────────────────────────────────────────────── */
+const acctKeyLabel = () => {
+  const t = $('#acct-type').value;
+  if (t === 'exchange') return { label: 'API key', hint: 'Read-only key. Stored encrypted — never displayed again.' };
+  if (t === 'wallet-evm') return { label: 'On-chain address', hint: 'Public EVM address (0x…). No private key, ever.' };
+  return { label: 'On-chain address', hint: 'Public Solana address. No private key, ever.' };
+};
+function syncAcctKeyField() {
+  const { label, hint } = acctKeyLabel();
+  const field = $('#f-acct-key');
+  $('label', field).textContent = label;
+  $('.hint', field).textContent = hint;
+}
+$('#acct-type').addEventListener('change', syncAcctKeyField);
+
+$('#account-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const type = $('#acct-type').value;
+  const name = $('#acct-name').value.trim();
+  const key = $('#acct-key').value.trim();
+  let ok = true;
+  if (!name) { setFieldError($('#f-acct-name'), 'Give this account a display name.'); ok = false; }
+  else setFieldError($('#f-acct-name'), null);
+  let keyValid = true;
+  if (!key) keyValid = false;
+  else if (type === 'wallet-evm' && !/^0x[0-9a-fA-F]{40}$/.test(key)) keyValid = false;
+  else if (type === 'wallet-sol' && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(key)) keyValid = false;
+  else if (type === 'exchange' && key.length < 8) keyValid = false;
+  if (!keyValid) {
+    const msg = !key ? 'This field is required.' :
+      type === 'wallet-evm' ? 'Enter a full EVM address: 0x followed by 40 hex characters.' :
+      type === 'wallet-sol' ? 'Enter a full Solana address (32–44 base58 characters).' :
+      'API keys are at least 8 characters.';
+    setFieldError($('#f-acct-key'), msg);
+    ok = false;
+  } else setFieldError($('#f-acct-key'), null);
+  if (!ok) return;
+
+  const venue = type === 'exchange' ? 'OKX' : type === 'wallet-evm' ? 'Ethereum' : 'Solana';
+  const detail = type === 'exchange' ? 'Read-only API key' : key.slice(0, 6) + '…' + key.slice(-4);
+  const id = 'a' + (state.accounts.length + 1) + '-' + Date.now();
+  state.accounts.push({ id, type, venue, name, detail, status: 'pending', syncNote: 'first sync queued', active: true, portfolioId: null });
+  $('#account-form').reset();
+  syncAcctKeyField();
+  renderAccounts();
+  toast('Account connected — pending first sync. Link it to a portfolio from the Portfolios screen.');
+  setTimeout(() => {
+    const a = state.accounts.find(x => x.id === id);
+    if (!a) return;
+    a.status = 'synced';
+    a.syncNote = 'just now';
+    renderAccounts();
+    toast('“' + a.name + '” synced — balances and prices updated.');
+  }, 2400);
+});
+['acct-name', 'acct-key'].forEach(id => {
+  $('#' + id).addEventListener('blur', () => {
+    const f = $('#' + id).closest('.field');
+    if ($('#' + id).value.trim()) setFieldError(f, null);
+  });
+});
+
+/* ── Weekly brief ─────────────────────────────────────────────── */
+$('#weekly-btn').addEventListener('click', () => {
+  const btn = $('#weekly-btn');
+  btn.disabled = true;
+  btn.textContent = 'Composing…';
+  setTimeout(() => {
+    state.briefs[state.activePortfolioId].unshift({ id: 'b' + Date.now(), type: 'Weekly brief', label: nowUtc() });
+    renderReports();
+    btn.disabled = false;
+    btn.textContent = 'Generate weekly brief';
+    toast('Weekly brief composed from current state.');
+  }, 800);
+});
+
+/* ── Target allocation & guardrails ───────────────────────────── */
+$('#target-inputs').addEventListener('input', updateTargetSum);
+
+$('#target-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const sum = updateTargetSum();
+  const g = parseFloat($('#guardrail').value);
+  let ok = true;
+  if (Math.abs(sum - 100) > 0.001) {
+    const err = $('#target-form-error');
+    err.textContent = `Targets sum to ${sum.toFixed(1)}% — adjust them to equal exactly 100%.`;
+    err.hidden = false;
+    ok = false;
+  } else $('#target-form-error').hidden = true;
+  if (!(g >= 1 && g <= 20)) { setFieldError($('#f-guardrail'), 'Guardrail must be between 1 and 20 pp.'); ok = false; }
+  else setFieldError($('#f-guardrail'), null);
+  if (!ok) return;
+
+  const t = portfolio().target;
+  $$('#target-inputs input').forEach(i => { t[i.dataset.targetSym] = parseFloat(i.value) || 0; });
+  portfolio().guardrailPp = g;
+  renderAll();
+  toast('Saved — target allocation and guardrail updated; drift recomputed everywhere.');
+});
+
+/* ── Asset catalog (BRD-005) ──────────────────────────────────── */
+function renderAssets() {
+  const q = ($('#asset-search').value || '').trim().toLowerCase();
+  const rows = state.assets.filter(a => !q || a.sym.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
+  $('#assets-table tbody').innerHTML = rows.length ? rows.map(a => `
+    <tr>
+      <th scope="row"><span class="asset-cell"><span class="asset-sym">${esc(a.sym)}</span><span class="asset-name">${esc(a.name)}</span></span></th>
+      <td>${esc(a.chain)}</td>
+      <td class="mono" style="font-size:var(--text-sm)">${esc(a.contract)}</td>
+      <td class="r">${a.decimals}</td>
+      <td class="r">${a.price == null ? '—' : usd(a.price)}</td>
+      <td>${esc(a.src)}</td>
+      <td class="r">${esc(a.ts)}</td>
+      <td>${a.mapped ? '<span class="badge badge-success"><span class="dot"></span>Mapped</span>' : '<span class="badge badge-warn"><span class="dot"></span>Unmapped</span>'}</td>
+    </tr>`).join('') : '<tr class="empty-row"><td colspan="8">No assets match this search.</td></tr>';
+}
+$('#asset-search').addEventListener('input', renderAssets);
+
+/* ── Registry (BRD-010) ───────────────────────────────────────── */
+function renderRegistry() {
+  $('#chains-table tbody').innerHTML = state.chains.map(c => `
+    <tr>
+      <td class="r">${c.id}</td>
+      <th scope="row">${esc(c.name)}</th>
+      <td>${c.kind}</td>
+      <td>${c.state === 'active' ? '<span class="badge badge-success"><span class="dot"></span>Active</span>' : '<span class="badge badge-neutral"><span class="dot"></span>Deactivated</span>'}</td>
+    </tr>`).join('');
+  $('#tokens-table tbody').innerHTML = state.tokens.length ? state.tokens.map(t => `
+    <tr>
+      <th scope="row">${esc(t.sym)}</th>
+      <td>${esc(t.chain)}</td>
+      <td class="mono" style="font-size:var(--text-sm)">${esc(t.contract)}</td>
+      <td class="r">${t.decimals}</td>
+      <td>${t.state === 'active' ? '<span class="badge badge-success"><span class="dot"></span>Active</span>' : '<span class="badge badge-neutral"><span class="dot"></span>Deactivated</span>'}</td>
+    </tr>`).join('') : '<tr class="empty-row"><td colspan="5">No tokens registered yet.</td></tr>';
+}
+$('#token-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const sym = $('#token-sym').value.trim();
+  const chain = $('#token-chain').value;
+  const contract = $('#token-contract').value.trim();
+  const decimals = parseInt($('#token-decimals').value, 10);
+  let ok = true;
+  if (!sym) { setFieldError($('#f-token-sym'), 'Symbol is required.'); ok = false; }
+  else setFieldError($('#f-token-sym'), null);
+  if (!contract) { setFieldError($('#f-token-contract'), 'Contract or mint address is required.'); ok = false; }
+  else if (state.tokens.some(t => t.chain === chain && t.contract.toLowerCase() === contract.toLowerCase())) {
+    setFieldError($('#f-token-contract'), 'This contract is already registered on this chain.'); ok = false;
+  } else setFieldError($('#f-token-contract'), null);
+  if (!(decimals >= 0 && decimals <= 18)) { setFieldError($('#f-token-decimals'), 'Decimals must be between 0 and 18.'); ok = false; }
+  else setFieldError($('#f-token-decimals'), null);
+  if (!ok) return;
+  state.tokens.push({ sym, chain, contract, decimals, state: 'active' });
+  $('#token-form').reset();
+  renderRegistry();
+  toast(sym + ' added to the ' + chain + ' registry.');
+});
+
+/* ── Jobs (BRD-011) ───────────────────────────────────────────── */
+const JOB_LABEL = { success: ['Success', 'success'], partial: ['Partial', 'warn'], failed: ['Failed', 'danger'], running: ['Running', 'neutral'] };
+function renderJobs() {
+  $('#jobs-table tbody').innerHTML = state.jobs.map(j => {
+    const key = j.running ? 'running' : j.outcome;
+    return `
+    <tr>
+      <th scope="row"><span class="asset-cell"><span class="asset-sym">${esc(j.name)}</span></span></th>
+      <td>${esc(j.schedule)}</td>
+      <td class="mono" style="font-weight:400">${esc(j.last)}</td>
+      <td class="r">${j.running ? '—' : esc(j.dur)}</td>
+      <td><span class="badge badge-${JOB_LABEL[key][1]}"><span class="dot"></span>${JOB_LABEL[key][0]}</span></td>
+      <td style="font-size:var(--text-sm);color:var(--fg-2)">${j.running ? 'Running — overlapping runs are prevented.' : esc(j.summary)}</td>
+      <td><button class="btn btn-secondary btn-sm" type="button" data-job-id="${j.id}"${j.running ? ' disabled' : ''}>Run now</button></td>
+    </tr>`;
+  }).join('');
+}
+$('#jobs-table').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-job-id]');
+  if (!btn || btn.disabled) return;
+  const j = state.jobs.find(x => x.id === btn.dataset.jobId);
+  if (!j || j.running) return;
+  j.running = true;
+  renderJobs();
+  setTimeout(() => {
+    j.running = false;
+    j.last = nowUtc();
+    j.dur = '1.8 s';
+    j.outcome = 'success';
+    j.summary = 'Manual run completed — audit event recorded.';
+    renderJobs();
+    toast(j.name + ': manual run completed.');
+  }, 1400);
+});
+
+/* ── Page map (BRD reference) ─────────────────────────────────── */
+const PAGES = [
+  { name: 'Sign-in', brd: 'BRD-003', covers: 'Email/password sign-in, session, sign-out; MFA is post-MVP', screen: null },
+  { name: 'Dashboard', brd: 'BRD-007', covers: 'Consolidated USD valuation, weights, drift, unpriced assets, snapshots & trend', screen: 'dashboard' },
+  { name: 'Portfolios', brd: 'BRD-006', covers: 'Create portfolios, default, link accounts, target allocation, guardrails, delete', screen: 'portfolios' },
+  { name: 'Rebalancing', brd: 'BRD-008', covers: 'Drift-based recommendations, accept/reject with recorded decisions, history', screen: 'rebalancing' },
+  { name: 'Accounts', brd: 'BRD-004', covers: 'Exchange & on-chain accounts, read-only credentials, sync, activate/deactivate', screen: 'accounts' },
+  { name: 'Asset catalog', brd: 'BRD-005', covers: 'Canonical assets, contract mappings, decimals, price source & freshness', screen: 'assets' },
+  { name: 'Reports', brd: 'BRD-009', covers: 'Scheduled in-app briefs: value, drift, pending decisions, freshness, disclaimer', screen: 'reports' },
+  { name: 'Registry (admin)', brd: 'BRD-010', covers: 'EVM chains and EVM/Solana token registry, activate/deactivate', screen: 'registry' },
+  { name: 'Jobs (admin)', brd: 'BRD-011', covers: 'Scheduled jobs, last run & outcome, manual trigger, no overlapping runs', screen: 'jobs' },
+  { name: 'Roles & permissions', brd: 'BRD-002', covers: 'Per-user ownership; admin gate on Registry & Jobs (sample admin session)', screen: null },
+  { name: 'Security & NFRs', brd: 'BRD-012', covers: 'Cross-cutting: accessibility, audit events, accuracy & freshness on every page', screen: null },
+];
+function renderMap() {
+  $('#map-table tbody').innerHTML = PAGES.map(p => `
+    <tr>
+      <th scope="row">${esc(p.name)}</th>
+      <td class="mono" style="font-weight:400">${esc(p.brd)}</td>
+      <td style="font-size:var(--text-sm);color:var(--fg-2)">${esc(p.covers)}</td>
+      <td>${p.screen ? `<button class="btn btn-ghost btn-sm" type="button" data-map-screen="${p.screen}">Open</button>` : '<span style="color:var(--meta);font-size:var(--text-sm)">Cross-cutting</span>'}</td>
+    </tr>`).join('');
+}
+$('#map-table').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-map-screen]');
+  if (!btn) return;
+  showScreen(btn.dataset.mapScreen);
+});
+
+/* ── Recommendation history (BRD-008) ─────────────────────────── */
+function renderRecHistory() {
+  const decided = state.recommendations[state.activePortfolioId].filter(r => r.status !== 'pending');
+  $('#rec-history tbody').innerHTML = decided.length ? decided.map(r => `
+    <tr>
+      <th scope="row"><span class="asset-cell"><span class="asset-sym">${r.action === 'sell' ? 'Sell' : 'Buy'} ${esc(r.sym)}</span><span class="asset-name">${usd(r.usd)}</span></span></th>
+      <td>${r.status === 'accepted' ? '<span class="badge badge-success"><span class="dot"></span>Accepted</span>' : '<span class="badge badge-neutral"><span class="dot"></span>Rejected</span>'}</td>
+      <td class="mono" style="font-weight:400">${esc(r.decidedAt || '—')}</td>
+      <td style="font-size:var(--text-sm);color:var(--fg-2)">${esc(r.rationale.length > 80 ? r.rationale.slice(0, 80) + '…' : r.rationale)}</td>
+    </tr>`).join('') : '<tr class="empty-row"><td colspan="4">No decisions recorded yet — accept or reject a recommendation above.</td></tr>';
+}
+
+/* ── Account sync & activation (BRD-004) ──────────────────────── */
+$('#accounts-table').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-acct-action]');
+  if (!btn || btn.disabled) return;
+  const a = state.accounts.find(x => x.id === btn.dataset.acctId);
+  if (!a) return;
+  if (btn.dataset.acctAction === 'sync') {
+    a.status = 'pending';
+    a.syncNote = 'syncing…';
+    renderAccounts();
+    setTimeout(() => {
+      a.status = 'synced';
+      a.syncNote = 'just now';
+      renderAccounts();
+      toast('“' + a.name + '” synced — holdings replaced with fresh data.');
+    }, 1600);
+  } else {
+    a.active = a.active === false;
+    renderAccounts();
+    renderPortfolios();
+    toast(a.active
+      ? '“' + a.name + '” activated — included in sync and aggregation.'
+      : '“' + a.name + '” deactivated — excluded from sync and aggregation.');
+  }
+});
+$('#sync-all-btn').addEventListener('click', () => {
+  const actives = state.accounts.filter(a => a.active !== false && a.status !== 'pending');
+  if (!actives.length) { toast('No active accounts to sync.'); return; }
+  actives.forEach(a => { a.status = 'pending'; a.syncNote = 'syncing…'; });
+  renderAccounts();
+  setTimeout(() => {
+    actives.forEach(a => { a.status = 'synced'; a.syncNote = 'just now'; });
+    renderAccounts();
+    toast('Sync all finished — ' + actives.length + ' of ' + state.accounts.length + ' accounts returned fresh holdings.');
+  }, 1800);
+});
+
+/* ── Portfolio management (BRD-006) ───────────────────────────── */
+$('#portfolios-table').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-port-action]');
+  if (!btn || btn.disabled) return;
+  const id = btn.dataset.portId;
+  const p = state.portfolios.find(x => x.id === id);
+  if (!p) return;
+  const action = btn.dataset.portAction;
+  if (action === 'default') {
+    state.defaultPortfolioId = id;
+    state.confirmDeleteId = null;
+    renderPortfolios();
+    toast('“' + p.name + '” is now the default portfolio — exactly one default exists.');
+  } else if (action === 'manage') {
+    state.linkTargetId = state.linkTargetId === id ? null : id;
+    state.confirmDeleteId = null;
+    renderPortfolios();
+    if (state.linkTargetId) $('#link-panel-title').focus();
+  } else if (action === 'detail') {
+    state.detailId = state.detailId === id ? null : id;
+    state.confirmDeleteId = null;
+    renderPortfolios();
+    if (state.detailId) {
+      $('#edit-port-name').value = p.name;
+      $('#edit-port-desc').value = p.description || '';
+      setFieldError($('#f-edit-port-name'), null);
+      $('#portfolio-detail-title').focus();
+    }
+  } else if (action === 'ask-delete') {
+    state.confirmDeleteId = id;
+    renderPortfolios();
+    clearTimeout(state._confirmTimer);
+    state._confirmTimer = setTimeout(() => { state.confirmDeleteId = null; renderPortfolios(); }, 5000);
+  } else if (action === 'cancel-delete') {
+    state.confirmDeleteId = null;
+    renderPortfolios();
+  } else if (action === 'delete') {
+    state.accounts.forEach(a => { if (a.portfolioId === id) a.portfolioId = null; });
+    state.portfolios = state.portfolios.filter(x => x.id !== id);
+    delete state.holdings[id];
+    delete state.snapshots[id];
+    delete state.recommendations[id];
+    delete state.briefs[id];
+    if (state.defaultPortfolioId === id) state.defaultPortfolioId = state.portfolios[0].id;
+    if (state.activePortfolioId === id) state.activePortfolioId = state.portfolios[0].id;
+    if (state.linkTargetId === id) state.linkTargetId = null;
+    if (state.detailId === id) state.detailId = null;
+    state.confirmDeleteId = null;
+    renderPortfolioSelect();
+    renderAll();
+    toast('“' + p.name + '” deleted — its accounts were kept and unlinked.');
+  }
+});
+$('#linked-accounts').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-link-action]');
+  if (!btn || btn.disabled) return;
+  const target = state.portfolios.find(p => p.id === state.linkTargetId);
+  const a = state.accounts.find(x => x.id === btn.dataset.acctId);
+  if (!target || !a) return;
+  if (btn.dataset.linkAction === 'link') {
+    if (a.portfolioId) {
+      const cur = state.portfolios.find(p => p.id === a.portfolioId);
+      toast('Rejected — “' + a.name + '” is already linked to “' + (cur ? cur.name : 'another portfolio') + '”. Unlink it there first; an account links to one portfolio at a time.');
+      return;
+    }
+    a.portfolioId = target.id;
+    toast('“' + a.name + '” linked to “' + target.name + '”. Sample holdings are static in this mockup.');
+  } else {
+    a.portfolioId = null;
+    toast('“' + a.name + '” unlinked from “' + target.name + '”.');
+  }
+  renderAccounts();
+  renderPortfolios();
+  $('#link-panel-title').focus();
+});
+$('#link-done-btn').addEventListener('click', () => {
+  const id = state.linkTargetId;
+  state.linkTargetId = null;
+  renderPortfolios();
+  const back = $(`button[data-port-action="manage"][data-port-id="${id}"]`);
+  if (back) back.focus();
+});
+$('#detail-done-btn').addEventListener('click', () => {
+  const id = state.detailId;
+  state.detailId = null;
+  renderPortfolios();
+  const back = $(`button[data-port-action="detail"][data-port-id="${id}"]`);
+  if (back) back.focus();
+});
+$('#portfolio-edit-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const p = state.portfolios.find(x => x.id === state.detailId);
+  if (!p) return;
+  const name = $('#edit-port-name').value.trim();
+  const desc = $('#edit-port-desc').value.trim();
+  let ok = true;
+  if (!name) { setFieldError($('#f-edit-port-name'), 'Give this portfolio a name.'); ok = false; }
+  else if (state.portfolios.some(x => x.id !== p.id && x.name.toLowerCase() === name.toLowerCase())) {
+    setFieldError($('#f-edit-port-name'), 'A portfolio with this name already exists.'); ok = false;
+  } else setFieldError($('#f-edit-port-name'), null);
+  if (!ok) return;
+  p.name = name;
+  p.description = desc;
+  renderPortfolioSelect();
+  renderAll();
+  toast('Portfolio saved — “' + name + '” updated.');
+});
+$('#portfolio-create-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('#new-port-name').value.trim();
+  const desc = $('#new-port-desc').value.trim();
+  let ok = true;
+  if (!name) { setFieldError($('#f-new-port-name'), 'Give the portfolio a name.'); ok = false; }
+  else if (state.portfolios.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+    setFieldError($('#f-new-port-name'), 'A portfolio with this name already exists.'); ok = false;
+  } else setFieldError($('#f-new-port-name'), null);
+  if (!ok) return;
+  const id = 'p' + Date.now();
+  state.portfolios.push({
+    id, name, description: desc, guardrailPp: 5,
+    target: { BTC: 20, ETH: 20, SOL: 20, LINK: 20, USDC: 20 },
+  });
+  state.holdings[id] = [];
+  state.snapshots[id] = [];
+  state.recommendations[id] = [];
+  state.briefs[id] = [];
+  $('#portfolio-create-form').reset();
+  renderPortfolioSelect();
+  renderAll();
+  toast('“' + name + '” created with a sample equal-weight target — edit it below.');
+});
+
+/* ── Init ─────────────────────────────────────────────────────── */
+renderPortfolioSelect();
+renderAll();
+showScreen('dashboard', false);
+</script>
+</body>
+</html>

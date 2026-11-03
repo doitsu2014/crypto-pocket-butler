@@ -1,9 +1,9 @@
 {
   "schemaVersion": "od-design-system-project/v1",
-  "id": "gilded-ledger",
-  "name": "Gilded Ledger",
-  "category": "Fintech · Luxury",
-  "description": "A luxury dark design system for read-only crypto portfolio aggregation. Black-lacquer surfaces, ivory Didone display type, one champagne-gold accent, and tabular mono figures. Built for Crypto Pocket Butler.",
+  "id": "parchment-ledger",
+  "name": "Parchment Ledger",
+  "category": "Fintech · Warm editorial",
+  "description": "A warm editorial design system for read-only crypto portfolio aggregation, themed on the Claude (Anthropic) design language: parchment surfaces, exclusively warm neutrals, one terracotta accent, serif display type, and tabular mono figures. Built for Crypto Pocket Butler.",
   "source": {
     "type": "project",
     "origin": "Crypto Pocket Butler product requirements (BRD-001 to BRD-012), 2026-11-02"

@@ -11,7 +11,7 @@ authoritative when more detail is needed. Business rules live in the
 - **Backend + API Gateway**: Rust — Axum, tower, sqlx, rust_decimal, tokio. No other backend
   language; no ORM other than sqlx.
 - **Frontend**: React 18 + TypeScript 5 — Vite, TanStack Query, @supabase/supabase-js,
-  Recharts, Tailwind CSS v4 mapped to the Gilded Ledger tokens (no raw values).
+  Recharts, Tailwind CSS v4 mapped to the Parchment Ledger tokens (no raw values).
 - **Package manager**: Yarn ≥ 6 only (`yarn` for every command; `npm`/`npx`/`pnpm` and their
   lockfiles are forbidden) — see the `yarn` skill.
 - **Database**: Supabase Postgres — one schema and one Postgres role per service, **no
@@ -38,7 +38,7 @@ infrastructure    →  application  →  domain
   calls; business math (valuation, drift, allocation) is computed only in the backend.
 
 Use the `clean-architecture` skill to verify boundaries; the `rust-service` skill to scaffold
-a new service; the `frontend-design` skill for any UI work (Gilded Ledger design system in
+a new service; the `frontend-design` skill for any UI work (Parchment Ledger design system in
 `design-system/`).
 
 ## Communication

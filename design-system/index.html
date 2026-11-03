@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="logo-mark.svg">
-<title>Gilded Ledger — Crypto Pocket Butler Design System</title>
+<title>Parchment Ledger — Crypto Pocket Butler Design System</title>
 <meta name="description" content="Design system for Crypto Pocket Butler: tokens, typography, components, and data conventions for a read-only crypto portfolio product.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Jost:wght@400;500;600&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="tokens.css">
 <style>
   /* ── Base ─────────────────────────────────────────────────────────── */
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   *, *::before, *::after { box-sizing: border-box; }
   html { scroll-behavior: smooth; scroll-padding-top: 88px; }
   body {
@@ -539,15 +539,17 @@
 
 <header class="site-header">
   <div class="header-inner">
-    <a class="brand" href="#top" aria-label="Gilded Ledger, back to top">
+    <a class="brand" href="#top" aria-label="Parchment Ledger, back to top">
       <svg class="brand-mark" viewBox="0 0 96 96" aria-hidden="true" focusable="false">
         <rect width="96" height="96" rx="20" fill="var(--bg)"/>
         <rect x="0.5" y="0.5" width="95" height="95" rx="19.5" fill="none" stroke="var(--border)"/>
-        <circle cx="48" cy="48" r="33" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
-        <circle cx="48" cy="48" r="29" fill="none" stroke="var(--accent)" stroke-width="0.75" opacity="0.7"/>
-        <rect x="45.5" y="12.5" width="5" height="5" transform="rotate(45 48 15)" fill="var(--bg)"/>
-        <rect x="46.25" y="13.25" width="3.5" height="3.5" transform="rotate(45 48 15)" fill="var(--accent)"/>
-        <text x="48" y="58.5" text-anchor="middle" font-family="var(--font-display)" font-weight="600" font-size="30" letter-spacing="1" fill="var(--accent)">PB</text>
+        <circle cx="48" cy="11" r="3.5" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+        <line x1="48" y1="14.5" x2="48" y2="21" stroke="var(--accent)" stroke-width="1.5"/>
+        <circle cx="48" cy="51" r="30" fill="none" stroke="var(--accent)" stroke-width="2"/>
+        <circle cx="48" cy="51" r="26.5" fill="none" stroke="var(--accent)" stroke-width="0.75" opacity="0.7"/>
+        <line x1="21.5" y1="51" x2="24.5" y2="51" stroke="var(--accent)" stroke-width="1"/>
+        <line x1="71.5" y1="51" x2="74.5" y2="51" stroke="var(--accent)" stroke-width="1"/>
+        <text x="48" y="59.5" text-anchor="middle" font-family="var(--font-display)" font-weight="600" font-size="24" letter-spacing="0.5" fill="var(--accent)">PB</text>
       </svg>
       <span class="brand-text">
         <span class="brand-name">Pocket Butler</span>
@@ -555,8 +557,8 @@
       </span>
     </a>
     <div class="header-meta">
-      <span class="badge badge-neutral"><span class="dot"></span>v1.1</span>
-      <span class="header-note">Dark theme</span>
+      <span class="badge badge-neutral"><span class="dot"></span>v1.2</span>
+      <span class="header-note">Light theme</span>
     </div>
   </div>
 </header>
@@ -564,12 +566,12 @@
 <main id="main">
   <section class="hero" id="top" aria-labelledby="hero-title">
     <p class="overline">Crypto Pocket Butler &middot; Design system</p>
-    <h1 id="hero-title">Gilded Ledger</h1>
+    <h1 id="hero-title">Parchment Ledger</h1>
     <p class="lede">A calm, exact interface for people who want to know where their crypto is &mdash; not a trading terminal. Numbers lead; chrome recedes; every state is stated in words as well as color.</p>
     <dl class="hero-facts">
       <div><dt>Product</dt><dd>Crypto Pocket Butler</dd></div>
       <div><dt>Audience</dt><dd>Retail investors &amp; active traders (MVP)</dd></div>
-      <div><dt>Palette</dt><dd>Black lacquer &middot; ivory &middot; champagne gold</dd></div>
+      <div><dt>Palette</dt><dd>Parchment &middot; terracotta &middot; warm neutrals</dd></div>
     </dl>
   </section>
 
@@ -605,7 +607,7 @@
           <article class="principle">
             <span class="num">02</span>
             <h3>Quiet chrome, loud data.</h3>
-            <p>Lacquer-dark surfaces, hairline borders, no decorative glow. Hierarchy comes from type scale and space, not ornament.</p>
+            <p>Parchment surfaces, cream hairline borders, whisper-soft depth. Hierarchy comes from type scale and space, not ornament.</p>
           </article>
           <article class="principle">
             <span class="num">03</span>
@@ -627,15 +629,15 @@
         <div class="swatches">
           <div class="swatch">
             <div class="swatch-chip c-bg">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Background</span><code>--bg</code><span class="swatch-value">#080706</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Background</span><code>--bg</code><span class="swatch-value">#F5F4ED</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-surface">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Surface</span><code>--surface</code><span class="swatch-value">#151310</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Surface</span><code>--surface</code><span class="swatch-value">#FAF9F5</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-warm">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Surface warm</span><code>--surface-warm</code><span class="swatch-value">#241E14</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Surface warm</span><code>--surface-warm</code><span class="swatch-value">#E8E6DC</span></div>
           </div>
         </div>
 
@@ -643,19 +645,19 @@
         <div class="swatches">
           <div class="swatch">
             <div class="swatch-chip c-fg">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Foreground</span><code>--fg</code><span class="swatch-value">#FFF8EA</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Foreground</span><code>--fg</code><span class="swatch-value">#141413</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-fg2">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Foreground 2</span><code>--fg-2</code><span class="swatch-value">#D8CDB7</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Foreground 2</span><code>--fg-2</code><span class="swatch-value">#3D3D3A</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-muted">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Muted</span><code>--muted</code><span class="swatch-value">#9F927C</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Muted</span><code>--muted</code><span class="swatch-value">#5E5D59</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-meta">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Meta</span><code>--meta</code><span class="swatch-value">#B3A58C</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Meta</span><code>--meta</code><span class="swatch-value">#6F6E67</span></div>
           </div>
         </div>
 
@@ -663,7 +665,7 @@
         <div class="swatches">
           <div class="swatch">
             <div class="swatch-chip c-accent">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Accent</span><code>--accent</code><span class="swatch-value">#C6A15B</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Accent</span><code>--accent</code><span class="swatch-value">#C96442</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-accent-hover">Aa</div>
@@ -671,7 +673,7 @@
           </div>
           <div class="swatch">
             <div class="swatch-chip c-accent">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">On accent</span><code>--accent-on</code><span class="swatch-value">#080706</span></div>
+            <div class="swatch-meta"><span class="swatch-name">On accent</span><code>--accent-on</code><span class="swatch-value">#FAF9F5</span></div>
           </div>
         </div>
 
@@ -679,11 +681,11 @@
         <div class="swatches">
           <div class="swatch">
             <div class="swatch-chip c-border">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Border</span><code>--border</code><span class="swatch-value">#3A3020</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Border</span><code>--border</code><span class="swatch-value">#F0EEE6</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-border-soft">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Border soft</span><code>--border-soft</code><span class="swatch-value">#282217</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Border soft</span><code>--border-soft</code><span class="swatch-value">#E8E6DC</span></div>
           </div>
         </div>
 
@@ -691,15 +693,15 @@
         <div class="swatches">
           <div class="swatch">
             <div class="swatch-chip c-success">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Success</span><code>--success</code><span class="swatch-value">#6FAE7A</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Success</span><code>--success</code><span class="swatch-value">#15803D</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-warn">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Warn</span><code>--warn</code><span class="swatch-value">#D8A94F</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Warn</span><code>--warn</code><span class="swatch-value">#A16207</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-danger">Aa</div>
-            <div class="swatch-meta"><span class="swatch-name">Danger</span><code>--danger</code><span class="swatch-value">#E06A60</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Danger</span><code>--danger</code><span class="swatch-value">#B53333</span></div>
           </div>
         </div>
 
@@ -707,27 +709,27 @@
         <div class="swatches">
           <div class="swatch">
             <div class="swatch-chip c-chart1">1</div>
-            <div class="swatch-meta"><span class="swatch-name">Series 1</span><code>--chart-1</code><span class="swatch-value">#C6A15B</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Series 1</span><code>--chart-1</code><span class="swatch-value">#C96442</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-chart2">2</div>
-            <div class="swatch-meta"><span class="swatch-name">Series 2</span><code>--chart-2</code><span class="swatch-value">#D8CDB7</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Series 2</span><code>--chart-2</code><span class="swatch-value">#5E5D59</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-chart3">3</div>
-            <div class="swatch-meta"><span class="swatch-name">Series 3</span><code>--chart-3</code><span class="swatch-value">#7FB0A4</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Series 3</span><code>--chart-3</code><span class="swatch-value">#67764F</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-chart4">4</div>
-            <div class="swatch-meta"><span class="swatch-name">Series 4</span><code>--chart-4</code><span class="swatch-value">#A8875A</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Series 4</span><code>--chart-4</code><span class="swatch-value">#8A6D3B</span></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip c-chart5">5</div>
-            <div class="swatch-meta"><span class="swatch-name">Series 5</span><code>--chart-5</code><span class="swatch-value">#8C9DB0</span></div>
+            <div class="swatch-meta"><span class="swatch-name">Series 5</span><code>--chart-5</code><span class="swatch-value">#6F6E67</span></div>
           </div>
         </div>
 
-        <p class="note">All four text levels clear WCAG AA on <code>--bg</code> and <code>--surface</code>; <code>--meta</code> on <code>--bg</code> measures 8.32:1. Green is reserved for synced, within guardrail, and positive change &mdash; never decoration. Chart series follow a fixed order with the largest holding as series 1, and always ship with a labeled legend.</p>
+        <p class="note">All four text levels clear WCAG AA on <code>--bg</code> and <code>--surface</code>; <code>--meta</code> on <code>--bg</code> measures 4.64:1. Green is reserved for synced, within guardrail, and positive change &mdash; never decoration. Chart series follow a fixed order with the largest holding as series 1, and always ship with a labeled legend.</p>
       </section>
 
 <!-- 03 ─────────────────────────────────────────────────────────── -->
@@ -739,34 +741,34 @@
         </header>
 
         <div class="specimen">
-          <p class="overline">Display &middot; Playfair Display 600</p>
+          <p class="overline">Display &middot; Fraunces 500</p>
           <p class="specimen-display">Know where<br>it all is.</p>
-          <p class="specimen-body">Interface copy is Jost at 16px with 1.55 line height. The Didone serif is reserved for the product name, page titles, and section headings. Prices, balances, weights, and drift are always IBM Plex Mono with tabular numerals, so columns line up and digits never shift width.</p>
+          <p class="specimen-body">Interface copy is Instrument Sans at 16px with a relaxed 1.6 line height. Fraunces &mdash; a modern soft serif &mdash; carries the product name, page titles, and section headings at weight 500&ndash;600. Prices, balances, weights, and drift are always JetBrains Mono with tabular numerals, so columns line up and digits never shift width.</p>
         </div>
 
         <div class="type-scale">
           <div class="type-row">
-            <span class="type-label">Display / 60</span>
+            <span class="type-label">Display / 64</span>
             <span class="t-4xl">Portfolio</span>
             <span class="type-use">Hero</span>
           </div>
           <div class="type-row">
-            <span class="type-label">Page / 44</span>
+            <span class="type-label">Section / 52</span>
             <span class="t-3xl">Holdings</span>
             <span class="type-use">Page title</span>
           </div>
           <div class="type-row">
-            <span class="type-label">Section / 32</span>
+            <span class="type-label">Sub / 32</span>
             <span class="t-2xl">Allocation</span>
             <span class="type-use">Section</span>
           </div>
           <div class="type-row">
-            <span class="type-label">Panel / 24</span>
+            <span class="type-label">Sub small / 25</span>
             <span class="t-xl">Rebalance</span>
             <span class="type-use">Panel title</span>
           </div>
           <div class="type-row">
-            <span class="type-label">Lead / 20</span>
+            <span class="type-label">Body large / 20</span>
             <span class="t-lg">As of 14:32 UTC</span>
             <span class="type-use">Intro copy</span>
           </div>
@@ -781,7 +783,7 @@
             <span class="type-use">Interface</span>
           </div>
           <div class="type-row">
-            <span class="type-label">Micro / 12</span>
+            <span class="type-label">Overline / 10</span>
             <span class="t-xs">L A S T &nbsp; S Y N C E D</span>
             <span class="type-use">Labels</span>
           </div>
@@ -832,8 +834,8 @@
         <h3 class="subhead">Radius</h3>
         <div class="radius-grid">
           <div class="radius-tile"><span class="radius-demo r-sm"></span><code>--radius-sm &middot; 8</code></div>
-          <div class="radius-tile"><span class="radius-demo r-md"></span><code>--radius-md &middot; 14</code></div>
-          <div class="radius-tile"><span class="radius-demo r-lg"></span><code>--radius-lg &middot; 18</code></div>
+          <div class="radius-tile"><span class="radius-demo r-md"></span><code>--radius-md &middot; 12</code></div>
+          <div class="radius-tile"><span class="radius-demo r-lg"></span><code>--radius-lg &middot; 16</code></div>
           <div class="radius-tile"><span class="radius-demo r-pill"></span><code>--radius-pill</code></div>
         </div>
 
@@ -844,7 +846,7 @@
           <div class="elev-tile"><span class="elev-demo e-raised">Raised</span><code>menus &amp; modals</code></div>
         </div>
 
-        <p class="note">Grid: 12 columns inside a 1240px container, with 24px gutters desktop, 16px tablet, and 12px phone. The app shell is a 64px header and a 240px sidebar; content reserves matching padding. Section rhythm is 96px desktop, 64px tablet, 40px phone.</p>
+        <p class="note">Grid: 12 columns inside a 1200px container, with 24px gutters desktop, 16px tablet, and 12px phone. The app shell is a 64px header and a 240px sidebar; content reserves matching padding. Section rhythm is 96px desktop, 64px tablet, 48px phone.</p>
       </section>
 
 <!-- 05 ─────────────────────────────────────────────────────────── -->
@@ -1188,13 +1190,13 @@
         <header class="section-head">
           <p class="overline">08 &middot; Practice</p>
           <h2 id="brand-title">Brand mark</h2>
-          <p class="section-lede">A gilded seal: the PB monogram engraved in the system&rsquo;s gold, with the Gilded Ledger wordmark. Use it as shipped &mdash; never redrawn, recolored, or rotated.</p>
+          <p class="section-lede">The butler&rsquo;s pocket watch: the PB monogram on a terracotta dial, with the chain bow at twelve and the Parchment Ledger wordmark beside it. Use it as shipped &mdash; never redrawn, recolored, or rotated.</p>
         </header>
         <div class="brand-demo">
-          <img src="logo.svg" alt="Gilded Ledger lockup: PB seal beside the Gilded Ledger wordmark" width="480" height="96">
-          <img src="logo-mark.svg" alt="Gilded Ledger emblem: PB monogram in a double gold ring" width="96" height="96">
+          <img src="logo.svg" alt="Parchment Ledger lockup: pocket-watch seal beside the Parchment Ledger wordmark" width="480" height="96">
+          <img src="logo-mark.svg" alt="Parchment Ledger emblem: PB monogram on a pocket-watch dial" width="96" height="96">
         </div>
-        <p class="note">The lockup ships as <code>logo.svg</code>; the emblem alone is <code>logo-mark.svg</code> and doubles as the favicon. Gold on lacquer only &mdash; never on gold or ivory. Clear space around the emblem equals the ring&rsquo;s radius, and the monogram never renders below 24px.</p>
+        <p class="note">The lockup ships as <code>logo.svg</code>; the emblem alone is <code>logo-mark.svg</code> and doubles as the favicon. Terracotta on parchment only &mdash; never on terracotta, ivory fills, or photography. Clear space around the emblem equals the ring&rsquo;s radius, and the monogram never renders below 24px.</p>
       </section>
     </div>
   </div>
@@ -1202,7 +1204,7 @@
 
 <footer class="site-footer">
   <div class="footer-inner">
-    <span>Gilded Ledger v1.1 &middot; November 2026 &middot; Dark theme</span>
+    <span>Parchment Ledger v1.2 &middot; November 2026 &middot; Light theme</span>
     <span class="footer-files">
       <code>DESIGN.md</code><code>tokens.css</code><code>index.html</code><code>manifest.json</code>
     </span>

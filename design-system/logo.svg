@@ -1,16 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 96" width="480" height="96" role="img" aria-labelledby="lockup-title">
-  <title id="lockup-title">Gilded Ledger — Pocket Butler design system lockup</title>
-  <!-- Emblem -->
-  <rect width="96" height="96" rx="20" fill="#080706"/>
-  <rect x="0.5" y="0.5" width="95" height="95" rx="19.5" fill="none" stroke="#3A3020"/>
-  <circle cx="48" cy="48" r="33" fill="none" stroke="#C6A15B" stroke-width="1.5"/>
-  <circle cx="48" cy="48" r="29" fill="none" stroke="#C6A15B" stroke-width="0.75" opacity="0.7"/>
-  <rect x="45.5" y="12.5" width="5" height="5" transform="rotate(45 48 15)" fill="#080706"/>
-  <rect x="46.25" y="13.25" width="3.5" height="3.5" transform="rotate(45 48 15)" fill="#C6A15B"/>
-  <text x="48" y="58.5" text-anchor="middle" font-family="'Playfair Display','Didot','Bodoni 72',Georgia,serif" font-weight="600" font-size="30" letter-spacing="1" fill="#C6A15B">PB</text>
+  <title id="lockup-title">Parchment Ledger — Crypto Pocket Butler design system lockup</title>
+  <!-- Emblem: the butler's pocket watch -->
+  <rect width="96" height="96" rx="20" fill="#faf9f5"/>
+  <rect x="0.5" y="0.5" width="95" height="95" rx="19.5" fill="none" stroke="#f0eee6"/>
+  <circle cx="48" cy="11" r="3.5" fill="none" stroke="#c96442" stroke-width="1.5"/>
+  <line x1="48" y1="14.5" x2="48" y2="21" stroke="#c96442" stroke-width="1.5"/>
+  <circle cx="48" cy="51" r="30" fill="none" stroke="#c96442" stroke-width="2"/>
+  <circle cx="48" cy="51" r="26.5" fill="none" stroke="#c96442" stroke-width="0.75" opacity="0.7"/>
+  <line x1="21.5" y1="51" x2="24.5" y2="51" stroke="#c96442" stroke-width="1"/>
+  <line x1="71.5" y1="51" x2="74.5" y2="51" stroke="#c96442" stroke-width="1"/>
+  <text x="48" y="59.5" text-anchor="middle" font-family="Fraunces,Georgia,'Times New Roman',serif" font-weight="600" font-size="24" letter-spacing="0.5" fill="#c96442">PB</text>
   <!-- Hairline divider -->
-  <line x1="124" y1="20" x2="124" y2="76" stroke="#3A3020" stroke-width="1"/>
+  <line x1="124" y1="20" x2="124" y2="76" stroke="#e8e6dc" stroke-width="1"/>
   <!-- Wordmark -->
-  <text x="148" y="52" font-family="'Playfair Display','Didot','Bodoni 72',Georgia,serif" font-weight="600" font-size="36" letter-spacing="0.5" fill="#FFF8EA">Gilded Ledger</text>
-  <text x="149" y="76" font-family="'Jost','Avenir Next','Segoe UI',sans-serif" font-weight="500" font-size="11" letter-spacing="3" fill="#B3A58C">CRYPTO POCKET BUTLER &#183; DESIGN SYSTEM</text>
+  <text x="148" y="52" font-family="Fraunces,Georgia,'Times New Roman',serif" font-weight="600" font-size="36" fill="#141413">Parchment Ledger</text>
+  <text x="149" y="76" font-family="'Instrument Sans',Arial,system-ui,sans-serif" font-weight="500" font-size="11" letter-spacing="3" fill="#6f6e67">CRYPTO POCKET BUTLER &#183; DESIGN SYSTEM</text>
 </svg>

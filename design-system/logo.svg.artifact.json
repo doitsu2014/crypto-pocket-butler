@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "kind": "svg",
+  "title": "logo.svg",
+  "entry": "logo.svg",
+  "renderer": "svg",
+  "status": "complete",
+  "exports": [
+    "svg",
+    "zip"
+  ],
+  "createdAt": "2026-11-03T06:46:17.845Z",
+  "updatedAt": "2026-11-03T06:46:17.845Z",
+  "metadata": {
+    "inferred": true
+  }
+}

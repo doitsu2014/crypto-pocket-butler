@@ -165,6 +165,14 @@
     gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3);
   }
   .card-head-row h3 { margin: 0; }
+  #snapshot-detail, #compare-wrap {
+    margin-top: var(--space-4); padding: var(--space-5);
+    background: var(--bg); border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+  }
+  .delta-up { color: var(--success); }
+  .delta-down { color: var(--danger); }
+  .delta-flat { color: var(--fg-2); }
   .search-input {
     height: 36px; padding: 0 var(--space-3); width: 100%; max-width: 320px;
     background: var(--bg); color: var(--fg);
@@ -246,6 +254,20 @@
   .rec-meta { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
   .rec-actions { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-2); }
   .rec-done { font-size: var(--text-sm); color: var(--meta); font-style: italic; }
+  .order-preview { font-size: var(--text-sm); color: var(--fg-2); margin: var(--space-2) 0 var(--space-4); min-height: 1.2em; }
+  .order-preview:empty { margin: 0; }
+
+  /* ── Record-trade dialog ─────────────────────────────────────── */
+  dialog#trade-dialog {
+    border: 1px solid var(--border); border-radius: var(--radius-lg);
+    background: var(--surface); color: var(--fg);
+    padding: var(--space-6); width: min(440px, calc(100vw - 32px));
+    box-shadow: var(--elev-raised);
+  }
+  dialog#trade-dialog::backdrop { background: rgba(20,20,19,0.45); }
+  #trade-form { display: flex; flex-direction: column; gap: var(--space-4); }
+  #trade-form h3 { margin: 0; }
+  #trade-form .form-actions { display: flex; gap: var(--space-3); margin-top: var(--space-2); }
 
   /* ── Sign-in ─────────────────────────────────────────────────── */
   .signin-wrap { min-height: 100svh; display: grid; place-items: center; padding: var(--space-6) var(--space-4); }
@@ -373,9 +395,9 @@
         <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13.5l9 5 9-5"/></svg>
         Portfolios
       </button>
-      <button class="nav-btn" type="button" data-screen="rebalancing">
-        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M8 21h8"/><path d="M6 7h12"/><path d="M6 7l-3 6h6z"/><path d="M18 7l-3 6h6z"/></svg>
-        Rebalancing
+      <button class="nav-btn" type="button" data-screen="orders">
+        <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3v14"/><path d="M4 14l3 3 3-3"/><path d="M17 21V7"/><path d="M20 10l-3-3-3 3"/></svg>
+        Orders &amp; trades
       </button>
       <button class="nav-btn" type="button" data-screen="accounts">
         <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 007.07 0l3-3a5 5 0 00-7.07-7.07L11.5 4.4"/><path d="M14 11a5 5 0 00-7.07 0l-3 3a5 5 0 007.07 7.07l1.5-1.47"/></svg>
@@ -434,14 +456,18 @@
           </div>
         </div>
         <div class="card">
-          <h3>Holdings</h3>
-          <div class="table-scroll">
+          <div class="card-head-row">
+            <h3>Holdings</h3>
+            <button class="btn btn-secondary btn-sm" id="compare-btn" type="button" aria-pressed="false" aria-controls="compare-wrap">Compare with previous snapshot</button>
+          </div>
+          <div class="table-scroll" id="holdings-wrap">
             <table class="table" id="holdings-table">
-              <caption class="sr-only">Holdings by asset with quantity, price, USD value, and weight</caption>
-              <thead><tr><th scope="col">Asset</th><th scope="col">Account</th><th scope="col" class="r">Quantity</th><th scope="col" class="r">Price</th><th scope="col" class="r">Value</th><th scope="col" class="r">Weight</th></tr></thead>
+              <caption class="sr-only">Holdings by asset with quantity, price, USD value, weight, and buy/sell actions</caption>
+              <thead><tr><th scope="col">Asset</th><th scope="col">Account</th><th scope="col" class="r">Quantity</th><th scope="col" class="r">Price</th><th scope="col" class="r">Value</th><th scope="col" class="r">Weight</th><th scope="col">Order</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
+          <div id="compare-wrap" hidden></div>
           <p class="card-note" id="unpriced-note"></p>
         </div>
         <div class="card">
@@ -455,32 +481,83 @@
           <svg class="trend-svg" id="trend-svg" viewBox="0 0 260 72" preserveAspectRatio="none" role="img" aria-label="Total value trend across recent snapshots"></svg>
           <div class="table-scroll" style="margin-top:var(--space-4)">
             <table class="table" id="snapshot-table">
-              <caption class="sr-only">Immutable snapshot history</caption>
-              <thead><tr><th scope="col">Snapshot</th><th scope="col">Kind</th><th scope="col" class="r">Total (USD)</th></tr></thead>
+              <caption class="sr-only">Immutable snapshot history; open a snapshot to see its recorded breakdown</caption>
+              <thead><tr><th scope="col">Snapshot</th><th scope="col">Kind</th><th scope="col" class="r">Total (USD)</th><th scope="col"></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
+          <div id="snapshot-detail" hidden></div>
         </div>
       </section>
 
-      <!-- ── Rebalancing ───────────────────────────────────────── -->
-      <section class="screen" id="screen-rebalancing" aria-labelledby="rebalancing-title" hidden>
+      <!-- Orders & trades (BRD-008) -->
+      <section class="screen" id="screen-orders" aria-labelledby="orders-title" hidden>
         <header class="screen-head">
-          <p class="overline">BRD-008 &middot; Rebalancing recommendations</p>
-          <h2 id="rebalancing-title" tabindex="-1">Rebalancing</h2>
-          <p class="screen-lede">Drift-based suggestions. Accepting records your decision &mdash; the butler never executes trades. Every trade is yours to place, manually, on your own venue.</p>
+          <p class="overline">BRD-008 &middot; Orders &amp; trades</p>
+          <h2 id="orders-title" tabindex="-1">Orders &amp; trades</h2>
+          <p class="screen-lede">Create a buy or sell order for an asset in this portfolio. An order is only your instruction; recording its trade updates the allocation immediately. The butler never places orders &mdash; every trade is yours, on your own venue.</p>
         </header>
-        <div class="rec-list" id="rec-list"></div>
+
         <div class="card">
-          <h3>Decision history</h3>
+          <h3>New order</h3>
+          <form id="order-form" novalidate>
+            <div class="form-grid">
+              <div class="field" id="f-order-asset">
+                <label for="order-asset">Asset</label>
+                <select id="order-asset"></select>
+              </div>
+              <div class="field" id="f-order-side">
+                <label for="order-side">Side</label>
+                <select id="order-side">
+                  <option value="buy">Buy</option>
+                  <option value="sell">Sell</option>
+         </select>
+              </div>
+              <div class="field" id="f-order-mode">
+                <label for="order-mode">Amount in</label>
+                <select id="order-mode">
+                  <option value="usd">USD amount</option>
+                  <option value="qty">Quantity</option>
+                </select>
+              </div>
+              <div class="field" id="f-order-amount">
+                <label for="order-amount">Amount</label>
+                <input id="order-amount" type="number" min="0" step="any" inputmode="decimal" placeholder="e.g. 2500">
+                <p class="error" hidden></p>
+              </div>
+            </div>
+            <div class="field" id="f-order-note">
+              <label for="order-note">Note (optional)</label>
+              <input id="order-note" type="text" placeholder="Reason for this order">
+            </div>
+            <p class="order-preview" id="order-preview"></p>
+            <button class="btn btn-primary" id="order-submit" type="submit">Create order</button>
+          </form>
+          <p class="card-note" id="order-guardrail-note"></p>
+        </div>
+
+        <div class="card">
+          <h3>Orders</h3>
           <div class="table-scroll">
-            <table class="table" id="rec-history">
-              <caption class="sr-only">Recorded recommendation decisions with decision time</caption>
-              <thead><tr><th scope="col">Recommendation</th><th scope="col">Decision</th><th scope="col">Decided</th><th scope="col">Rationale</th></tr></thead>
+            <table class="table" id="orders-table">
+              <caption class="sr-only">Orders for this portfolio, newest first, with side, amount, status and actions</caption>
+              <thead><tr><th scope="col">Order</th><th scope="col">Side</th><th scope="col" class="r">Amount</th><th scope="col">Status</th><th scope="col">Placed</th><th scope="col"></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
-          <p class="card-note">Every decision is recorded with time and acting user; the butler never executes trades.</p>
+          <p class="card-note">An order is an instruction only. A pending or cancelled order never changes allocation &mdash; only its recorded trade does.</p>
+        </div>
+
+        <div class="card">
+          <h3>Trades</h3>
+          <div class="table-scroll">
+            <table class="table" id="trades-table">
+              <caption class="sr-only">Recorded trades for this portfolio, newest first</caption>
+              <thead><tr><th scope="col">Trade</th><th scope="col">Side</th><th scope="col" class="r">Quantity</th><th scope="col">Venue</th><th scope="col">Executed</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="card-note">A trade's effect on allocation is immediate; the next holdings sync reconciles it.</p>
         </div>
       </section>
 
@@ -780,6 +857,26 @@
   </div>
 </div>
 
+  <dialog id="trade-dialog" aria-labelledby="trade-title">
+    <form id="trade-form" method="dialog" novalidate>
+      <h3 id="trade-title">Record trade &mdash; <span id="trade-side"></span> <span id="trade-sym"></span></h3>
+      <p class="card-note" style="margin:0">Recording a trade fills the order and updates allocation immediately. The butler never executes it; enter what you placed on your own venue.</p>
+      <div class="field" id="f-trade-qty">
+        <label for="trade-qty">Executed quantity</label>
+        <input id="trade-qty" type="number" min="0" step="any" inputmode="decimal">
+        <p class="error" hidden></p>
+      </div>
+      <div class="field" id="f-trade-venue">
+        <label for="trade-venue">Venue (exchange or chain)</label>
+        <input id="trade-venue" type="text" placeholder="e.g. OKX, Ethereum">
+        <p class="error" hidden></p>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Record trade</button>
+        <button class="btn btn-ghost" type="button" id="trade-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
 
 <script>
@@ -799,6 +896,9 @@ const state = {
   portFilter: 'all',
   linkTargetId: null,
   detailId: null,
+  tradeOrderId: null,
+  openSnapshotIdx: null,
+  compareHoldings: false,
   portfolios: [
     { id: 'p1', name: 'Core portfolio', description: 'Long-term holdings', guardrailPp: 5, active: true,
       target: { BTC: 55, ETH: 20, SOL: 12, LINK: 5, USDC: 8 } },
@@ -828,30 +928,46 @@ const state = {
   },
   snapshots: {
     p1: [
-      { label: 'Nov 2 · 15:42 UTC', total: 120455.72, kind: 'Manual' },
-      { label: 'Nov 1 · EOD', total: 119210.18, kind: 'EOD' },
-      { label: 'Oct 31 · EOD', total: 118004.63, kind: 'EOD' },
-      { label: 'Oct 30 · EOD', total: 115742.90, kind: 'EOD' },
-      { label: 'Oct 29 · EOD', total: 116988.35, kind: 'EOD' },
-      { label: 'Oct 28 · EOD', total: 114310.72, kind: 'EOD' },
-    ],
-    p2: [ { label: 'Nov 1 · EOD', total: 69940.10, kind: 'EOD' } ],
-  },
-  recommendations: {
-    p1: [
-      { id: 'r1', action: 'sell', sym: 'BTC', usd: 20000, risk: 'low', guardrail: 'breached', status: 'pending',
-        rationale: 'BTC weighs 75.3% against a 55% target (+20.3pp). Selling about $20,000 brings it inside the guardrail in one step.' },
-      { id: 'r2', action: 'buy', sym: 'ETH', usd: 4500, risk: 'low', guardrail: 'outside', status: 'pending',
-        rationale: 'ETH sits 6.5pp under target. A single buy here restores most of the gap without chasing momentum.' },
-      { id: 'r3', action: 'buy', sym: 'SOL', usd: 3200, risk: 'medium', guardrail: 'outside', status: 'pending',
-        rationale: 'SOL is 5.2pp under target after this week’s move. One disciplined buy is enough; the rest can wait for a better window.' },
-      { id: 'r4', action: 'buy', sym: 'USDC', usd: 3000, risk: 'low', guardrail: 'outside', status: 'pending',
-        rationale: 'The cash buffer is 5.9pp under target. Topping up keeps dry powder available for the next rebalance.' },
+      { label: 'Nov 2 · 15:42 UTC', total: 120455.72, kind: 'Manual', accounts: 3, assets: 5,
+        rows: [
+          { sym: 'BTC', qty: 0.9214, price: 98420.50, value: 90684.65 },
+          { sym: 'ETH', qty: 4.512, price: 3612.80, value: 16300.96 },
+          { sym: 'SOL', qty: 38.4, price: 214.35, value: 8231.04 },
+          { sym: 'LINK', qty: 120, price: 22.80, value: 2736.00 },
+          { sym: 'USDC', qty: 2500, price: 1.00, value: 2500.00 },
+        ] },
+      { label: 'Nov 1 · EOD', total: 119210.18, kind: 'EOD', accounts: 3, assets: 5,
+        rows: [
+          { sym: 'BTC', qty: 0.9214, price: 97100.00, value: 89467.94 },
+          { sym: 'ETH', qty: 4.512, price: 3640.00, value: 16423.68 },
+          { sym: 'SOL', qty: 38.4, price: 210.00, value: 8064.00 },
+          { sym: 'LINK', qty: 120, price: 22.10, value: 2652.00 },
+          { sym: 'USDC', qty: 2600, price: 1.00, value: 2600.00 },
+        ] },
     ],
     p2: [
-      { id: 'r5', action: 'sell', sym: 'SOL', usd: 12000, risk: 'medium', guardrail: 'breached', status: 'pending',
-        rationale: 'SOL weighs 62.9% against a 25% target (+37.9pp) — well beyond the 8pp guardrail. Trimming about $12,000 is the first step back.' },
+      { label: 'Nov 1 · EOD', total: 69940.10, kind: 'EOD', accounts: 2, assets: 4,
+        rows: [
+          { sym: 'BTC', qty: 0.12, price: 97100.00, value: 11652.00 },
+          { sym: 'ETH', qty: 1.85, price: 3640.00, value: 6734.00 },
+          { sym: 'SOL', qty: 210, price: 210.00, value: 44100.00 },
+          { sym: 'USDC', qty: 7454.10, price: 1.00, value: 7454.10 },
+        ] },
     ],
+  },
+  orders: {
+    p1: [
+      { id: 'o1', side: 'buy', sym: 'ETH', mode: 'usd', amount: 4500, status: 'pending', note: 'Top up toward target', placedAt: 'Nov 3 · 09:12 UTC' },
+      { id: 'o2', side: 'sell', sym: 'BTC', mode: 'usd', amount: 20000, status: 'filled', note: 'Trim overweight BTC', placedAt: 'Nov 2 · 14:30 UTC', tradeId: 't1' },
+      { id: 'o3', side: 'buy', sym: 'SOL', mode: 'qty', amount: 10, status: 'cancelled', note: '', placedAt: 'Nov 2 · 11:05 UTC' },
+    ],
+    p2: [],
+  },
+  trades: {
+    p1: [
+      { id: 't1', orderId: 'o2', side: 'sell', sym: 'BTC', qty: 0.2032, venue: 'OKX', executedAt: 'Nov 2 · 14:41 UTC' },
+    ],
+    p2: [],
   },
   briefs: {
     p1: [ { id: 'b1', type: 'Daily brief', label: 'Nov 2 · 07:00 UTC' } ],
@@ -882,6 +998,8 @@ const state = {
 };
 
 const AS_OF = 'Nov 2 · 15:42 UTC';
+const PRICE_TS = 'Nov 2 · 15:40 UTC';
+const LAST_SYNC = 'Nov 2 · 15:30 UTC';
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
@@ -944,11 +1062,11 @@ function renderPortfolioSelect() {
 
 function renderDashboard() {
   const c = computePortfolio(state.activePortfolioId);
-  $('#dashboard-lede').textContent = `Every figure below is consolidated across connected accounts, priced in USD. As of ${AS_OF} · live sample.`;
+  $('#dashboard-lede').textContent = `Every figure below is consolidated across connected accounts, priced in USD. Prices as of ${PRICE_TS}; holdings last synced ${LAST_SYNC}. Live sample.`;
 
   const delta = c.total - c.prev;
   const deltaPct = c.prev ? (delta / c.prev) * 100 : 0;
-  const open = state.recommendations[state.activePortfolioId].filter(r => r.status === 'pending').length;
+  const open = state.orders[state.activePortfolioId].filter(o => o.status === 'pending').length;
   const outside = c.drift.filter(d => d.gs !== 'within').length;
   $('#kpi-grid').innerHTML = `
     <div class="card kpi">
@@ -964,10 +1082,10 @@ function renderDashboard() {
       <p class="meta-line">Guardrail ±${portfolio().guardrailPp} pp</p>
     </div>
     <div class="card kpi">
-      <p class="overline">Open recommendations</p>
+      <p class="overline">Open orders</p>
       <p class="kpi-value mono num">${open}</p>
-      <p class="kpi-delta">${open ? 'Decisions waiting' : 'None waiting'}</p>
-      <p class="meta-line">Human accept / reject required</p>
+      <p class="kpi-delta">${open ? 'Awaiting a trade' : 'None open'}</p>
+      <p class="meta-line">Pending buy / sell orders</p>
     </div>`;
 
   const segs = c.priced
@@ -998,19 +1116,114 @@ function renderDashboard() {
       <td class="r">${r.price == null ? '—' : usd(r.price)}</td>
       <td class="r">${r.value == null ? '—' : usd(r.value)}</td>
       <td class="r">${r.value == null ? '—' : (r.value / c.total * 100).toFixed(1) + '%'}</td>
+      <td><div class="od-row" style="--od-gap:6px"><button class="btn btn-secondary btn-sm" type="button" data-holding-buy="${esc(r.sym)}">Buy</button><button class="btn btn-ghost btn-sm" type="button" data-holding-sell="${esc(r.sym)}">Sell</button></div></td>
     </tr>`).join('');
-  if (!c.rows.length) $('#holdings-table tbody').innerHTML = '<tr class="empty-row"><td colspan="6">No holdings yet — link an account and sync it.</td></tr>';
-  $('#unpriced-note').textContent = c.unpriced.length
+  if (!c.rows.length) $('#holdings-table tbody').innerHTML = '<tr class="empty-row"><td colspan="7">No holdings yet — link an account and sync it.</td></tr>';
+  $('#unpriced-note').textContent = (c.unpriced.length
     ? `${c.unpriced.length} unpriced asset${c.unpriced.length > 1 ? 's' : ''} (${c.unpriced.map(r => r.sym).join(', ')}) excluded from the total and disclosed here — never silently valued at zero.`
-    : 'All assets are priced. Sample data — illustrative only.';
+    : 'All assets are priced.') + ` Prices from OKX as of ${PRICE_TS}; holdings last synced ${LAST_SYNC}.`;
+
+  renderCompare(c);
 
   renderTrend();
-  $('#snapshot-table tbody').innerHTML = state.snapshots[state.activePortfolioId].map(s => `
+  const snaps = state.snapshots[state.activePortfolioId];
+  $('#snapshot-table tbody').innerHTML = snaps.map((s, i) => `
     <tr>
       <th scope="row" class="mono" style="font-weight:400">${esc(s.label)}</th>
       <td>${s.kind === 'Manual' ? 'Manual' : 'End of day'}</td>
       <td class="r">${usd(s.total)}</td>
+      <td><button class="btn btn-ghost btn-sm" type="button" data-snapshot-idx="${i}" aria-expanded="${state.openSnapshotIdx === i}" aria-controls="snapshot-detail">${state.openSnapshotIdx === i ? 'Hide' : 'Open'}</button></td>
     </tr>`).join('');
+  renderSnapshotDetail();
+}
+
+function renderSnapshotDetail() {
+  const card = $('#snapshot-detail');
+  const snaps = state.snapshots[state.activePortfolioId];
+  const i = state.openSnapshotIdx;
+  if (i == null || !snaps[i]) { card.hidden = true; card.innerHTML = ''; return; }
+  const s = snaps[i];
+  const rows = (s.rows || []).slice().sort((a, b) => b.value - a.value);
+  const body = rows.map(r => `
+    <tr>
+      <th scope="row"><span class="asset-sym">${esc(r.sym)}</span></th>
+      <td class="r">${qty(r.qty)}</td>
+      <td class="r">${usd(r.price)}</td>
+      <td class="r">${usd(r.value)}</td>
+      <td class="r">${s.total > 0 ? (r.value / s.total * 100).toFixed(1) + '%' : '—'}</td>
+    </tr>`).join('');
+  card.hidden = false;
+  card.innerHTML = `
+    <div class="card-head-row">
+      <div>
+        <h3 style="margin:0">Snapshot breakdown &mdash; ${esc(s.label)}</h3>
+        <p class="meta-line">${s.kind === 'Manual' ? 'Manual' : 'End of day'} &middot; ${s.accounts != null ? s.accounts : '—'} accounts &middot; ${s.assets != null ? s.assets : rows.length} assets &middot; immutable record</p>
+      </div>
+      <button class="btn btn-secondary btn-sm" type="button" id="snapshot-close">Close</button>
+    </div>
+    <div class="table-scroll" style="margin-top:var(--space-4)">
+      <table class="table">
+        <caption class="sr-only">Per-asset breakdown recorded in this snapshot</caption>
+        <thead><tr><th scope="col">Asset</th><th scope="col" class="r">Quantity</th><th scope="col" class="r">Price</th><th scope="col" class="r">Value</th><th scope="col" class="r">Weight</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+    <p class="card-note">Recorded at snapshot time and never back-dated; later account or price changes do not alter it.</p>`;
+}
+
+function renderCompare(c) {
+  const btn = $('#compare-btn');
+  const wrap = $('#compare-wrap');
+  const holdingsWrap = $('#holdings-wrap');
+  btn.setAttribute('aria-pressed', String(state.compareHoldings));
+  btn.textContent = state.compareHoldings ? 'Hide comparison' : 'Compare with previous snapshot';
+  if (!state.compareHoldings) { wrap.hidden = true; wrap.innerHTML = ''; holdingsWrap.hidden = false; return; }
+  holdingsWrap.hidden = true;
+  wrap.hidden = false;
+  const snap = state.snapshots[state.activePortfolioId][0];
+  if (!snap || !snap.rows) {
+    wrap.innerHTML = '<p style="color:var(--fg-2)">No earlier snapshot to compare against yet. Take a snapshot first, then changes will show here.</p>';
+    return;
+  }
+  const prevMap = {};
+  snap.rows.forEach(r => { prevMap[r.sym] = r; });
+  const curMap = {};
+  c.priced.forEach(r => { curMap[r.sym] = r; });
+  const syms = Array.from(new Set([...c.priced.map(r => r.sym), ...snap.rows.map(r => r.sym)]));
+  const curTotal = c.total;
+  const prevTotal = snap.total;
+  const rows = syms.map(sym => {
+    const cur = curMap[sym];
+    const prev = prevMap[sym];
+    const curVal = cur ? cur.value : 0;
+    const prevVal = prev ? prev.value : 0;
+    const curW = curTotal > 0 ? curVal / curTotal * 100 : 0;
+    const prevW = prevTotal > 0 ? prevVal / prevTotal * 100 : 0;
+    return { sym, cur, prev, curVal, prevVal, curW, prevW, dVal: curVal - prevVal, dW: curW - prevW };
+  }).sort((a, b) => b.curVal - a.curVal);
+  const cls = n => n > 0.004 ? 'delta-up' : n < -0.004 ? 'delta-down' : 'delta-flat';
+  const signUsd = n => (n > 0 ? '+' : n < 0 ? '−' : '') + usd(Math.abs(n));
+  const tagFor = r => !r.prev ? ' · <span style="color:var(--success)">New</span>' : (!r.cur ? ' · <span style="color:var(--danger)">Exited</span>' : '');
+  const body = rows.map(r => `
+    <tr>
+      <th scope="row"><span class="asset-sym">${esc(r.sym)}</span>${tagFor(r)}</th>
+      <td class="r">${usd(r.prevVal)}</td>
+      <td class="r">${usd(r.curVal)}</td>
+      <td class="r ${cls(r.dVal)}">${signUsd(r.dVal)}</td>
+      <td class="r">${r.prevW.toFixed(1)}% → ${r.curW.toFixed(1)}%</td>
+      <td class="r ${cls(r.dW)}">${pp(r.dW)}</td>
+    </tr>`).join('');
+  const dTotal = curTotal - prevTotal;
+  wrap.innerHTML = `
+    <p class="meta-line" style="margin-bottom:var(--space-3)">Live holdings vs snapshot <strong>${esc(snap.label)}</strong>. Total ${usd(prevTotal)} &rarr; ${usd(curTotal)} <span class="${cls(dTotal)}">${signUsd(dTotal)}</span>.</p>
+    <div class="table-scroll">
+      <table class="table">
+        <caption class="sr-only">Per-asset comparison of current holdings against the previous snapshot</caption>
+        <thead><tr><th scope="col">Asset</th><th scope="col" class="r">Then</th><th scope="col" class="r">Now</th><th scope="col" class="r">Value change</th><th scope="col" class="r">Weight</th><th scope="col" class="r">Weight change</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+    <p class="card-note">Compares the current live valuation with the most recent snapshot.</p>`;
 }
 
 function renderTrend() {
@@ -1032,42 +1245,95 @@ function renderTrend() {
     `<line x1="4" y1="70.5" x2="256" y2="70.5" stroke="var(--border)" stroke-width="1"/>`;
 }
 
-function renderRebalancing() {
-  const recs = state.recommendations[state.activePortfolioId];
-  const list = $('#rec-list');
-  if (!recs.length) {
-    list.innerHTML = `
-      <div class="card" style="text-align:center; padding:var(--space-12) var(--space-6)">
-        <h3>No recommendations yet</h3>
-        <p style="color:var(--fg-2); margin-top:var(--space-2)">This portfolio has no drift-based suggestions right now. Recommendations appear when allocation drifts from its target.</p>
-      </div>`;
-    return;
+function portfolioAssets() {
+  const held = (state.holdings[state.activePortfolioId] || []).map(h => h.sym);
+  const all = state.assets.filter(a => a.mapped).map(a => a.sym);
+  return Array.from(new Set([...held, ...all]));
+}
+function heldQty(pId, sym) {
+  const h = (state.holdings[pId] || []).find(x => x.sym === sym);
+  return h ? h.qty : 0;
+}
+const ORDER_STATUS = { pending: ['Pending', 'warn'], filled: ['Filled', 'success'], cancelled: ['Cancelled', 'neutral'] };
+function renderOrderForm() {
+  const syms = portfolioAssets();
+  const sel = $('#order-asset');
+  const cur = sel.value;
+  sel.innerHTML = syms.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  if (cur && syms.includes(cur)) sel.value = cur;
+  $('#order-guardrail-note').textContent = "Guardrail: orders respect this portfolio's min/max order size and allowed assets. Sells are capped at the quantity you currently hold.";
+  updateOrderPreview();
+}
+function orderQtyUsd(sym, mode, amount) {
+  const price = PRICES[sym];
+  if (price == null) return { qty: null, usd: null };
+  if (mode === 'usd') return { qty: amount / price, usd: amount };
+  return { qty: amount, usd: amount * price };
+}
+function updateOrderPreview() {
+  const el = $('#order-preview');
+  const sym = $('#order-asset').value;
+  const side = $('#order-side').value;
+  const mode = $('#order-mode').value;
+  const amount = parseFloat($('#order-amount').value);
+  if (!sym || !(amount > 0)) { el.textContent = ''; return; }
+  const price = PRICES[sym];
+  if (price == null) { el.textContent = sym + ' is unpriced — projected allocation effect cannot be shown.'; return; }
+  const c = computePortfolio(state.activePortfolioId);
+  const { qty, usd: amtUsd } = orderQtyUsd(sym, mode, amount);
+  const cur = c.priced.find(r => r.sym === sym);
+  const curVal = cur ? cur.value : 0;
+  const signed = side === 'buy' ? amtUsd : -amtUsd;
+  const newVal = Math.max(0, curVal + signed);
+  const newTotal = Math.max(0, c.total + signed);
+  const curW = c.total > 0 ? curVal / c.total * 100 : 0;
+  const newW = newTotal > 0 ? newVal / newTotal * 100 : 0;
+  el.textContent = `Projected: ${sym} ${curW.toFixed(1)}% -> ${newW.toFixed(1)}% (${side} ${qty.toFixed(4)} ${sym}, ${usd(amtUsd)}). A trade applies this immediately.`;
+}
+function fmtAmount(o) {
+  return o.mode === 'usd' ? usd(o.amount) : qty(o.amount) + ' ' + o.sym;
+}
+function renderOrders() {
+  renderOrderForm();
+  const orders = state.orders[state.activePortfolioId] || [];
+  const tbody = $('#orders-table tbody');
+  if (!orders.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No orders yet — create a buy or sell order above.</td></tr>';
+  } else {
+    tbody.innerHTML = orders.map(o => {
+      const sideL = o.side === 'sell' ? ['Sell', 'danger'] : ['Buy', 'success'];
+      const st = ORDER_STATUS[o.status];
+      const act = o.status === 'pending'
+        ? `<div class="od-row" style="--od-gap:6px"><button class="btn btn-primary btn-sm" type="button" data-order-action="trade" data-order-id="${o.id}">Record trade</button><button class="btn btn-ghost btn-sm" type="button" data-order-action="cancel" data-order-id="${o.id}">Cancel</button></div>`
+        : '';
+      return `
+      <tr>
+        <th scope="row"><span class="asset-cell"><span class="asset-sym">${esc(o.sym)}</span>${o.note ? `<span class="asset-name">${esc(o.note)}</span>` : ''}</span></th>
+        <td><span class="badge badge-${sideL[1]}"><span class="dot"></span>${sideL[0]}</span></td>
+        <td class="r mono num">${fmtAmount(o)}</td>
+        <td><span class="badge badge-${st[1]}"><span class="dot"></span>${st[0]}</span></td>
+        <td class="mono" style="font-weight:400">${esc(o.placedAt)}</td>
+        <td>${act}</td>
+      </tr>`;
+    }).join('');
   }
-  list.innerHTML = recs.map(r => {
-    const actionLabel = r.action === 'sell' ? ['Sell', 'danger'] : ['Buy', 'success'];
-    const riskLabel = { low: 'Low risk', medium: 'Medium risk', high: 'High risk' }[r.risk] || r.risk;
-    const done = r.status !== 'pending';
-    return `
-    <article class="card rec-card" data-rec="${r.id}">
-      <div class="rec-head">
-        <span class="badge badge-${actionLabel[1]}"><span class="dot"></span>${actionLabel[0]}</span>
-        <p class="rec-title">${actionLabel[0]} ${esc(r.sym)} &mdash; <span class="mono num">${usd(r.usd)}</span></p>
-        ${done ? `<span class="badge badge-${r.status === 'accepted' ? 'success' : 'neutral'}"><span class="dot"></span>${r.status === 'accepted' ? 'Accepted — recorded' : 'Rejected'}</span>` : ''}
-      </div>
-      <p class="rec-rationale">${esc(r.rationale)}</p>
-      <div class="rec-meta">
-        <span class="badge badge-neutral"><span class="dot"></span>${riskLabel}</span>
-        <span class="badge badge-${GUARD_LABEL[r.guardrail][1]}"><span class="dot"></span>Guardrail: ${GUARD_LABEL[r.guardrail][0]}</span>
-      </div>
-      ${done
-        ? `<p class="rec-done">${r.status === 'accepted' ? 'Decision recorded. Execute manually on your venue — the butler never trades.' : 'Rejected. This suggestion stays dismissed; a new one may appear if drift grows.'}</p>`
-        : `<div class="rec-actions">
-             <button class="btn btn-primary" type="button" data-rec-action="accept" data-rec-id="${r.id}">Accept &amp; record</button>
-             <button class="btn btn-ghost" type="button" data-rec-action="reject" data-rec-id="${r.id}">Reject</button>
-           </div>`}
-    </article>`;
-  }).join('');
-  renderRecHistory();
+  const trades = state.trades[state.activePortfolioId] || [];
+  const ttbody = $('#trades-table tbody');
+  if (!trades.length) {
+    ttbody.innerHTML = '<tr class="empty-row"><td colspan="5">No trades yet — record a trade against a pending order.</td></tr>';
+  } else {
+    ttbody.innerHTML = trades.map(t => {
+      const sideL = t.side === 'sell' ? ['Sell', 'danger'] : ['Buy', 'success'];
+      return `
+      <tr>
+        <th scope="row"><span class="asset-cell"><span class="asset-sym">${esc(t.sym)}</span></span></th>
+        <td><span class="badge badge-${sideL[1]}"><span class="dot"></span>${sideL[0]}</span></td>
+        <td class="r mono num">${qty(t.qty)}</td>
+        <td>${esc(t.venue)}</td>
+        <td class="mono" style="font-weight:400">${esc(t.executedAt)}</td>
+      </tr>`;
+    }).join('');
+  }
 }
 
 function renderAccounts() {
@@ -1107,7 +1373,9 @@ function renderReports() {
     return;
   }
   const outside = c.drift.filter(d => d.gs !== 'within');
-  const open = state.recommendations[state.activePortfolioId].filter(r => r.status === 'pending');
+  const orders = state.orders[state.activePortfolioId];
+  const open = orders.filter(o => o.status === 'pending');
+  const filled = orders.filter(o => o.status === 'filled');
   const delta = c.total - c.prev;
   list.innerHTML = briefs.map(b => `
     <article class="card brief">
@@ -1121,8 +1389,8 @@ function renderReports() {
               ? `${outside.length} asset${outside.length > 1 ? 's' : ''} outside the ±${portfolio().guardrailPp} pp guardrail: ${outside.map(d => `${esc(d.sym)} ${pp(d.d)}`).join(', ')}.`
               : `All assets within the ±${portfolio().guardrailPp} pp guardrail.`}</li>
         <li>${open.length
-              ? `${open.length} recommendation${open.length > 1 ? 's' : ''} awaiting your decision (${open.map(r => esc(r.sym)).join(', ')}).`
-              : 'No recommendations awaiting decision.'}</li>
+              ? `${open.length} pending order${open.length > 1 ? 's' : ''} (${open.map(o => esc(o.side + ' ' + o.sym)).join(', ')}); ${filled.length} filled this period.`
+              : `No pending orders; ${filled.length} filled this period.`}</li>
         <li>${state.snapshots[state.activePortfolioId].length} snapshots on record; history is immutable.</li>
       </ul>
       <p class="card-note">Composed in-app from current state. Sample data — illustrative only.</p>
@@ -1200,7 +1468,7 @@ function updateTargetSum() {
 
 function renderAll() {
   renderDashboard();
-  renderRebalancing();
+  renderOrders();
   renderAccounts();
   renderReports();
   renderPortfolios();
@@ -1217,7 +1485,7 @@ function showScreen(name, focus = true) {
     if (b.dataset.screen === name) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
-  ['dashboard', 'portfolios', 'rebalancing', 'accounts', 'reports', 'assets', 'registry', 'jobs', 'map'].forEach(s => {
+  ['dashboard', 'portfolios', 'orders', 'accounts', 'reports', 'assets', 'registry', 'jobs', 'map'].forEach(s => {
     const el = $('#screen-' + s);
     el.hidden = s !== name;
   });
@@ -1274,36 +1542,162 @@ $('#signout-btn').addEventListener('click', () => {
 /* ── Header & nav wiring ──────────────────────────────────────── */
 $('#portfolio-select').addEventListener('change', e => {
   state.activePortfolioId = e.target.value;
+  state.openSnapshotIdx = null;
+  state.compareHoldings = false;
   renderAll();
   toast('Switched to ' + portfolio().name + '.');
 });
 
 $$('.nav-btn').forEach(b => b.addEventListener('click', () => showScreen(b.dataset.screen)));
 
+/* ── Compare holdings with previous snapshot ──────────────────── */
+$('#compare-btn').addEventListener('click', () => {
+  state.compareHoldings = !state.compareHoldings;
+  renderDashboard();
+});
+
 /* ── Snapshot ─────────────────────────────────────────────────── */
 $('#snapshot-btn').addEventListener('click', () => {
   const c = computePortfolio(state.activePortfolioId);
-  state.snapshots[state.activePortfolioId].unshift({ label: nowUtc(), total: c.total, kind: 'Manual' });
+  const activeAccts = state.accounts.filter(a => a.portfolioId === state.activePortfolioId && a.active !== false).length;
+  state.snapshots[state.activePortfolioId].unshift({
+    label: nowUtc(), total: c.total, kind: 'Manual',
+    accounts: activeAccts, assets: c.priced.length,
+    rows: c.priced.map(r => ({ sym: r.sym, qty: r.qty, price: r.price, value: r.value })),
+  });
+  if (state.openSnapshotIdx != null) state.openSnapshotIdx += 1;
   renderDashboard();
   toast('Snapshot recorded — immutable. Total ' + usd(c.total) + '.');
 });
 
-/* ── Recommendations: accept / reject ─────────────────────────── */
-$('#rec-list').addEventListener('click', e => {
-  const btn = e.target.closest('button[data-rec-action]');
+$('#snapshot-table').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-snapshot-idx]');
   if (!btn) return;
-  const rec = state.recommendations[state.activePortfolioId].find(r => r.id === btn.dataset.recId);
-  if (!rec || rec.status !== 'pending') return;
-  rec.status = btn.dataset.recAction === 'accept' ? 'accepted' : 'rejected';
-  rec.decidedAt = nowUtc();
-  renderRebalancing();
+  const idx = parseInt(btn.dataset.snapshotIdx, 10);
+  state.openSnapshotIdx = state.openSnapshotIdx === idx ? null : idx;
+  renderDashboard();
+  if (state.openSnapshotIdx != null) $('#snapshot-detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
+
+$('#snapshot-detail').addEventListener('click', e => {
+  if (!e.target.closest('#snapshot-close')) return;
+  const idx = state.openSnapshotIdx;
+  state.openSnapshotIdx = null;
+  renderDashboard();
+  const back = $(`button[data-snapshot-idx="${idx}"]`);
+  if (back) back.focus();
+});
+
+
+/* ── Buy/Sell from the portfolio view (BRD-008 FR-ORD-01) ──────── */
+$('#holdings-table').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-holding-buy], button[data-holding-sell]');
+  if (!btn) return;
+  const buy = btn.hasAttribute('data-holding-buy');
+  const sym = buy ? btn.getAttribute('data-holding-buy') : btn.getAttribute('data-holding-sell');
+  showScreen('orders');
+  $('#order-side').value = buy ? 'buy' : 'sell';
+  renderOrderForm();
+  $('#order-asset').value = sym;
+  $('#order-amount').value = '';
+  updateOrderPreview();
+  $('#order-amount').focus();
+});
+/* ── Orders & trades (BRD-008) ─────────────────────────────────── */
+function liveOrders() { return state.orders[state.activePortfolioId]; }
+function liveTrades() { return state.trades[state.activePortfolioId]; }
+
+['#order-asset', '#order-side', '#order-mode', '#order-amount'].forEach(s => {
+  const el = $(s);
+  el.addEventListener('input', updateOrderPreview);
+  el.addEventListener('change', updateOrderPreview);
+});
+
+$('#order-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const sym = $('#order-asset').value;
+  const side = $('#order-side').value;
+  const mode = $('#order-mode').value;
+  const amount = parseFloat($('#order-amount').value);
+  if (!(amount > 0)) { setFieldError($("#f-order-amount"), "Enter an amount greater than zero."); return; }
+  const { qty: orderQty } = orderQtyUsd(sym, mode, amount);
+  if (side === 'sell') {
+    const have = heldQty(state.activePortfolioId, sym);
+    const wantQty = mode === 'qty' ? amount : orderQty;
+    if (wantQty == null) { setFieldError($('#f-order-amount'), 'This asset is unpriced — sell by quantity instead.'); return; }
+    if (wantQty > have + 1e-9) { setFieldError($('#f-order-amount'), `Sell exceeds your holding of ${qty(have)} ${sym}.`); return; }
+  }
+  setFieldError($('#f-order-amount'), null);
+  const id = "o" + Date.now();
+  liveOrders().unshift({ id, side, sym, mode, amount, status: 'pending', note: $('#order-note').value.trim(), placedAt: nowUtc() });
+  $('#order-form').reset();
+  $('#order-preview').textContent = '';
+  renderOrders();
+  toast(`Order created — ${side} ${sym} (${fmtAmount({ mode, amount, sym })}). Pending until you record its trade.`);
+});
+
+$('#orders-table').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-order-action]');
+  if (!btn) return;
+  const o = liveOrders().find(x => x.id === btn.dataset.orderId);
+  if (!o || o.status !== 'pending') return;
+  if (btn.dataset.orderAction === 'cancel') {
+    o.status = 'cancelled';
+    renderOrders();
+    renderDashboard();
+    toast('Order cancelled — no trade, allocation unchanged.');
+  } else {
+    openTradeDialog(o);
+  }
+});
+
+function openTradeDialog(o) {
+  state.tradeOrderId = o.id;
+  const { qty: q } = orderQtyUsd(o.sym, o.mode, o.amount);
+  $('#trade-sym').textContent = o.sym;
+  $('#trade-side').textContent = o.side === 'sell' ? 'Sell' : 'Buy';
+  $('#trade-qty').value = q != null ? Number(q.toFixed(6)) : (o.mode === 'qty' ? o.amount : '');
+  $('#trade-venue').value = '';
+  setFieldError($('#f-trade-venue'), null);
+  setFieldError($('#f-trade-qty'), null);
+  $('#trade-dialog').showModal();
+  $('#trade-qty').focus();
+}
+
+function applyTradeToHoldings(pId, side, sym, q) {
+  const list = state.holdings[pId];
+  let h = list.find(x => x.sym === sym);
+  if (!h) {
+    const meta = state.assets.find(a => a.sym === sym);
+    h = { sym, name: meta ? meta.name : sym, qty: 0, account: 'Mixed' };
+    list.push(h);
+  }
+  h.qty = Math.max(0, h.qty + (side === 'sell' ? -q : q));
+}
+
+$('#trade-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const o = liveOrders().find(x => x.id === state.tradeOrderId);
+  if (!o) { $('#trade-dialog').close(); return; }
+  const q = parseFloat($('#trade-qty').value);
+  const venue = $('#trade-venue').value.trim();
+  let ok = true;
+  if (!(q > 0)) { setFieldError($('#f-trade-qty'), 'Enter the executed quantity.'); ok = false; } else setFieldError($('#f-trade-qty'), null);
+  if (!venue) { setFieldError($('#f-trade-venue'), 'Name the venue (exchange or chain).'); ok = false; } else setFieldError($('#f-trade-venue'), null);
+  if (!ok) return;
+  const id = 't' + Date.now();
+  liveTrades().unshift({ id, orderId: o.id, side: o.side, sym: o.sym, qty: q, venue, executedAt: nowUtc() });
+  o.status = 'filled';
+  o.tradeId = id;
+  applyTradeToHoldings(state.activePortfolioId, o.side, o.sym, q);
+  $('#trade-dialog').close();
+  renderOrders();
   renderDashboard();
   renderReports();
-  if (rec.status === 'accepted')
-    toast('Decision recorded — execute manually on your venue. The butler never trades.');
-  else
-    toast('Recommendation rejected.');
+  toast(`Trade recorded — ${o.side} ${qty(q)} ${o.sym} on ${venue}. Allocation updated immediately.`);
 });
+
+$('#trade-cancel').addEventListener('click', () => $('#trade-dialog').close());
 
 /* ── Add account ──────────────────────────────────────────────── */
 const acctKeyLabel = () => {
@@ -1504,7 +1898,7 @@ const PAGES = [
   { name: 'Sign-in', brd: 'BRD-003', covers: 'Email/password sign-in, session, sign-out; MFA is post-MVP', screen: null },
   { name: 'Dashboard', brd: 'BRD-007', covers: 'Consolidated USD valuation, weights, drift, unpriced assets, snapshots & trend', screen: 'dashboard' },
   { name: 'Portfolios', brd: 'BRD-006', covers: 'Create portfolios, default, link accounts, target allocation, guardrails, delete', screen: 'portfolios' },
-  { name: 'Rebalancing', brd: 'BRD-008', covers: 'Drift-based recommendations, accept/reject with recorded decisions, history', screen: 'rebalancing' },
+  { name: 'Orders & trades', brd: 'BRD-008', covers: 'User-initiated buy/sell orders from the portfolio view; trades execute and move allocation immediately', screen: 'orders' },
   { name: 'Accounts', brd: 'BRD-004', covers: 'Exchange & on-chain accounts, read-only credentials, sync, activate/deactivate', screen: 'accounts' },
   { name: 'Asset catalog', brd: 'BRD-005', covers: 'Canonical assets, contract mappings, decimals, price source & freshness', screen: 'assets' },
   { name: 'Reports', brd: 'BRD-009', covers: 'Scheduled in-app briefs: value, drift, pending decisions, freshness, disclaimer', screen: 'reports' },
@@ -1528,17 +1922,6 @@ $('#map-table').addEventListener('click', e => {
   showScreen(btn.dataset.mapScreen);
 });
 
-/* ── Recommendation history (BRD-008) ─────────────────────────── */
-function renderRecHistory() {
-  const decided = state.recommendations[state.activePortfolioId].filter(r => r.status !== 'pending');
-  $('#rec-history tbody').innerHTML = decided.length ? decided.map(r => `
-    <tr>
-      <th scope="row"><span class="asset-cell"><span class="asset-sym">${r.action === 'sell' ? 'Sell' : 'Buy'} ${esc(r.sym)}</span><span class="asset-name">${usd(r.usd)}</span></span></th>
-      <td>${r.status === 'accepted' ? '<span class="badge badge-success"><span class="dot"></span>Accepted</span>' : '<span class="badge badge-neutral"><span class="dot"></span>Rejected</span>'}</td>
-      <td class="mono" style="font-weight:400">${esc(r.decidedAt || '—')}</td>
-      <td style="font-size:var(--text-sm);color:var(--fg-2)">${esc(r.rationale.length > 80 ? r.rationale.slice(0, 80) + '…' : r.rationale)}</td>
-    </tr>`).join('') : '<tr class="empty-row"><td colspan="4">No decisions recorded yet — accept or reject a recommendation above.</td></tr>';
-}
 
 /* ── Account sync & activation (BRD-004) ──────────────────────── */
 $('#accounts-table').addEventListener('click', e => {
@@ -1618,7 +2001,8 @@ $('#portfolios-table').addEventListener('click', e => {
     state.portfolios = state.portfolios.filter(x => x.id !== id);
     delete state.holdings[id];
     delete state.snapshots[id];
-    delete state.recommendations[id];
+    delete state.orders[id];
+    delete state.trades[id];
     delete state.briefs[id];
     if (state.defaultPortfolioId === id) state.defaultPortfolioId = state.portfolios[0].id;
     if (state.activePortfolioId === id) state.activePortfolioId = state.portfolios[0].id;
@@ -1701,7 +2085,8 @@ $('#portfolio-create-form').addEventListener('submit', e => {
   });
   state.holdings[id] = [];
   state.snapshots[id] = [];
-  state.recommendations[id] = [];
+  state.orders[id] = [];
+  state.trades[id] = [];
   state.briefs[id] = [];
   $('#portfolio-create-form').reset();
   renderPortfolioSelect();

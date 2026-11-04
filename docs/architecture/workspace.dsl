@@ -20,27 +20,27 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
 
         cpb = softwareSystem "Crypto Pocket Butler" "Single-tenant MVP platform that aggregates read-only holdings, values portfolios in USD, computes drift, records user-initiated buy/sell orders and their trades, with immediate allocation effect per trade, and publishes scheduled briefs." {
 
-            reactSpa = container "React Web Client (SPA)" "Authenticated UI for dashboard, accounts, portfolios, valuation, snapshots, orders, briefs and admin screens. Signs in through Supabase Auth and calls only the API Gateway." "React 18 + TypeScript 5, Vite, TanStack Query, @supabase/supabase-js, Recharts" "Container"
+            reactSpa = container "React Web Client (SPA)" "Authenticated UI for dashboard, accounts, portfolios, valuation, snapshots, orders, briefs and admin. Signs in via Supabase Auth; calls only the API Gateway." "React 18 + TypeScript 5, Vite, TanStack Query, @supabase/supabase-js, Recharts" "Container"
 
-            apiGateway = container "API Gateway (BFF)" "Single public entry point: validates Supabase JWTs, resolves the principal via Identity, applies deny-by-default routing, admin-claim gating, rate limits and correlation IDs, and forwards the user's JWT unchanged to the owning service. Stateless." "Rust, Axum, tower, jsonwebtoken, reqwest" "Container"
+            apiGateway = container "API Gateway (BFF)" "Single public entry point: validates JWTs, resolves the principal, routes deny-by-default with admin gating and rate limits, forwards the JWT unchanged. Stateless." "Rust, Axum, tower, jsonwebtoken, reqwest" "Container"
 
-            identityService = container "Identity Service" "Internal users keyed by Supabase auth.users.id, created from signed Auth webhooks or lazily on first lookup. Owns roles from `app_metadata.role`, user status, session events, deletion/anonymisation and retention. Holds no passwords or MFA state." "Rust, Axum, jsonwebtoken, sqlx" "Container"
+            identityService = container "Identity Service" "Internal users keyed by Supabase auth.users.id, roles from `app_metadata.role`, status, session events, deletion and retention. Holds no passwords or MFA state." "Rust, Axum, jsonwebtoken, sqlx" "Container"
 
-            accountService = container "Account Service" "Read-only exchange and on-chain accounts and the holdings sync pipeline. Credentials encrypted in Supabase Vault; never accepts private keys or seed phrases. Notifies Portfolio of versioned holdings after each sync." "Rust, Axum, sqlx, rust_decimal, alloy, solana-client" "Container"
+            accountService = container "Account Service" "Read-only exchange and on-chain accounts, Vault-encrypted credentials and the holdings sync pipeline. Never accepts private keys. Notifies Portfolio after each sync." "Rust, Axum, sqlx, rust_decimal, alloy, solana-client" "Container"
 
-            assetRegistryService = container "Asset Registry Service" "Single authority for canonical asset identity: unique symbols, one contract or mint per asset per chain, chains with primary/fallback RPCs, token registries and the quarantine for unmapped observations." "Rust, Axum, sqlx, rust_decimal" "Container"
+            assetRegistryService = container "Asset Registry Service" "Canonical asset identity: unique symbols, one contract or mint per asset per chain, chains with primary/fallback RPCs, token registries and a quarantine for unmapped observations." "Rust, Axum, sqlx, rust_decimal" "Container"
 
-            marketDataService = container "Market Data Service" "Point-in-time USD prices, candle histories and pair metadata from OKX tickers under a shared request budget. Tracks freshness and marks assets unpriced past a per-asset-class maximum stale age." "Rust, Axum, sqlx, rust_decimal" "Container"
+            marketDataService = container "Market Data Service" "Point-in-time USD prices, candles and pair metadata from OKX under a shared request budget. Marks assets unpriced past a per-class stale age." "Rust, Axum, sqlx, rust_decimal" "Container"
 
-            portfolioService = container "Portfolio Service" "Portfolios and targets, decimal valuation and drift, immutable snapshots, and user-initiated buy/sell orders with their trades — a trade's effect on allocation is immediate. Unpriced and unmapped assets are labelled and excluded from valued totals." "Rust, Axum, sqlx, rust_decimal, tokio" "Container"
+            portfolioService = container "Portfolio Service" "Portfolios, targets, decimal valuation and drift, immutable snapshots, and buy/sell orders with trades. Unpriced and unmapped assets are labelled and excluded from valued totals." "Rust, Axum, sqlx, rust_decimal, tokio" "Container"
 
-            reportingService = container "Reporting Service" "Reporting preferences and the scheduled daily/weekly brief pipeline, composed in-app and served to the SPA. Idempotent per owner, portfolio and period." "Rust, Axum, sqlx" "Container"
+            reportingService = container "Reporting Service" "Reporting preferences and the scheduled daily/weekly brief pipeline, composed in-app. Idempotent per owner, portfolio and period." "Rust, Axum, sqlx" "Container"
 
-            jobOrchestrationService = container "Job Orchestration Service (Scheduler / Job Runner)" "Scheduler for non-interactive work: pg_cron ticks it every minute, it triggers each service's run endpoint single-flight under advisory locks, records outcomes, detects missed runs and raises alerts within 15 minutes." "Rust, Axum, sqlx, tokio" "Container"
+            jobOrchestrationService = container "Job Orchestration Service (Scheduler / Job Runner)" "Scheduler for non-interactive work: pg_cron ticks it every minute, it triggers each service's run endpoint single-flight under advisory locks, records outcomes and alerts on missed runs within 15 minutes." "Rust, Axum, sqlx, tokio" "Container"
 
-            auditService = container "Audit Service" "Append-only audit store written through an insert-only Postgres role. Admin queries, privacy exports to Supabase Storage, erasure by crypto-shredding and partition retention." "Rust, Axum, sqlx" "Container"
+            auditService = container "Audit Service" "Append-only audit store via an insert-only Postgres role. Admin queries, privacy exports to Storage, erasure by crypto-shredding and partition retention." "Rust, Axum, sqlx" "Container"
 
-            observabilityStack = container "Observability Stack" "Self-hosted observability on the Swarm cluster: every service exports structured logs (Loki), metrics (Prometheus) and traces (Tempo) with correlation context; Grafana serves dashboards, monitors alert rules and routes alerts to the Operational Alerting Channel. No credentials or tokens are ever logged." "Prometheus, Loki, Grafana Tempo, OpenTelemetry" "Container"
+            observabilityStack = container "Observability Stack" "Self-hosted logs (Loki), metrics (Prometheus) and traces (Tempo) with correlation context; Grafana dashboards and alert routing. No credentials or tokens are ever logged." "Prometheus, Loki, Grafana Tempo, OpenTelemetry" "Container"
 
             portfolioOwner -> reactSpa "Uses the dashboard, accounts, portfolios, valuation, orders and reporting screens" "HTTPS"
             administrator -> reactSpa "Administers chains, tokens, jobs, audit and privacy requests" "HTTPS"
@@ -161,6 +161,7 @@ workspace "Crypto Pocket Butler" "Read-only crypto portfolio aggregation and dec
 
         container cpb "Containers" "Containers" {
             include *
+            exclude okxExchange evmRpcProviders solanaRpc alertingChannel supabaseAuth supabaseStorage supabaseVault supabaseCron
             autolayout
         }
 

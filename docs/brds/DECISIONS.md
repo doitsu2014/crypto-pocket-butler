@@ -1,0 +1,33 @@
+# BRD Decision Log
+
+Resolved cross-BRD decisions. Each entry states what was decided, why, and which documents it affects. Open questions remain in their BRD; an OQ moves here when it is closed.
+
+| ID | Decision | Rationale | Affects | Status |
+|----|----------|-----------|---------|--------|
+| D-001 | Price freshness is **≤5 minutes for top-100 assets and ≤15 minutes for the tail**, with the observation timestamp and source always shown. The old “<30s” target is retired. | A single OKX source cannot deliver <30s globally at launch; a truthful tiered target is more trustworthy than an unattainable promise. | 001, 005, 011, 012 | Accepted 2026-11-04 |
+| D-002 | MFA is available to all users and **required for any user who stores exchange credentials**. Passkeys are a Should; social sign-in is a Should. | Retail trust requires protecting the credential that can read a user's exchange account. | 003, 012 | Accepted 2026-11-04 |
+| D-003 | The product creates **order intents** and records trades; it never places orders in the MVP. “Direct buy/sell ordering” is replaced by “order intent and trade journal” in product language. | The previous wording implied execution the product does not perform and cannot legally perform at launch. | 001, 008, 009 | Accepted 2026-11-04 |
+| D-004 | An account may be a member of **multiple portfolios**. Holdings are counted once per portfolio; a trade changes the shared account and affects every portfolio containing it. Sell validation is account-level across portfolios. Independent books require separate accounts. | Retail users want views (all, exchange, DeFi) without duplicating sources; the shared-account rule prevents silent double-spend. | 002, 006, 008 | Accepted 2026-11-04 |
+| D-005 | **Base currency is user-selected**; USD remains the accounting fallback. Every converted amount carries the FX rate and timestamp; original values are retained. | Global retail users think in local currency; a USD-only product is a barrier. | 001, 005, 007, 013, 018, 020 | Accepted 2026-11-04 |
+| D-006 | EOD snapshots run at **each user's local midnight** on a rolling schedule, including daylight-saving transitions. Empty portfolios are skipped by default. | A single 23:00 UTC run produces wrong “days” for most of the world. | 007, 011 | Accepted 2026-11-04 |
+| D-007 | Cost basis launches with **FIFO default and average cost selectable**. LIFO, HIFO, and specific-ID relief are post-MVP and require audited recomputation. | FIFO and average cost cover most retail needs without building a global tax engine. | 013, 017 | Accepted 2026-11-04 |
+| D-008 | Notifications launch with **in-app and email**; web push is a Should. Security, credential-integrity, and billing alerts are mandatory and cannot be fully disabled. | The retention loop requires a channel users already check; email is universal, push follows PWA maturity. | 001, 015, 019 | Accepted 2026-11-04 |
+| D-009 | Billing uses a **merchant of record** for global tax, local-currency/PPP pricing, and auto-renewal compliance. Plan prices remain a hypothesis until OQ-001 in BRD-016 closes. | Global subscription tax and consumer-law compliance are not core product work. | 001, 016, 012 | Accepted 2026-11-04 |
+| D-010 | Privacy rights (access, export, deletion, consent) are **Must** for launch markets; retention defaults are 5 years for financial records, 12 months for audit logs, 30 days for logs, and statutory periods for billing. | “Should” privacy is not defensible for a global consumer product. | 002, 012, 017, 019 | Accepted 2026-11-04 |
+| D-011 | The product is **global by architecture, launched by beachhead**. i18n, multi-currency, jurisdiction gating, and merchant-of-record billing are built from day one; the first public markets are chosen by exchange coverage, payment methods, legal clarity, and demand. | Launching in every country at once is neither legal nor operationally credible. | 001, 012, 016, 018 | Accepted 2026-11-04 |
+| D-012 | Launch coverage targets **five exchanges and ten chains**, including Bitcoin native and Tron/TRC-20, plus WalletConnect or xpub/watch-only where supported, and CSV import. Exact per-region matrix remains an OQ. | These are the table stakes for global retail; OKX + EVM/Solana alone is a niche. | 001, 004, 005 | Accepted 2026-11-04 |
+| D-013 | The product provides **tax-ready exports, not tax filing or advice**. Jurisdiction-specific calculations and filings are partners/post-MVP. | A global tax engine is out of scope and creates regulatory risk. | 001, 013, 017 | Accepted 2026-11-04 |
+| D-014 | The **Support role** is read-only, time-bound, reason-recorded, and audited; it never sees credentials or edits portfolio data. | Retail support needs account context without becoming a credential-risk surface. | 002, 010, 012, 019 | Accepted 2026-11-04 |
+| D-015 | Paid-plan availability target is **99.9% monthly**, with CDN + multi-AZ at launch and multi-region later. | 99.5% (~3.6 hours/month) is too low for a paid global product. | 001, 012 | Accepted 2026-11-04 |
+| D-016 | Accessibility target is **WCAG 2.2 AA for core flows**, including charts and PDF briefs. | Accessibility is a release gate, not a post-launch enhancement. | 012, 018 | Accepted 2026-11-04 |
+| D-017 | Analytics is **consent-aware and PII-free**; no advertising identifiers or cross-site tracking. | Privacy regulation and user trust; analytics is for product improvement only. | 012, 017, 021 | Accepted 2026-11-04 |
+| D-018 | Subscription UX must comply with **auto-renewal disclosure, easy cancellation, and refund law** in launch markets; the merchant of record handles tax. | Consumer-protection exposure is high for global subscriptions. | 012, 016 | Accepted 2026-11-04 |
+| D-019 | The MVP uses **deterministic brief templates**, not an external AI/agent composition service. An AI assistant is post-MVP and requires a separate advice/guardrail review. | Removes a third-party dependency and a regulatory surface from the MVP. | 001, 009 | Accepted 2026-11-04 |
+| D-020 | Exchange API **commercial-use terms and market-data licences are reviewed per region before launch**; sources without a licence reference cannot be activated. | Data licensing is a launch blocker, not a later cleanup. | 004, 005, 010, 012 | Accepted 2026-11-04 |
+
+## How to close an open question
+
+1. Record the decision here with an ID, date, rationale, and affected BRDs.
+2. Update every affected BRD in the same change: requirement text, priority, and acceptance criteria.
+3. Remove the OQ from the BRD or mark it `Resolved by D-xxx`.
+4. If the decision changes architecture or operations, update the C4 model and runbooks in the same change.

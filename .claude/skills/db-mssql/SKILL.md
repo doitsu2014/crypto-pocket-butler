@@ -165,7 +165,7 @@ Rules:
 - Random `UNIQUEIDENTIFIER` keys fragmenting clustered indexes.
 - `MERGE` race conditions without `HOLDLOCK`.
 
-## How this skill plugs into my-aidlc
+## How this skill plugs into AI-DLC
 
 - Construction: record the edition (SQL Server vs Azure SQL) and hosting
   decisions in `construction/infrastructure-design`.

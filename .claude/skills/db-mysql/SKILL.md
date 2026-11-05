@@ -158,7 +158,7 @@ Rules:
 - Implicit type conversion in `WHERE` defeating an index.
 - Storing UUIDs as `CHAR(36)` and suffering random-insert index fragmentation.
 
-## How this skill plugs into my-aidlc
+## How this skill plugs into AI-DLC
 
 - Construction: record the engine/version (MySQL vs MariaDB), driver/ORM, and
   migration tool as tech-stack decisions in `construction/nfr-requirements`;

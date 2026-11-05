@@ -1,0 +1,5548 @@
+// aidlc-log.ts — Interaction audit helper
+//
+// Records DECISION_RECORDED (before AskUserQuestion), QUESTION_ANSWERED
+// (after ordinary answers), SUMMARY_CONFIRMATION_RECORDED (the reserved,
+// human-backed pre-generation receipt), and REVIEW_REQUESTED / REVIEW_COMPLETED
+// (the §12a reviewer step). Orchestrator-callable; state tool doesn't own these
+// because they fire per-question / per-review, not per state transition.
+
+import { otherWorkNote, reviewRequestNote, reviewVerdictNote } from "./aidlc-directive.ts";
+import { spawnSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { appendAuditEntry, appendAuditEntryUnlocked } from "./aidlc-audit.ts";
+import { prepareReviewCopy, removeReviewCopy, sweepReviewCopies } from "./aidlc-kiro-review-copy.ts";
+import {
+  askedQuestionFields,
+  QUESTION_ID_FIELD,
+  questionEntryDigests,
+  questionShows,
+} from "./aidlc-questions.ts";
+import {
+  chatsSince,
+  latestMessage,
+  latestSpendingTimestamp,
+  listMessages,
+  messageBeforeJoining,
+  proveMessage,
+  readMessage,
+  type StoredMessage,
+  SUMMARY_CHANGES_QUESTION,
+} from "./aidlc-message-store.ts";
+import {
+  CODEKB_ANALYSED_FILE,
+  codekbAnalysed,
+  committedTextBytes,
+  engineDir,
+  gateEstimateSeconds,
+  GATE_NOTE_SECONDS,
+  KNOWN_CODEKB_STAGES,
+  MANY_REPOS,
+  writeFileAtomic,
+  asksForHelp,
+  answeredBeforeShownStep,
+  auditRowWritesFile,
+  personsWordsText,
+  humanRepliedSinceGate,
+  repliedSinceStageStart,
+  stageStartFloorRefusal,
+  printUsageAndExit,
+  NoGuardRecoveryAskError,
+  recordGuardRecoveryChoice,
+  requestChangesReportCommand,
+  stageGateReportCommand,
+  stageReviewBriefCommand,
+  backwardJumpBoundary,
+  reviewInvalidationAttemptView,
+  markStageWorkLogged,
+  markTurnEnd,
+  LEARNINGS_CORRECTION_ASK,
+  learningsRitualRuns,
+  ceremonyPolicyValues,
+  terminalReviewVerdict,
+  isAutonomousConstructionGate,
+  assertNoSymlinkInChainOrThrow,
+  codekbRepoName,
+  auditBlockField,
+  markdownBlocks,
+  attemptEventDefinitelyBefore,
+  maximalAttemptEvents,
+  verificationCommandDetails,
+  readVerificationCommandFile,
+  readAnswerTextFile,
+  REQUEST_TEXT_DIR,
+  isReadOnlyEngineProbe,
+  protectedQuestionRelativePath,
+  mintProtectedQuestion,
+  protectedTargetDigest,
+  readProtectedQuestion,
+  protectedResponseFields,
+  readProtectedResponse,
+  protectedReplyFloor,
+  requireProtectedResponse,
+  consumeProtectedQuestion,
+  withdrawProtectedQuestions,
+  resolveInvokingSessionId,
+  resolveSessionIdFromAncestry,
+  runtimeSessionHint,
+  unknownRuntimeSessionWarning,
+  validSessionId,
+  VERIFICATION_COMMAND_CHECKPOINT,
+  verificationCommandRecovery,
+  validConstructionPolicyChange,
+  CONSTRUCTION_POLICY_CHECKPOINT,
+  CONSTRUCTION_POLICY_RECOVERY,
+  checkSummaryConfirmationEvidence,
+  claimAttemptFields,
+  clearSummaryAuthorization,
+  DECISION_PAIRING_EVENTS,
+  nextOpenDecision,
+  isPerUnitStage,
+  SUMMARY_AUTHORIZATION_FIELD,
+  SUMMARY_EVIDENCE_EVENTS,
+  type SummaryAuthorization,
+  summaryAttemptFloors,
+  summaryAttemptIdentity,
+  summaryAuthorizationId,
+  removeRecordFileNoFollow,
+  summaryAuthorizationRelativePath,
+  summaryAuthorizationTargetOrThrow,
+  writeRecordFileNoFollow,
+  reviewerDispatchPath,
+  swarmWorkerWorktreeMeta,
+  engineDirFor,
+  writeSummaryAuthorization,
+  emitError,
+  errorMessage,
+  evaluateGuardRefusal,
+  eventMatchesClaimAttempt,
+  formatReceivedReply,
+  freshReviewReceipts,
+  filterProducesByKind,
+  getField,
+  guardAttemptState,
+  guardRefusalOutput,
+  humanAuthorityState,
+  hookExecutionRecoveryText,
+  hookLiveness,
+  holdsAuditLock,
+  commandTurnHint,
+  humanActedSinceLastAnswer,
+  humanPresenceGuardDisabled,
+  humanTurnMintAllowed,
+  isReplyTurn,
+  isAutonomousConstructionDecision,
+  legacyReviewAppendixEchoFields,
+  isAutonomousSwarmStage,
+  unitOpenCheckpoints,
+  waveEligible,
+  loadStageGraphAll,
+  isNonAnswer,
+  ANSWER_MODE_LABELS,
+  ANSWER_MODE_QUESTION_KIND,
+  LEARNINGS_NOTE_QUESTION_KIND,
+  QUESTION_KIND_FIELD,
+  answerModeFromReply,
+  isAnswerModeDecision,
+  offeredChoiceLabel,
+  ASSUMPTION_CONFIRMATION_QUESTION_KIND,
+  openDecisionBlock,
+  isoTimestamp,
+  latestPipelineLinkArtifactMtime,
+  parseCheckboxes,
+  readFindingsTable,
+  unreadableFindingsTableFinding,
+  pipelineAttemptStartedAt,
+  developerHandoffPaths,
+  pipelineLinkCommand,
+  pipelineLinkEvidence,
+  pipelineLinks,
+  effectiveSupportAgentsForProject,
+  pendingReviewRequestStatus,
+  readAllAuditShards,
+  recordAcceptedChanges,
+  governedChangeControl,
+  guardPolicyAcceptsChanges,
+  ownShardRows,
+  MESSAGE_SPENDING_EVENTS,
+  readAuditShardEvents,
+  backgroundAgentOutSince,
+  isRequestTurn,
+  CONFIG_KEYS,
+  latestReplyAfter,
+  repliesAfter,
+  personsGateReply,
+  settingsBesideDecision,
+  personRepliedSinceGateShown,
+  windowMessageIds,
+  personSpokeSinceReviewRequest,
+  messageSinceReviewRequest,
+  messageFill,
+  ANSWER_SOURCE_ON_INSTRUCTION,
+  CONDUCTOR_SUMMARY_FIELD,
+  unitSkippedUnits,
+  readActiveAuditShardEvents,
+  sortAttemptEvents,
+  UNTRUSTED_AUDIT_NOTICE,
+  planApprovalChallengeRelativePath,
+  agentFileText,
+  readRegularFileNoFollowOrThrow,
+  readStateFile,
+  readUnitSourceManifest,
+  recordUnitClaimCheckouts,
+  recordDir,
+  runRecordDir,
+  recordedReviewFileDigest,
+  editedReviewNotice,
+  REVIEW_EDITED_FIELD,
+  dictatedReviewNotice,
+  REVIEW_DICTATED_FIELD,
+  noReviewerFinishedSinceReview,
+  noReviewerNotice,
+  REVIEWER_FINISHED_FIELD,
+  recordFileTargetOrThrow,
+  relativeRecordDir,
+  recoveryGuidance,
+  requestChangesResetIsExecutable,
+  openReviewRequests,
+  reviewAppendedAfterRequest,
+  reviewArtifactSnapshot,
+  reviewAttemptId,
+  reviewDraftRelativePath,
+  reviewerCompletionAfter,
+  reviewFileDigest,
+  reviewFileSigner,
+  reviewRecordDigest,
+  reviewRecordRelativePath,
+  reviewRequestArtifactsCurrent,
+  renderReviewRequestCommand,
+  renderReviewVerdictCommand,
+  REVIEW_FINISHED_FIELD,
+  REVIEW_RECORD_MAX_BYTES,
+  resolveBoltDag,
+  unitsBlockRepair,
+  reviewAttemptAccounting,
+  reviewAttemptEventMatchesCurrentClaim,
+  reviewAttemptWindow,
+  fileIdentity,
+  sameFileIdentity,
+  serializeReviewRecord,
+  resolveProjectDir,
+  resolveProjectFlag,
+  sameWorkspaceSource,
+  resolveWorkflowSelection,
+  resolveReviewClass,
+  stripRecommendedDecorator,
+  isSummaryConfirmationChoice,
+  isSummaryConfirmationOptions,
+  optionsList,
+  isLearningsNoteDecision,
+  boxPicksAddANote,
+  picksAddANote,
+  summaryConfirmationCommands,
+  summaryConfirmationOwed,
+  summaryQuestionFileRelative,
+  SUMMARY_CONFIRMATION_CHECKPOINT,
+  SUMMARY_CONFIRMATION_HASH_SCOPE,
+  summaryConfirmationAnswer,
+  summaryConfirmationContentHash,
+  singleStageAttemptIsOpen,
+  singleStageAttemptScope,
+  stateFilePath,
+  teamUnitGateStatus,
+  toPosix,
+  unattendedHumanPresenceHint,
+  unitSourceFingerprint,
+  UNBINDABLE_FINGERPRINT,
+  validateLiveUnitScope,
+  validateReviewAppendix,
+  withAuditLock,
+  withWorkspaceSourceStateCache,
+  workspaceSourceState,
+  writeBaselineSourceSnapshot,
+  writeUnitSourceSnapshot,
+  writeWorkspaceSourceSnapshot,
+  otherOpenWorkClaims,
+  PLAN_APPROVAL_ASKED_BY_ENGINE,
+  planApprovalAskIsOpen,
+  LEGACY_PLAN_APPROVAL_RECOVERY_CHOICE,
+  resolveCeremony,
+} from "./aidlc-lib.js";
+import type {
+  StageEntry,
+  GuardAttemptState,
+  GuardRefusal,
+  TeamUnitGateResolution,
+  PlanApprovalRuntimeChallenge,
+  ProtectedQuestion,
+  ReviewClass,
+  ReviewFinding,
+  ReviewRecord,
+  ReviewRecordDerivedFinding,
+  ReviewVerdict,
+  AuditShardEvent,
+} from "./aidlc-lib.js";
+import {
+  deriveReviewFindingsList,
+  readReviewArtifactContexts,
+  renderReadableReviewCopy,
+} from "./aidlc-review-brief.js";
+import {
+  codeGenerationPlanApprovalQuestionEvidence,
+  type CodeGenerationTarget,
+  notePlanApprovalOverrideOffered,
+  offersPlanApprovalOverride,
+  PLAN_APPROVAL_CHECKPOINT,
+  PLAN_APPROVAL_BATCH_FALLBACK,
+  personAskedForPlanApprovalOverride,
+  planApprovalOverrideHumanOnly,
+  planApprovalOverridePersonReply,
+  PlanApprovalOverrideHumanOnlyError,
+  type PlanApprovalOverrideReceiptResult,
+  PlanApprovalSourceDriftError,
+  PlanApprovalUnbindableError,
+  planApprovalSessionRecovery,
+  recordPlanApprovalChallenge,
+  recordPlanApprovalBatchChallenge,
+  recordPlanApprovalBatchReceipts,
+  recordPlanApprovalOverrideReceipt,
+  recordPlanApprovalReceipt,
+  recordPlanApprovalLegacyRecoveryAnswer,
+  REVIEW_TESTING_CONTRACT_FIELD,
+  reviewedTestingContract,
+} from "./aidlc-testing-posture.js";
+import { aidlcDispatcherInvocation, aidlcEngineCommand, entrySkillInvocation, quoteCommandArgument, swarmUnitTestCommand } from "./aidlc-runtime-paths.ts";
+import { chatTookStepHere } from "./aidlc-record-core.ts";
+import {
+  APPROVAL_GATE_CHOICES,
+  SUMMARY_CONFIRMATION_CHOICES,
+} from "./aidlc-reply-reader.ts";
+
+// The checkpoints `decision` and `answer` accept. The learnings question is an
+// ordinary question, so it is named with the way to run it.
+const DECISION_CHECKPOINTS: readonly string[] = [
+  "summary-confirmation", "plan-approval", "verification-command", "construction-policy",
+];
+// The engine's recovery question is asked by the engine, so only its answer is
+// recorded here.
+const ANSWER_CHECKPOINTS: readonly string[] = [...DECISION_CHECKPOINTS, "guard-recovery"];
+
+// A manifest that names a repo the piece of work does not record is not a
+// manifest to rewrite: the code was written where the person put it, so the
+// way on is to record that repo (`intent add-repo` says what that means for
+// the plan). Any other invalid manifest is the agent's to write properly.
+function unitManifestRefusal(
+  unit: string,
+  manifestPath: string,
+  manifest: { reason: string; unrecordedRepo?: string },
+  rewrite: string,
+): string {
+  if (manifest.unrecordedRepo !== undefined) {
+    const repo = manifest.unrecordedRepo;
+    return `unit "${unit}"'s source manifest at ${manifestPath} names repo ${JSON.stringify(repo)}, which this piece of work does not record. ` +
+      `Run \`${aidlcDispatcherInvocation(`intent add-repo ${quoteCommandArgument(repo)} --reason '<why this work changes it>'`)}\` and say the line it prints once, ` +
+      "then request the review again. Do not rewrite the manifest to drop a repo the code was written in.";
+  }
+  return `unit "${unit}" has no valid source manifest at ${manifestPath} (${manifest.reason}). ${rewrite}`;
+}
+
+function unknownCheckpointMessage(checkpoint: string, accepted: readonly string[]): string {
+  if (checkpoint === "learnings") {
+    return 'The learnings question takes no --checkpoint: run the same command without it.';
+  }
+  return `Unknown --checkpoint "${checkpoint}". Accepted: ${accepted.join(", ")}`;
+}
+
+// Resolve the project dir AND assert, before any audit emit, that an active
+// workflow exists or that the row names an open isolated run. WHY: aidlc-log
+// is orchestrator-called per-question and threads no --intent/--space, so it
+// relies on default intent resolution. On a fresh shell (pre-creation) or a
+// >1-intent workspace with no active-intent cursor, that resolution yields
+// null and stateFilePath()/auditFilePath() collapse to the BARE space record
+// root (aidlc/spaces/<space>/intents/), where a workflow's row would belong to
+// no workflow. Existence of the resolved state file is the same "is there an
+// active workflow" signal every other emitter guards on: the hooks via
+// `if (!existsSync(stateFilePath(...)))` no-op, emitError() via the same check.
+// `isolatedStage` is the stage the row names: with no work selected, `next
+// --single` records that stage's isolated run in the bare root and `report
+// --single` reads its evidence there, so a row for the run whose attempt is
+// open joins its start, with or without `--single` (the stage protocol's own
+// question commands carry none).
+function resolveActiveProjectDir(explicit?: string, isolatedStage?: string): string {
+  const pd = resolveProjectDir(explicit);
+  if (!existsSync(stateFilePath(pd)) && !rowJoinsIsolatedRun(pd, isolatedStage)) {
+    error(
+      `No active workflow is selected, so this interaction cannot be recorded. Start one by describing what to build (${entrySkillInvocation()} "build the auth service"), or switch to an existing one with ${entrySkillInvocation()} intent <name>.`
+    );
+  }
+  return pd;
+}
+
+// With no work selected, a row for a stage whose isolated run is open belongs
+// to that run (resolveActiveProjectDir).
+function rowJoinsIsolatedRun(pd: string, stage: string | undefined): boolean {
+  return stage !== undefined && !existsSync(stateFilePath(pd)) && singleStageAttemptIsOpen(pd, stage);
+}
+
+// handleAnswer emits inside a withAuditLock section (classification and
+// emission share one snapshot); appendAuditEntry acquires the OS lock itself,
+// so route held-lock emits through the unlocked variant (the aidlc-state.ts
+// idiom) to avoid self-deadlocking on the lock dir we already hold.
+function emitAudit(
+  pd: string,
+  eventType: string,
+  fields: Record<string, string>,
+  intent?: string,
+  space?: string,
+): void {
+  if (holdsAuditLock(pd, intent, space)) {
+    appendAuditEntryUnlocked(eventType, fields, pd, intent, space);
+  } else {
+    appendAuditEntry(eventType, fields, pd, intent, space);
+  }
+  recordedRow = true;
+}
+
+// This run wrote an audit row: main() then leaves the engine mark for a
+// stage-work verb (markStageWorkLogged). A refusal exits before main() reads it.
+// Two rows are not the stage's work going on: one whose next move is the
+// person's (rowEndsTurn: the turn-end mark instead), and a review of a stage
+// no longer in flight (stageWorkRow false: no mark at all).
+let recordedRow = false;
+let rowEndsTurn = false;
+let stageWorkRow = true;
+// An answer's --request-file goes once the answer is taken, row or not (the
+// recovery and Plan Approval answers keep their own records); a refusal exits
+// first and leaves it for the same command.
+let spendRequestFile = (): void => {};
+
+// --- Flag parsing ---
+
+function parseFlags(
+  args: string[]
+): { positional: string[]; flags: Record<string, string> } {
+  const positional: string[] = [];
+  const flags: Record<string, string> = {};
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a.startsWith("--")) {
+      if (a === "--single" || a === "--retry-pending" || a === "--stage-level" || a === "--park" || a === "--person-asked" ||
+        a === "--ends-turn") {
+        flags[a.slice(2)] = "true";
+        continue;
+      }
+      // --on-instruction is the kind ("they left it to me"), so it stands alone;
+      // a value after it is the agent's own text, the form before --message.
+      if (a === "--on-instruction" && (i + 1 >= args.length || args[i + 1].startsWith("--"))) {
+        flags["on-instruction"] = "true";
+        continue;
+      }
+      if (i + 1 >= args.length) {
+        error(`${a} expects a value, got end of arguments.`);
+      }
+      const val = args[i + 1];
+      if (val.startsWith("--")) {
+        error(`${a} expects a value, got another flag: "${val}". Did you forget the value?`);
+      }
+      flags[a.slice(2)] = val;
+      i++;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, flags };
+}
+
+// decision and answer read only their flags, so a word outside any flag used to
+// vanish and the record kept a value cut short. A value arrives split like this
+// when it was not quoted as one argument, or when Windows PowerShell 5.1 passed
+// it with a bare double quote inside: that shell removes those quotes and can
+// split the value at them, so `--details 'Chose "Option A" for auth'` arrives as
+// `--details "Chose Option"` plus a separate `A for auth`. Refuse before
+// anything is recorded. The refusal prints no rebuilt command: the split parts
+// have already lost their quotes, so only the caller still has the person's
+// exact words. It says how to pass them instead (in Windows PowerShell 5.1 a
+// double quote written as \" inside the value reaches the engine intact).
+// A split fragment can also start with `--`: `Run "todo --help" first` passed
+// with bare quotes arrives as `--details "Run todo"` plus `--help first`, which
+// parseFlags would take as one more flag and the handler would ignore. So a
+// `--` token is refused unless it is an option the subcommand reads (below).
+// Walks the raw arguments (the `--project-dir` pair included), mirroring
+// parseFlags, so the words are named with the flag they really followed.
+function refuseSplitValues(subcommand: "decision" | "answer", rawArgs: string[]): void {
+  const what = subcommand === "decision" ? "this decision" : "this answer";
+  // The example uses this subcommand's own free-text flag, so copying it never
+  // passes an option the subcommand refuses. The single-quote clause matches
+  // the Kiro IDE skill: through aidlc.cmd, cmd.exe acts on & | < > ^ between a
+  // value's inner double quotes, and the Kiro IDE hook refuses that command.
+  const textFlag = subcommand === "decision" ? "--decision" : "--details";
+  const howToPass = (example: string): string =>
+    "Run the command again with each value as one argument, in the person's exact words; " +
+    `in Windows PowerShell write each double quote inside a value as \\" (for example ${textFlag} '${example}'), ` +
+    "or as a single quote ('') when the value also holds &, |, <, > or ^." +
+    (subcommand === "answer"
+      ? " An answer holding any of those, or a quote, $, %, ! or a line break, goes in a file instead: write it to " +
+        "<record>/.aidlc-engine/answer-text/answer.txt with your file tool and pass " +
+        "--details-file .aidlc-engine/answer-text/answer.txt."
+      : "");
+  const options = subcommand === "decision" ? DECISION_OPTIONS : ANSWER_OPTIONS;
+  let first: { flag: string; value: string; words: string[] } | null = null;
+  let open: { flag: string; value: string; words: string[] } | null = null;
+  const unattached: string[] = [];
+  let seenSubcommand = false;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const a = rawArgs[i];
+    if (a.startsWith("--")) {
+      if (!options.has(a)) {
+        // A wrong flag is named as one first: an agent that typed `--answer`
+        // reads the options it has, not a PowerShell cause that never applied.
+        // The split case (a fragment of a quoted value) keeps its way out second.
+        error(
+          `Cannot record ${what}: ${JSON.stringify(a)} is not an option of log ${subcommand}. It takes ` +
+            `${[...options].sort().join(", ")}. If ${JSON.stringify(a)} is part of a value that a bare double ` +
+            `quote split: ${howToPass('Run \\"todo --help\\" first')}`,
+        );
+      }
+      if (first === null && open !== null && open.words.length > 0) first = open;
+      open = null;
+      const valueless = a === "--single" || a === "--retry-pending" || a === "--stage-level" || a === "--park" ||
+        a === "--ends-turn";
+      const next = rawArgs[i + 1];
+      if (valueless || next === undefined || (next.startsWith("--") && a !== "--project-dir")) continue;
+      open = { flag: a, value: next, words: [] };
+      i++;
+    } else if (!seenSubcommand && a === subcommand) {
+      if (first === null && open !== null && open.words.length > 0) first = open;
+      open = null;
+      seenSubcommand = true;
+    } else if (open !== null) {
+      open.words.push(a);
+    } else {
+      unattached.push(a);
+    }
+  }
+  if (first === null && open !== null && open.words.length > 0) first = open;
+  if (unattached.length > 0) {
+    error(
+      `Cannot record ${what}: ${JSON.stringify(unattached.join(" "))} is not the value of any flag. ` +
+        "Remove it, or put it right after the flag it belongs to, as one argument.",
+    );
+  }
+  if (first === null) return;
+  const split =
+    `Cannot record ${what}: ${JSON.stringify(first.words.join(" "))} arrived as a separate argument after ` +
+    `${first.flag} ${JSON.stringify(first.value)}, so only ${JSON.stringify(first.value)} would be recorded. `;
+  // Command Prompt passes single quotes on as part of the words (Kiro IDE runs
+  // its shell tool there when that is the person's default terminal), so the
+  // value's own quotes on both ends name the shell and its fix (#2167).
+  if (first.value.startsWith("'") && first.words[first.words.length - 1]?.endsWith("'")) {
+    error(
+      split +
+        "The single quotes reached AI-DLC as part of the words, so this shell is Command Prompt, where single " +
+        "quotes do not hold words together. Run the command again with the value in double quotes, in the " +
+        `person's exact words (for example ${textFlag} "Chose Option A for auth").` +
+        (subcommand === "answer"
+          ? " An answer holding a double quote, &, |, <, >, ^, % or a line break goes in a file instead: write it " +
+            "to <record>/.aidlc-engine/answer-text/answer.txt with your file tool and pass " +
+            "--details-file .aidlc-engine/answer-text/answer.txt."
+          : ""),
+    );
+  }
+  error(
+    split +
+      "A value splits like this when it is not quoted as one argument, or when Windows PowerShell passes a bare " +
+      `double quote inside it (it removes those quotes). ${howToPass('Chose \\"Option A\\" for auth')}`,
+  );
+}
+
+// The options decision and answer read: their handlers, the helpers each one
+// passes its flags to (summaryQuestionEvidence, verificationCommandFromFlags,
+// resolvePlanApprovalSession, sessionWarning, planApprovalTarget,
+// handlePlanApprovalBatch, constructionPolicyFields), parseFlags' valueless
+// --single and --stage-level, and the --project-dir main extracts. A new
+// option either subcommand reads belongs here too, or refuseSplitValues
+// refuses it.
+const LOG_INTERACTION_OPTIONS = [
+  "--project-dir",
+  "--stage",
+  "--unit",
+  "--stage-level",
+  "--single",
+  "--checkpoint",
+  "--session",
+  "--questions-file",
+  "--message",
+  "--batch-file",
+  "--command",
+  "--command-file",
+  "--field",
+  "--value",
+  "--override",
+  "--override-file",
+  "--options",
+  "--hash-option-labels",
+  "--legacy-directive-options",
+];
+const DECISION_OPTIONS: ReadonlySet<string> = new Set([
+  ...LOG_INTERACTION_OPTIONS,
+  "--option",
+  "--options-file",
+  "--decision",
+  "--decision-file",
+  "--rationale",
+  "--exact-option-labels",
+  "--question-kind",
+]);
+// --units, --reason and --park: the engine's Plan Approval question, recorded as
+// the person chose (which Units, what to change, and whether to stop for now).
+// --on-instruction: a stage question the person left to the agent, with
+// --message naming the message that left it.
+// --ends-turn: their reply also asked something, which the agent answers.
+// --request-file: the answer's words in the file `next --request-file` reads.
+// The `config set` keys: a setting the same reply asked for, beside an Approve
+// Plan (settingsBesideDecision).
+const ANSWER_OPTIONS: ReadonlySet<string> = new Set([
+  ...LOG_INTERACTION_OPTIONS, "--details", "--units", "--reason", "--park", "--on-instruction",
+  "--details-file", "--on-instruction-file", "--request-file", "--ends-turn", ...CONFIG_KEYS.map((key) => `--${key}`),
+]);
+
+// The person has said something in this piece of work: a turn that can carry a
+// request, or the request that started it. Their handing a choice over can
+// come before the question, so the words are what the record keeps.
+function personSpokeInThisWork(pd: string): boolean {
+  try {
+    return readAuditShardEvents(pd).some((row) =>
+      isRequestTurn(row) ||
+      (row.event === "WORKFLOW_STARTED" && (auditBlockField(row.block, "Request") ?? "").trim() !== ""));
+  } catch {
+    return false;
+  }
+}
+
+function verificationCommandFromFlags(pd: string, flags: Record<string, string>) {
+  if ((flags.command !== undefined) === (flags["command-file"] !== undefined)) {
+    error("Verification command requires exactly one of --command or --command-file. " + verificationCommandRecovery(flags.stage));
+  }
+  return flags["command-file"] !== undefined
+    ? readVerificationCommandFile(pd, flags["command-file"])
+    : verificationCommandDetails(flags.command);
+}
+
+// Whether anything sits at the path, symlink included, without following it.
+function lstatExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The break-glass reason, read from a record file the conductor wrote with its
+// file-editing tool. The bytes are the person's words; only a BOM and one
+// trailing line ending (an editor artifact) are dropped before the same
+// checks --override applies.
+function readOverrideReasonFile(pd: string, supplied: string): string {
+  const root = recordDir(pd);
+  if (root === null) error("--override-file requires an active intent record.");
+  const absolute = resolve(pd, supplied);
+  if (absolute === root || !absolute.startsWith(`${root}${sep}`)) {
+    error(`--override-file must name a file inside the active intent record: ${supplied}`);
+  }
+  let text: string;
+  try {
+    text = agentFileText(readRegularFileNoFollowOrThrow(
+      recordFileTargetOrThrow(root, relative(root, absolute)),
+      "Plan Approval override reason file",
+      4 * 1024,
+    ));
+  } catch (e) {
+    error(`Cannot read --override-file ${supplied}: ${errorMessage(e)}`);
+  }
+  return text.replace(/\r?\n$/, "");
+}
+
+function summaryQuestionEvidence(
+  pd: string,
+  flags: Record<string, string>,
+  expectedAnswer: string,
+): { relativePath: string; sha256: string } {
+  const supplied = flags["questions-file"];
+  if (!supplied) {
+    error(
+      "Summary confirmation requires --questions-file <path> so the receipt can bind to the reviewed answers.",
+    );
+  }
+  const absolute = resolve(pd, supplied);
+  const root = runRecordDir(pd);
+  if (
+    root === null ||
+    (absolute !== root && !absolute.startsWith(`${root}${sep}`))
+  ) {
+    error(
+      `Summary confirmation questions file must be inside the active intent record: ${supplied}`,
+    );
+  }
+  if (!absolute.endsWith("-questions.md")) {
+    error(
+      `Summary confirmation questions file must be the stage's <slug>-questions.md file: ${supplied}`,
+    );
+  }
+  if (!existsSync(absolute)) {
+    error(`Summary confirmation questions file does not exist: ${supplied}`);
+  }
+
+  const body = readFileSync(absolute, "utf-8");
+  if (summaryConfirmationAnswer(body) !== expectedAnswer) {
+    const rendered = expectedAnswer || "a blank value";
+    error(
+      `Summary confirmation section in ${supplied} must contain exactly one ` +
+      `\`[Answer]:\` line with ${rendered} before this command runs.`,
+    );
+  }
+
+  let sha256: string;
+  try {
+    sha256 = summaryConfirmationContentHash(body);
+  } catch (e) {
+    error(
+      `Summary confirmation questions file ${supplied} is invalid: ${errorMessage(e)}.`,
+    );
+  }
+  return {
+    relativePath: toPosix(relative(pd, absolute)),
+    sha256,
+  };
+}
+
+// The session the Verification Command question and its answer belong to. As
+// with a Unit's checkpoint, the tool finds the session it runs in; `--session`
+// is only an override, so the agent never has to look its own session up.
+function verificationCommandSession(pd: string, flags: Record<string, string>): string {
+  let session = flags.session?.trim() ?? "";
+  if (!session) {
+    try {
+      session = resolveInvokingSessionId(pd) ?? "";
+    } catch (e) {
+      error(errorMessage(e));
+    }
+  }
+  if (!session) {
+    error(
+      "Could not tell which session this is. Run the command again with --session set to the Runtime Session " +
+        "shown in this session's AI-DLC context.",
+    );
+  }
+  return session;
+}
+
+// A Plan Approval prompt the human's answer cannot reach still records; the
+// output says so before the conductor presents it. Only a named --session can
+// be a guess; an auto-resolved one came from the invoking conversation.
+function sessionWarning(pd: string, flags: Record<string, string>, session: string): { warning?: string } {
+  if (!flags.session?.trim()) return {};
+  const warning = unknownRuntimeSessionWarning(pd, session);
+  return warning === null ? {} : { warning };
+}
+
+function planApprovalTarget(flags: Record<string, string>): CodeGenerationTarget {
+  const unit = flags.unit?.trim();
+  const stageLevel = flags["stage-level"] === "true";
+  if (unit && stageLevel) {
+    error("Plan Approval accepts exactly one of --unit <unit> or --stage-level.");
+  }
+  if (unit) return { unit };
+  if (stageLevel) return { unit: null };
+  error("Plan Approval requires exactly one of --unit <unit> or --stage-level.");
+}
+
+// Resolve the Plan Approval session: an explicit --session wins; when it is
+// omitted, use the invoking conversation's session by the same rule workflow
+// selection uses (the hook-injected override, then the process ancestry). The
+// receipt binds whatever id this returns, and the human's recorded reply must
+// sit under that same id, so auto-resolution adds no new approval path. When
+// nothing resolves, fail naming the exact --session argument to add and the
+// same recovery step as a receipt that cannot pair.
+//
+// An explicit value must already be a canonical session id. The human-turn hook
+// records answers only under canonical ids, so any other value (notably the
+// `sessionless:` owner of a directive issued outside a live chat) could never
+// pair with an answer, and a prompt recorded under it strands the approval.
+function resolvePlanApprovalSession(
+  pd: string,
+  flags: Record<string, string>,
+): string {
+  const explicit = flags.session?.trim();
+  if (explicit) {
+    if (validSessionId(explicit) === explicit) return explicit;
+    error(
+      (explicit.startsWith("sessionless:")
+        ? `Plan Approval --session "${explicit}" is the placeholder owner of a directive issued outside a live ` +
+          "chat session, not this conversation's session, so the human's answer can never pair with it. "
+        : `Plan Approval --session "${explicit}" is not a canonical session id (letters, digits, ".", "_", and "-"), ` +
+          "so the human's answer can never pair with it. ") +
+        `${runtimeSessionHint(pd)} ${planApprovalSessionRecovery()}`,
+    );
+  }
+  let resolved: string | null;
+  try {
+    resolved = resolveInvokingSessionId(pd);
+  } catch (e) {
+    error(`Plan Approval could not resolve its session: ${errorMessage(e)}`);
+  }
+  if (resolved) return resolved;
+  error(
+    "Plan Approval requires --session <id> from the invoking SessionStart context. " +
+      "It could not be auto-resolved from the active SessionStart context, so pass " +
+      `\`--session <the SessionStart id>\` explicitly. ${runtimeSessionHint(pd)} ${planApprovalSessionRecovery()}`,
+  );
+}
+
+function planApprovalFields(
+  evidence: ReturnType<typeof codeGenerationPlanApprovalQuestionEvidence>,
+): Record<string, string> {
+  return {
+    Checkpoint: PLAN_APPROVAL_CHECKPOINT,
+    "Plan Target": evidence.authority.targetId,
+    Intent: evidence.authority.intentId,
+    "Directive Epoch": evidence.authority.directiveEpoch,
+    "Run floor": evidence.authority.runFloor,
+    "Approval Fingerprint": evidence.fingerprint,
+    "Questions File": evidence.questionsRelativePath,
+    "Questions SHA-256": evidence.questionsSha256,
+    "Prompt SHA-256": evidence.promptSha256,
+  };
+}
+
+function handlePlanApprovalBatch(
+  pd: string,
+  flags: Record<string, string>,
+  action: "decision" | "answer",
+): void {
+  if (flags.checkpoint !== "plan-approval" || flags.stage !== "code-generation") {
+    error("--batch-file applies only to --stage code-generation --checkpoint plan-approval.");
+  }
+  if (["unit", "stage-level", "questions-file", "single", "override", "override-file"].some((key) => flags[key] !== undefined)) {
+    error(`--batch-file cannot be combined with a single target or override. ${PLAN_APPROVAL_BATCH_FALLBACK}`);
+  }
+  if (flags["hash-option-labels"] === "true" || flags["legacy-directive-options"] === "true") {
+    error(`Grouped Plan Approval does not support legacy protected-choice mediation. ${PLAN_APPROVAL_BATCH_FALLBACK}`);
+  }
+  const session = resolvePlanApprovalSession(pd, flags);
+  const options = "Approve Plans,Request Changes";
+  if (flags.options !== undefined && optionsList(flags.options).join(",") !== options) {
+    error(`Batch Plan Approval offers exactly "${options}".`);
+  }
+  const choice = flags.details === "Approve Plans" ? "Approve Plan" : flags.details;
+  if (action === "answer" && choice !== "Approve Plan" && choice !== "Request Changes") {
+    error('Batch Plan Approval requires --details "Approve Plans" or "Request Changes".');
+  }
+  try {
+    withAuditLock(pd, () => {
+      if (action === "decision") {
+        let questionId = "";
+        const challenge = recordPlanApprovalBatchChallenge(pd, flags["batch-file"], session, (batch) => {
+          withdrawProtectedQuestions(pd, session);
+          const asked = askedQuestionFields(pd, {
+            type: "plan-approval", shows: questionShows([batch.bindingSha256]), chat: session,
+          });
+          questionId = asked[QUESTION_ID_FIELD];
+          emitAudit(pd, "DECISION_RECORDED", {
+            Stage: flags.stage,
+            Checkpoint: PLAN_APPROVAL_CHECKPOINT,
+            Decision: flags.decision,
+            Options: options,
+            Session: session,
+            Batch: batch.name,
+            Units: batch.members.map((member) => member.unit).join(", "),
+            "Batch Binding SHA-256": batch.bindingSha256,
+            "Batch Members": JSON.stringify(batch.members),
+            ...asked,
+          });
+        });
+        console.log(JSON.stringify({
+          emitted: "DECISION_RECORDED",
+          checkpoint: "plan-approval",
+          stage: flags.stage,
+          ...(questionId ? { question_id: questionId } : {}),
+          batch: challenge.batch,
+          options: challenge.options,
+          challengeId: challenge.challengeId,
+          challengeFile: planApprovalChallengeRelativePath(pd, session),
+          ...sessionWarning(pd, flags, session),
+        }));
+      } else {
+        const emitted = choice === "Approve Plan" ? "PLAN_APPROVAL_RECORDED" : "QUESTION_ANSWERED";
+        const receipts = recordPlanApprovalBatchReceipts(
+          pd, flags["batch-file"], session, choice as "Approve Plan" | "Request Changes", (batch, evidence) => {
+            for (const member of evidence) {
+              emitAudit(pd, emitted, {
+                Stage: flags.stage,
+                Details: choice,
+                Session: session,
+                Unit: member.authority.unit!,
+                ...claimAttemptFields(pd, member.authority.unit!),
+                ...planApprovalFields(member),
+                Batch: batch.name,
+                "Batch Binding SHA-256": batch.bindingSha256,
+              });
+            }
+          },
+        );
+        console.log(JSON.stringify({
+          emitted, checkpoint: "plan-approval", stage: flags.stage,
+          receipts: receipts.map((receipt) => ({ unit: receipt.targetId, fingerprint: receipt.fingerprint })),
+        }));
+      }
+    });
+  } catch (e) {
+    error(`Refusing grouped Plan Approval: ${errorMessage(e)}`);
+  }
+}
+
+// As verification-command does, the tool finds the session it runs in;
+// `--session` is only an override, so the agent never hunts for a session id.
+function constructionPolicyFields(pd: string, flags: Record<string, string>): Record<string, string> {
+  if (!validConstructionPolicyChange(flags.field, flags.value)) {
+    error("Construction policy requires a valid --field and --value: Construction Checkpoints (enabled|disabled), Construction Execution (serial|swarm), or Construction Iteration (unit-major|stage-major). " + CONSTRUCTION_POLICY_RECOVERY);
+  }
+  if (flags.single !== undefined || flags.unit !== undefined) {
+    error("Construction policy applies to the whole intent; omit --single and --unit.");
+  }
+  let session = flags.session?.trim() ?? "";
+  if (!session) {
+    try {
+      session = resolveInvokingSessionId(pd) ?? "";
+    } catch (e) {
+      error(errorMessage(e));
+    }
+  }
+  if (!session) {
+    error(
+      "Could not tell which session this is. Run the command again with --session set to the Runtime Session " +
+        "shown in this session's AI-DLC context. " + CONSTRUCTION_POLICY_RECOVERY,
+    );
+  }
+  return { Checkpoint: CONSTRUCTION_POLICY_CHECKPOINT, Field: flags.field, Value: flags.value, Session: session };
+}
+
+// The stage's latest recorded question is the summary's: recorded with the
+// checkpoint, or offering its two choices in the plain form. Says which, or
+// null when the latest question is something else.
+function answersSummaryQuestion(
+  pd: string, stage: string, unit: string | null, single: boolean,
+): "checkpoint" | "plain" | null {
+  const workflow = single ? `single-stage:${stage}` : null;
+  const decisions = readAuditShardEvents(pd).filter((row) =>
+    row.event === "DECISION_RECORDED" &&
+    auditBlockField(row.block, "Stage") === stage &&
+    auditBlockField(row.block, "Workflow") === workflow &&
+    (unit === null || auditBlockField(row.block, "Unit") === unit),
+  );
+  const latest = maximalAttemptEvents(decisions).map((row) => auditBlockField(row.block, "Checkpoint") === null
+    ? (isSummaryConfirmationOptions(auditBlockField(row.block, "Options") ?? undefined) ? "plain" : null)
+    : auditBlockField(row.block, "Checkpoint") === SUMMARY_CONFIRMATION_CHECKPOINT ? "checkpoint" : null);
+  return latest.includes("checkpoint") ? "checkpoint" : latest.includes("plain") ? "plain" : null;
+}
+
+// After a Request changes the summary is shown again, revised, and its question
+// is recorded before that showing, as the first one was (stage-protocol-summary.md).
+// A chat that picked the summary up in a new chat never loaded the stage's
+// rules, so the receipt of the step before it names that record while the
+// summary is still owed, as the step's own ceremony says (the person may have
+// switched it off since), and its latest row is the change request
+// (pendingSummaryDecision), read from every clone's shard. `unit` and
+// `workflow` are the work item the caller's answer is for. Null otherwise, and
+// when the record cannot be read: the answer is already on record, and a note
+// never turns it into a failure.
+function revisedSummaryNote(
+  pd: string, stage: StageEntry | undefined, content: string | null, unit: string | undefined, workflow: string | undefined,
+): string | null {
+  if (stage === undefined || !summaryConfirmationOwed(stage, { stateContent: content, ignoreGuardSwitch: true })) {
+    return null;
+  }
+  let questionsFile: string | null = null;
+  try {
+    let receipt: AuditShardEvent | undefined;
+    for (const row of readAuditShardEvents(pd)) {
+      if (row.event !== "SUMMARY_CONFIRMATION_RECORDED" || auditBlockField(row.block, "Stage") !== stage.slug ||
+        auditBlockField(row.block, "Checkpoint") !== SUMMARY_CONFIRMATION_CHECKPOINT ||
+        (auditBlockField(row.block, "Unit") ?? undefined) !== unit ||
+        (auditBlockField(row.block, "Workflow") ?? undefined) !== workflow) continue;
+      if (receipt === undefined || row.timestamp >= receipt.timestamp) receipt = row;
+    }
+    questionsFile = receipt === undefined ? null : auditBlockField(receipt.block, "Questions File");
+    if (questionsFile !== null && !pendingSummaryDecision(pd, stage.slug, unit, workflow, questionsFile).changeRequested) {
+      questionsFile = null;
+    }
+  } catch {
+    questionsFile = null;
+  }
+  if (questionsFile === null) return null;
+  const { decision } = summaryConfirmationCommands({ stage: stage.slug, unit, questionsFile, single: workflow !== undefined });
+  return `When you show the revised summary, first set its \`[Answer]:\` line in ${questionsFile} back to blank and ` +
+    `record its question with \`${decision}\`; then show it with its choices and end the turn.`;
+}
+
+// A summary confirmation recorded without its checkpoint flags is an ordinary
+// question the gate never counts, so the stage would refuse for good with
+// SUMMARY_RECEIPT_MISSING. When the call is plainly the summary (its two
+// choices) on a stage that owes one, refuse it and name the command that counts.
+function refusePlainSummaryConfirmation(flags: Record<string, string>, verb: "decision" | "answer"): void {
+  if (flags.checkpoint !== undefined) return;
+  // An answer names a summary choice by its label, with what to change after it.
+  const summaryRead = verb === "answer" ? offeredChoiceLabel(flags.details ?? "", SUMMARY_CONFIRMATION_CHOICES) : null;
+  const summaryReply = summaryRead?.choice ?? null;
+  const pd = resolveActiveProjectDir(projectDir, flags.stage);
+  const stage = loadStageGraphAll().find((entry) => entry.slug === flags.stage);
+  if (!stage) return;
+  const unit = flags.unit ?? null;
+  // An answer is to the summary question when that is the question open for
+  // this stage and work item, whatever its words; a decision, by its options.
+  const asked = verb === "answer" ? answersSummaryQuestion(pd, stage.slug, unit, flags.single !== undefined) : null;
+  const looksLikeSummary = verb === "decision"
+    ? isSummaryConfirmationOptions(flags.options)
+    : asked !== null || isSummaryConfirmationChoice(flags.details) || summaryReply !== null;
+  if (!looksLikeSummary) return;
+  const content = existsSync(stateFilePath(pd)) ? readFileSync(stateFilePath(pd), "utf-8") : null;
+  if (!summaryConfirmationOwed(stage, { stateContent: content })) return;
+  if (verb === "answer" && asked === null) return;
+  // A change request that says what to change keeps what they asked for, so
+  // nobody asks "What should change?" again. The command renderer quotes it for
+  // the shell; line breaks become spaces. A summary asked in the plain form is
+  // recorded with its checkpoint, and the person's reply to it as first asked
+  // answers it (plainSummaryAnsweredBefore): the agent passes the choice it read.
+  const details = asked === "plain" || (verb === "answer" && summaryReply === null)
+    ? "<their choice>"
+    : verb === "answer" && summaryReply === "Request changes"
+    ? (summaryRead?.rest ? `Request changes: ${summaryRead.rest.replace(/\s+/g, " ")}` : "Request changes")
+    : "Looks correct";
+  const commands = summaryConfirmationCommands({
+    stage: stage.slug,
+    unit: unit ?? (isPerUnitStage(stage) ? "<unit>" : null),
+    questionsFile: summaryQuestionFileRelative(pd, stage, content, unit),
+    single: flags.single !== undefined,
+    details,
+  });
+  const why = `"${stage.slug}" owes a consolidated summary confirmation, and ${verb === "answer" ? "an answer" : "a decision"} without ` +
+    "`--checkpoint summary-confirmation --questions-file <path>` is an ordinary question that never counts toward it.";
+  error(
+    verb === "decision"
+      ? `Refusing to record this ${verb}: ${why} Run \`${commands.decision}\` instead (the summary ` +
+          "section needs exactly one blank `[Answer]:` line), end the turn, and after the human replies run " +
+          `\`${commands.answer}\`.`
+      : asked === "checkpoint"
+      // The person already answered the recorded summary question: record it
+      // with the flags, without asking again.
+      ? `Refusing to record this ${verb}: ${why} The summary question is already recorded and answered; ` +
+          `write the choice they made in its \`[Answer]:\` line and run \`${commands.answer}\`` +
+          (details === "<their choice>"
+            ? " with \"Looks correct\" or 'Request changes: <what they asked to change>' (single-quoted) in place of " +
+              "<their choice>."
+            : ".")
+      // The summary was asked in the plain form and the person answered it:
+      // record it with the flags, and their reply answers it, without asking again.
+      : `Refusing to record this ${verb}: ${why} Record the summary with \`${commands.decision}\` ` +
+          "(exactly one blank `[Answer]:` line in the summary section), write the choice they made in that " +
+          `line, and run \`${commands.answer}\` with it in place of <their choice>, without asking them again: ` +
+          "their reply to the summary as first asked answers it.",
+  );
+}
+
+// A review file's top-level `#` and `##` heading lines (outside code, quotes
+// and lists, other than an opening `## Review`) made `###`, with every other
+// byte kept, and a line naming each one changed; null when there is none.
+function demoteReviewHeadings(body: Buffer): { bytes: Buffer; changed: string[] } | null {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body);
+  } catch {
+    return null;
+  }
+  const bom = text.startsWith("\uFEFF") ? "\uFEFF" : "";
+  // Lines at even indexes, their own line endings at odd ones.
+  const parts = text.slice(bom.length).split(/(\r\n|\r|\n)/);
+  const source = parts.filter((_, index) => index % 2 === 0);
+  const { lines } = markdownBlocks(source.join("\n"));
+  if (lines.length !== source.length) return null;
+  const opening = source.findIndex((line) => line.trim() !== "");
+  const changed: string[] = [];
+  for (let index = 0; index < source.length; index++) {
+    if (lines[index].kind !== "heading" || lines[index].containers.length > 0) continue;
+    if (index === opening && /^## Review[ \t]*$/.test(source[index])) continue;
+    const demoted = source[index].replace(/^( {0,3})#{1,2}(?=[ \t]|$)/, "$1###");
+    if (demoted === source[index]) continue;
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: an audit value is one plain line
+    changed.push(`line ${index + 1}: ${source[index].trim().replace(/[\u0000-\u001f\u007f]/g, "?").slice(0, 120)}`);
+    parts[index * 2] = demoted;
+  }
+  return changed.length === 0 ? null : { bytes: Buffer.from(bom + parts.join(""), "utf-8"), changed };
+}
+
+// --- Subcommand: decision ---
+// Usage: aidlc-log decision --stage <slug> (--decision <text> | --decision-file <file>) [--options <csv>]
+//   [--rationale <text>] [--question-kind answer-mode|learnings-note|assumption-confirmation]
+//   [--checkpoint summary-confirmation --questions-file <path> [--unit <unit>] [--single]]
+//
+// Fires BEFORE AskUserQuestion, recording what options will be shown.
+// The chat this command serves, when the engine can tell (the hook's override,
+// Codex's thread id, the process ancestry); null when it cannot.
+function invokingChat(pd: string): string | null {
+  try {
+    return resolveInvokingSessionId(pd);
+  } catch {
+    return null;
+  }
+}
+
+function decisionRowsInScope(rows: AuditShardEvent[], stage: string, unit: string | undefined): AuditShardEvent[] {
+  return rows.filter((row) =>
+    row.event === "DECISION_RECORDED" && auditBlockField(row.block, "Stage") === stage &&
+    (unit === undefined || auditBlockField(row.block, "Unit") === unit));
+}
+
+// The message the latest question of this scope was logged with, for the
+// answers that follow it.
+function latestDecisionMessageId(pd: string, stage: string, unit: string | undefined): string | null {
+  const question = decisionRowsInScope(readAuditShardEvents(pd), stage, unit).at(-1);
+  return question === undefined ? null : auditBlockField(question.block, "Message Id");
+}
+
+// With no reply on record, the refusal names this chat's latest message when it
+// came before the chat was on this work (a teammate's clone, the message that
+// picked the work up: messageBeforeJoining), by id and time, so the agent
+// records the answer on it if it holds one. Only the latest: an earlier one may
+// be a reply the chat gave on other work. Null when it is not such a message.
+function keptMessageRefusal(pd: string): string | null {
+  const chat = invokingChat(pd);
+  const latest = chat === null ? null : latestMessage(pd, chat);
+  if (latest === null || messageBeforeJoining(pd, latest.id) === null) return null;
+  const missed = unattendedHumanPresenceHint(pd);
+  return `Cannot record this answer: the person's message ${latest.id} (sent ${latest.at}) came before this chat ` +
+    "was on this work, so it is on record as no reply. If it answers the question, run the same command with " +
+    `--message ${latest.id}; do not ask them again.` + (missed === "" ? "" : ` If no message of theirs answers it:${missed}`);
+}
+
+// A question's choices given one --option each, so a choice may hold a comma
+// with no separator on the command line for a shell to read: they join any
+// --options list in the grammar optionsList reads.
+function withEachOption(args: string[], flags: Record<string, string>): void {
+  const each: string[] = [];
+  for (let i = 0; i < args.length - 1; i++) if (args[i] === "--option") each.push(args[++i]);
+  delete flags.option;
+  if (each.length === 0) return;
+  const choices = [...(flags.options === undefined ? [] : optionsList(flags.options)), ...each];
+  flags.options = choices.some((choice) => choice.includes(",")) ? `|${choices.join("|")}` : choices.join(",");
+}
+
+function handleDecision(args: string[]): void {
+  const { flags } = parseFlags(args);
+  withEachOption(args, flags);
+  if (!flags.stage) error("Missing --stage <slug>");
+  // A question holding the person's words arrives in a file the agent wrote, as
+  // an answer's text does, so no shell reads it on the way.
+  if (flags["decision-file"] !== undefined) {
+    if (flags.decision !== undefined) error("Pass either --decision or --decision-file, not both.");
+    try {
+      flags.decision = readAnswerTextFile(resolveActiveProjectDir(projectDir, flags.stage), flags["decision-file"]);
+    } catch (err) {
+      error(errorMessage(err));
+    }
+  }
+  if (!flags.decision) error("Missing --decision <text> (or --decision-file <file>)");
+  // A question's choices that hold a $ or a backtick arrive one a line in a file
+  // the agent wrote, as the question's text does, so no shell reads them.
+  if (flags["options-file"] !== undefined) {
+    let lines: string[] = [];
+    try {
+      lines = readAnswerTextFile(resolveActiveProjectDir(projectDir, flags.stage), flags["options-file"])
+        .split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    } catch (err) {
+      error(errorMessage(err));
+    }
+    delete flags["options-file"];
+    withEachOption(lines.flatMap((choice) => ["--option", choice]), flags);
+  }
+  if (flags.checkpoint !== undefined && !DECISION_CHECKPOINTS.includes(flags.checkpoint)) {
+    error(unknownCheckpointMessage(flags.checkpoint, DECISION_CHECKPOINTS));
+  }
+  refusePlainSummaryConfirmation(flags, "decision");
+  const pd = resolveActiveProjectDir(projectDir, flags.stage);
+  if (flags.checkpoint === "plan-approval" && planApprovalAskIsOpen(pd)) {
+    error(PLAN_APPROVAL_ASKED_BY_ENGINE);
+  }
+  // Plan Approval is answered by the hooks: the human-turn hook records the
+  // response the receipt pairs with. When heartbeats show the workflow advanced
+  // after the hooks last fired (the doctor's own staleness test and slack), the
+  // challenge could never be answered, so it is refused before it is minted.
+  if (flags.checkpoint === "plan-approval") {
+    const liveness = hookLiveness(pd);
+    if (liveness.stale) {
+      error(
+        "hooks are not firing in this session: hooks last fired " +
+          `${liveness.newestHeartbeat?.timestampRaw}, but the workflow last advanced ` +
+          `${liveness.newestStageOrGateEvent?.timestampRaw}. No Plan Approval challenge was ` +
+          "minted because the human's answer is recorded by the hooks. " +
+          hookExecutionRecoveryText(pd),
+      );
+    }
+  }
+  if (flags["batch-file"] !== undefined) {
+    handlePlanApprovalBatch(pd, flags, "decision");
+    return;
+  }
+  if (flags.unit) validateLiveUnitScope(pd, flags.unit);
+  const summaryEvidence =
+    flags.checkpoint === "summary-confirmation"
+      ? summaryQuestionEvidence(pd, flags, "")
+      : null;
+  const verificationCommand = flags.checkpoint === "verification-command"
+    ? verificationCommandFromFlags(pd, flags) : null;
+  if (verificationCommand && (flags.single !== undefined || flags.unit !== undefined)) {
+    error("Construction verification commands apply to the whole intent; omit --single and --unit.");
+  }
+  // The session is settled before the evidence runs: under a relaxed or off
+  // policy the evidence records accepted source drift and re-baselines the
+  // plan, which a command refused for its session must not leave behind.
+  const planSession = flags.checkpoint === "plan-approval" ? resolvePlanApprovalSession(pd, flags) : null;
+  // The plan-approval checkpoint reads Change Control inside the evidence, only
+  // when the source the plan was written against has moved; that read traces a
+  // memory edit and raises an invalid memory value as its own error.
+  const planEvidence =
+    flags.checkpoint === "plan-approval"
+      ? codeGenerationPlanApprovalQuestionEvidence(
+          pd,
+          planApprovalTarget(flags),
+          flags["questions-file"] ?? "",
+          "",
+        )
+      : null;
+  // The evidence recorded any accepted drift (row first, re-baseline second);
+  // its human lines ride on this command's JSON.
+  const changeNotices = planEvidence ? [...planEvidence.changeNotices] : [];
+  const fields: Record<string, string> = {
+    Stage: flags.stage,
+    Decision: flags.decision,
+  };
+  if (flags.options) {
+    fields.Options =
+      planEvidence &&
+          (
+            flags["hash-option-labels"] === "true" ||
+            flags["legacy-directive-options"] === "true"
+          )
+        ? "[protected exact choices]"
+        : flags.options;
+  }
+  if (flags.rationale) fields.Rationale = flags.rationale;
+  // Which of the engine's own questions this is, as the step note's command
+  // names it; the answer reads the field, never the question's words.
+  if (flags["question-kind"] !== undefined) {
+    const kind = flags["question-kind"];
+    if (
+      kind !== ANSWER_MODE_QUESTION_KIND && kind !== LEARNINGS_NOTE_QUESTION_KIND &&
+      kind !== ASSUMPTION_CONFIRMATION_QUESTION_KIND
+    ) {
+      error(
+        `--question-kind ${JSON.stringify(kind)} is not a kind log decision records. Its kinds are ` +
+          `"${ANSWER_MODE_QUESTION_KIND}", for the question of how the person answers a stage's questions, ` +
+          `"${LEARNINGS_NOTE_QUESTION_KIND}", for the learnings question about a correction ("... ${LEARNINGS_CORRECTION_ASK}"), and ` +
+          `"${ASSUMPTION_CONFIRMATION_QUESTION_KIND}", for Intent Capture's Assumption Confirmation; leave the ` +
+          "flag off for any other question.",
+      );
+    }
+    fields[QUESTION_KIND_FIELD] = kind;
+  }
+  if (flags.checkpoint === "summary-confirmation") {
+    fields.Checkpoint = SUMMARY_CONFIRMATION_CHECKPOINT;
+    fields["Questions File"] = summaryEvidence!.relativePath;
+  }
+  if (verificationCommand) {
+    fields.Checkpoint = VERIFICATION_COMMAND_CHECKPOINT;
+    fields["Command SHA-256"] = verificationCommand.sha256;
+    fields["Command Label"] = verificationCommand.label;
+    fields.Session = verificationCommandSession(pd, flags);
+    const options = optionsList(flags.options).map((option) => option.toLowerCase());
+    if (options.length !== 2 || options[0] !== "approve" || options[1] !== "request changes") {
+      error('Verification command decision requires --options "Approve,Request Changes". ' + verificationCommandRecovery(flags.stage));
+    }
+  }
+  const policyFields = flags.checkpoint === "construction-policy" ? constructionPolicyFields(pd, flags) : null;
+  if (policyFields) {
+    Object.assign(fields, policyFields);
+    const options = optionsList(flags.options);
+    if (options.length !== 2 || options[0] !== "Approve" || options[1] !== "Request Changes") {
+      error('Construction policy decision requires --options "Approve,Request Changes". ' + CONSTRUCTION_POLICY_RECOVERY);
+    }
+  }
+  if (planEvidence) Object.assign(fields, planApprovalFields(planEvidence));
+  if (planEvidence) {
+    fields.Session = planSession!;
+    // The labels are part of what the human answers, so the conductor does
+    // not choose them. Legacy nonce labels are the only other offer.
+    const legacyLabels = flags["hash-option-labels"] === "true" || flags["legacy-directive-options"] === "true";
+    const offered = optionsList(flags.options).map((option) => stripRecommendedDecorator(option));
+    if (!legacyLabels && offered.join(",") !== "Approve Plan,Request Changes") {
+      error('Plan Approval decision offers exactly "Approve Plan,Request Changes".');
+    }
+  }
+  if (flags.unit) {
+    fields.Unit = flags.unit;
+    Object.assign(fields, claimAttemptFields(pd, flags.unit));
+  }
+  if (flags.single === "true") fields.Workflow = `single-stage:${flags.stage}`;
+  // A question logged with the message that answered it names it; its answers
+  // inherit the id.
+  if (flags.message !== undefined) {
+    const proof = proveMessage(pd, flags.message, "decision");
+    if ("refusal" in proof) error(proof.refusal);
+    fields["Message Id"] = proof.message.id;
+  }
+
+  // The question this row asks, on the record (aidlc-questions.ts).
+  Object.assign(fields, askedQuestionFields(pd, {
+    type: flags.checkpoint ?? fields[QUESTION_KIND_FIELD] ?? "stage-question",
+    shows: decisionShows(pd, flags, fields),
+    ...(fields.Session ? { chat: fields.Session } : {}),
+  }));
+
+  let protectedQuestion: ProtectedQuestion | null = null;
+  try {
+    protectedQuestion = withAuditLock(pd, () => {
+      // The agent's own question (not a protected or plan question) leaves a
+      // protected question the person already replied to in its chat in place.
+      withdrawProtectedQuestions(
+        pd,
+        fields.Session || flags.session?.trim() || resolveSessionIdFromAncestry(pd) || "*",
+        { keepAnswered: !policyFields && !verificationCommand && !planEvidence },
+      );
+      emitAudit(pd, "DECISION_RECORDED", fields);
+      if (!policyFields && !verificationCommand) return null;
+      return mintProtectedQuestion(pd, {
+        kind: policyFields ? "construction-policy" : "verification-command",
+        session: fields.Session,
+        target: policyFields ? { field: fields.Field, value: fields.Value } : { commandSha256: verificationCommand!.sha256 },
+        promptDigest: createHash("sha256").update(flags.decision, "utf-8").digest("hex"),
+      });
+    });
+  } catch (e) {
+    error(`Audit emission failed: ${errorMessage(e)}`);
+  }
+  // The challenge is the half a later answer must pair with. Printing its id
+  // and file lets a conductor see when a decision re-run for a changed plan
+  // replaced it (so an earlier answer no longer counts) instead of discovering
+  // that at the receipt.
+  let challenge: PlanApprovalRuntimeChallenge | null = null;
+  if (planEvidence) {
+    try {
+      const options = optionsList(flags.options).filter(Boolean);
+      if (options.length !== 2) {
+        error("Plan Approval decision requires exactly two offered options");
+      }
+      challenge = recordPlanApprovalChallenge(
+        pd,
+        planEvidence,
+        fields.Session,
+        [stripRecommendedDecorator(options[0]), stripRecommendedDecorator(options[1])],
+        flags["exact-option-labels"] === "true",
+        flags["hash-option-labels"] === "true",
+        flags["legacy-directive-options"] === "true",
+        flags.decision,
+      );
+    } catch (e) {
+      error(`Plan Approval challenge creation failed: ${errorMessage(e)}`);
+    }
+  }
+
+  console.log(
+    JSON.stringify({
+      emitted: "DECISION_RECORDED",
+      stage: flags.stage,
+      question_id: fields[QUESTION_ID_FIELD],
+      ...(challenge !== null
+        ? {
+            challengeId: challenge.challengeId,
+            challengeFile: planApprovalChallengeRelativePath(pd, challenge.session),
+            ...sessionWarning(pd, flags, challenge.session),
+          }
+        : {}),
+      ...(verificationCommand !== null
+        ? { command: verificationCommand.command, command_sha256: verificationCommand.sha256 }
+        : {}),
+      ...(protectedQuestion !== null
+        ? {
+            challengeId: protectedQuestion.challengeId,
+            challengeFile: protectedQuestionRelativePath(pd, protectedQuestion.session),
+          }
+        : {}),
+      ...(changeNotices.length > 0 ? { change_notices: changeNotices } : {}),
+    })
+  );
+}
+
+// What a logged question shows the person (aidlc-questions.ts): the command or
+// setting a checkpoint asks about, the plan's fingerprint, the summary's own
+// entry in its questions file with its answer blanked, else the question and
+// its choices as logged.
+function decisionShows(pd: string, flags: Record<string, string>, fields: Record<string, string>): string {
+  if (fields["Command SHA-256"]) return questionShows([fields["Command SHA-256"]]);
+  if (flags.checkpoint === "construction-policy") return questionShows([fields.Field, fields.Value]);
+  if (fields["Approval Fingerprint"]) return questionShows([fields["Approval Fingerprint"]]);
+  if (flags.checkpoint === "summary-confirmation" && fields["Questions File"]) {
+    try {
+      const entries = questionEntryDigests(readFileSync(join(pd, fields["Questions File"]), "utf-8"));
+      return questionShows([entries[SUMMARY_CONFIRMATION_CHECKPOINT] ?? "none"]);
+    } catch {
+      return questionShows(["none"]);
+    }
+  }
+  return questionShows([flags.decision, flags.options]);
+}
+
+// --- Subcommand: answers ---
+
+function interactionScope(row: AuditShardEvent) {
+  return {
+    unit: auditBlockField(row.block, "Unit") ?? undefined,
+    attemptGeneration: auditBlockField(row.block, "Attempt Generation") ?? undefined,
+    workflow: auditBlockField(row.block, "Workflow") ?? undefined,
+  };
+}
+
+function sameInteractionScope(a: AuditShardEvent, b: AuditShardEvent): boolean {
+  return auditBlockField(a.block, "Stage") === auditBlockField(b.block, "Stage") &&
+    JSON.stringify(interactionScope(a)) === JSON.stringify(interactionScope(b));
+}
+
+function questionView(row: AuditShardEvent) {
+  return {
+    question: auditBlockField(row.block, "Decision") ?? "",
+    options: optionsList(auditBlockField(row.block, "Options")).filter(Boolean),
+    ...interactionScope(row),
+    askedAt: row.timestamp,
+  };
+}
+
+function handleAnswers(args: string[]): void {
+  const { positional, flags } = parseFlags(args);
+  if (!flags.stage) error("Missing --stage <slug>");
+  if (positional.length > 0 || Object.keys(flags).some((key) => !["stage", "unit"].includes(key))) {
+    error("Usage: aidlc-log answers --stage <slug> [--unit <unit>]");
+  }
+  const pd = resolveProjectDir(projectDir);
+  // An open isolated run with no work keeps its rows in the space's own record.
+  const rows = sortAttemptEvents(
+    rowJoinsIsolatedRun(pd, flags.stage) ? readAuditShardEvents(pd) : readActiveAuditShardEvents(pd),
+  ).filter(
+    (row) => auditBlockField(row.block, "Stage") === flags.stage &&
+      auditBlockField(row.block, "Checkpoint") === null &&
+      (flags.unit === undefined || auditBlockField(row.block, "Unit") === flags.unit),
+  );
+  const questions = new Set(rows.filter(
+    (row) => row.event === "DECISION_RECORDED" && auditBlockField(row.block, "Decision") !== null,
+  ));
+  const pending = new Set(rows.filter(
+    (row) => row.event === "QUESTION_ANSWERED",
+  ));
+  const unanswered = new Set<AuditShardEvent>();
+  const uncertain = new Set<AuditShardEvent>();
+  const answered: Array<ReturnType<typeof questionView> & { answer: string; answeredAt: string; messageId?: string }> = [];
+  const ambiguous: Array<ReturnType<typeof interactionScope> & {
+    answer: string; answeredAt: string; candidates: string[];
+  }> = [];
+  const couldOwn = (question: AuditShardEvent, answer: AuditShardEvent): boolean =>
+    sameInteractionScope(question, answer) && !attemptEventDefinitelyBefore(answer, question);
+  // Every question row, kept whole: an answer continues the exchange before it
+  // only when no question was logged in its scope between the two.
+  const asked = [...questions];
+  const scopeKey = (row: AuditShardEvent): string =>
+    JSON.stringify([auditBlockField(row.block, "Stage"), interactionScope(row)]);
+  // The latest closed exchange per scope: the answer that closed it and the
+  // answered entries it produced, so a further answer can join them.
+  const exchanges = new Map<string, { answer: AuditShardEvent; entries: typeof answered }>();
+
+  while (pending.size > 0) {
+    // Process only answers with no known predecessor. Timestamp ties between
+    // shards cannot spend a question by whichever filename happened to sort first.
+    const frontier = [...pending].filter(
+      (answer) => ![...pending].some(
+        (other) => other !== answer && sameInteractionScope(other, answer) &&
+          attemptEventDefinitelyBefore(other, answer),
+      ),
+    );
+    const cycle = frontier.length === 0;
+    // One reply answers every question that was open when it arrived: the
+    // protocol logs a menu's questions, then one answer for the reply, so all
+    // of them are that answer's questions (#2012 F2). The order is the engine's
+    // own row order, and nothing reads the answer's words. An answer with no
+    // open question of its own that follows a closed exchange, with no question
+    // logged in between, continues that exchange: a box that carried one pick
+    // per question is logged as one question and an answer per pick.
+    const results = (cycle ? [...pending] : frontier).map((answer) => {
+      const candidates = [...questions].filter((question) => couldOwn(question, answer));
+      const paired = !cycle && candidates.length > 0 && candidates.every((question) =>
+        !uncertain.has(question) &&
+        attemptEventDefinitelyBefore(question, answer) &&
+        // A tied answer with no words carries no answer, so it never competes with one.
+        ![...pending].some(
+          (other) => other !== answer && !isNonAnswer(auditBlockField(other.block, "Details")) &&
+            couldOwn(question, other) && !attemptEventDefinitelyBefore(answer, other),
+        ));
+      return { answer, candidates, owned: paired ? candidates : [] };
+    });
+    for (const result of results) {
+      const answer = auditBlockField(result.answer.block, "Details") ?? "";
+      const nonAnswer = isNonAnswer(answer);
+      if (result.owned.length > 0) {
+        const entries: typeof answered = [];
+        for (const question of result.owned) {
+          if (nonAnswer) {
+            unanswered.add(question);
+          } else {
+            const messageId = auditBlockField(result.answer.block, "Message Id") ?? auditBlockField(question.block, "Message Id");
+            const entry = {
+              ...questionView(question), answer, answeredAt: result.answer.timestamp,
+              ...(messageId === null ? {} : { messageId }),
+            };
+            answered.push(entry);
+            entries.push(entry);
+          }
+          questions.delete(question);
+        }
+        if (!nonAnswer) exchanges.set(scopeKey(result.answer), { answer: result.answer, entries });
+      } else if (!nonAnswer) {
+        const prior = exchanges.get(scopeKey(result.answer));
+        const continues = result.candidates.length === 0 && prior !== undefined &&
+          attemptEventDefinitelyBefore(prior.answer, result.answer) &&
+          !asked.some((question) => sameInteractionScope(question, result.answer) &&
+            attemptEventDefinitelyBefore(prior.answer, question) &&
+            attemptEventDefinitelyBefore(question, result.answer));
+        if (continues) {
+          for (const entry of prior.entries) {
+            entry.answer = `${entry.answer}; ${answer}`;
+            entry.answeredAt = result.answer.timestamp;
+          }
+          exchanges.set(scopeKey(result.answer), { answer: result.answer, entries: prior.entries });
+        } else {
+          ambiguous.push({
+            ...interactionScope(result.answer),
+            answer,
+            answeredAt: result.answer.timestamp,
+            candidates: result.candidates.map((question) => questionView(question).question),
+          });
+          // A later answer cannot resolve whether this one already spent a prompt.
+          for (const question of result.candidates) uncertain.add(question);
+        }
+      }
+      // An unpaired non-answer carries no answer, so it spends no prompt.
+      pending.delete(result.answer);
+    }
+  }
+  console.log(JSON.stringify({
+    data_notice: UNTRUSTED_AUDIT_NOTICE,
+    stage: flags.stage,
+    answered,
+    open: sortAttemptEvents([...questions, ...unanswered]).map(questionView),
+    ambiguous,
+  }));
+}
+
+// --- Subcommand: answer ---
+// Usage: aidlc-log answer --stage <slug> --details <text>
+//   [--checkpoint summary-confirmation --questions-file <path>
+//   [--unit <unit>] [--single]] [--on-instruction [--message <id>]]
+//
+// Fires AFTER the user answers a question.
+
+// An answer at an open approval gate belongs to a non-gate question only when
+// the audit stream proves that question was asked: a DECISION_RECORDED for this
+// stage after the current STAGE_AWAITING_APPROVAL, with no later row that
+// answers it (nextOpenDecision, the same pairing the Stop hook's
+// hasPendingDecision reads). This structural signal handles arbitrary user
+// wording and avoids guessing from gate-option words that may also begin
+// substantive answers. Caller holds the audit lock, so this snapshot cannot
+// race an emit.
+function hasPendingDecisionAtGate(pd: string, stage: string): boolean {
+  const audit = readAllAuditShards(pd);
+  if (audit.length === 0) return false;
+
+  const relevant = new Set([
+    "STAGE_AWAITING_APPROVAL",
+    ...DECISION_PAIRING_EVENTS,
+  ]);
+  const events = audit
+    .replace(/\r\n/g, "\n")
+    .split(/\n---\n/)
+    .map((block, position) => ({
+      event: auditBlockField(block, "Event") ?? "",
+      stage: auditBlockField(block, "Stage"),
+      timestamp: auditBlockField(block, "Timestamp") ?? "",
+      block,
+      position,
+    }))
+    .filter((event) => relevant.has(event.event))
+    .sort((a, b) => {
+      if (a.timestamp !== b.timestamp) {
+        return a.timestamp < b.timestamp ? -1 : 1;
+      }
+      return a.position - b.position;
+    });
+
+  const gateOpen = events.findLastIndex(
+    (event) =>
+      event.event === "STAGE_AWAITING_APPROVAL" && event.stage === stage,
+  );
+  if (gateOpen === -1) return false;
+
+  let open: string | null = null;
+  for (const event of events.slice(gateOpen + 1)) {
+    if (event.stage !== stage) continue;
+    open = nextOpenDecision(open, event.event, event.block);
+  }
+  return open !== null;
+}
+
+// A row of this summary's question or its confirmation: the stage, Unit, workflow
+// and questions file it was asked for.
+function summaryRow(
+  pd: string,
+  entry: { block: string },
+  stage: string,
+  unit: string | undefined,
+  workflow: string | undefined,
+  questionsFile: string,
+): boolean {
+  return auditBlockField(entry.block, "Stage") === stage &&
+    auditBlockField(entry.block, "Checkpoint") === SUMMARY_CONFIRMATION_CHECKPOINT &&
+    (auditBlockField(entry.block, "Unit") ?? undefined) === unit &&
+    (auditBlockField(entry.block, "Workflow") ?? undefined) === workflow &&
+    auditBlockField(entry.block, "Questions File") === questionsFile &&
+    (unit === undefined || eventMatchesClaimAttempt(pd, entry.block, unit));
+}
+
+// The person's reply to a summary the agent showed before recording its
+// question: their latest reply in this chat before the question's record, with
+// no other question recorded between them (an ERROR_LOGGED row, such as the
+// agent's answer refused for want of the record, asks nothing), sent after the
+// questions file was written since the stage's last question, answer, decision
+// or start, so the summary was there to see. The agent writes their pick into
+// its `[Answer]:` line after that reply, as it does after the record when the
+// question comes first. Null when there is none: a reply sent before the
+// summary was written never confirms it. Whether the reply is unspent is
+// personsGateReply's.
+function replyToSummaryShownFirst(
+  pd: string,
+  writes: (row: AuditShardEvent) => boolean,
+  asked: (row: AuditShardEvent) => boolean,
+): AuditShardEvent | null {
+  const chat = invokingChat(pd);
+  const { mine } = ownShardRows(pd);
+  let reply = mine.findLastIndex(asked) - 1;
+  for (; reply >= 0; reply--) {
+    if (mine[reply].event === "DECISION_RECORDED") return null;
+    if (isReplyTurn(mine[reply]) && (chat === null || auditBlockField(mine[reply].block, "Session") === chat)) break;
+  }
+  for (let at = reply - 1; at >= 0; at--) {
+    if (writes(mine[at])) return mine[reply];
+    const event = mine[at].event;
+    if (event === "DECISION_RECORDED" || event === "QUESTION_ANSWERED" || event === "STAGE_STARTED" ||
+      MESSAGE_SPENDING_EVENTS.has(event)) return null;
+  }
+  return null;
+}
+
+function pendingSummaryDecision(
+  pd: string,
+  stage: string,
+  unit: string | undefined,
+  workflow: string | undefined,
+  questionsFile: string,
+): { pending: boolean; humanAfterDecision: boolean; ambiguity?: string; changeRequested?: boolean } {
+  const rows = readAuditShardEvents(pd);
+  const entries = rows.filter((entry) => {
+    // A turn that was only a command to AIDLC is no reply to the summary.
+    if (entry.event === "HUMAN_TURN") return isReplyTurn(entry);
+    if (entry.event === "STAGE_COMPLETED") {
+      return (
+        auditBlockField(entry.block, "Stage") === stage &&
+        (auditBlockField(entry.block, "Workflow") ?? undefined) === workflow
+      );
+    }
+    if (
+      entry.event !== "DECISION_RECORDED" &&
+      entry.event !== "SUMMARY_CONFIRMATION_RECORDED"
+    ) {
+      return false;
+    }
+    return summaryRow(pd, entry, stage, unit, workflow, questionsFile);
+  });
+  if (entries.length === 0) {
+    return { pending: false, humanAfterDecision: false };
+  }
+
+  type Entry = (typeof entries)[number];
+  const follows = (candidate: Entry, boundary: Entry): true | false | null => {
+    if (candidate.shard === boundary.shard) {
+      return candidate.pos > boundary.pos;
+    }
+    if (candidate.timestamp !== boundary.timestamp) {
+      return candidate.timestamp > boundary.timestamp;
+    }
+    return null;
+  };
+  const latestFrontier = (candidates: Entry[]): Entry[] => {
+    const byShard = new Map<string, Entry>();
+    for (const entry of candidates) {
+      const previous = byShard.get(entry.shard);
+      if (!previous || entry.pos > previous.pos) byShard.set(entry.shard, entry);
+    }
+    const latestTimestamp = [...byShard.values()].reduce(
+      (latest, entry) =>
+        entry.timestamp > latest ? entry.timestamp : latest,
+      "",
+    );
+    return [...byShard.values()].filter(
+      (entry) => entry.timestamp === latestTimestamp,
+    );
+  };
+  const floors = latestFrontier(
+    entries.filter((entry) => entry.event === "STAGE_COMPLETED"),
+  );
+  const afterFloor = (entry: Entry): true | false | null => {
+    if (floors.length === 0) return true;
+    const relations = floors.map((floor) => follows(entry, floor));
+    if (relations.every((relation) => relation === true)) return true;
+    if (relations.some((relation) => relation === false)) return false;
+    return null;
+  };
+  const actions = entries.filter((entry) =>
+    entry.event === "DECISION_RECORDED" ||
+    entry.event === "SUMMARY_CONFIRMATION_RECORDED"
+  );
+  const orderedActions = actions.filter((entry) => afterFloor(entry) === true);
+  const latestActions = latestFrontier(orderedActions);
+  const latestActionTimestamp = latestActions[0]?.timestamp;
+  const unorderedActions = actions.filter((entry) => afterFloor(entry) === null);
+  if (
+    unorderedActions.some((entry) =>
+      latestActionTimestamp === undefined ||
+      entry.timestamp >= latestActionTimestamp
+    )
+  ) {
+    return {
+      pending: false,
+      humanAfterDecision: false,
+      ambiguity: floors[0]?.timestamp ?? unorderedActions[0].timestamp,
+    };
+  }
+  if (latestActions.length === 0 || latestActionTimestamp === undefined) {
+    return { pending: false, humanAfterDecision: false };
+  }
+
+  const latestKinds = new Set(
+    latestActions.map((entry) => entry.event),
+  );
+  if (latestKinds.size > 1) {
+    return {
+      pending: false,
+      humanAfterDecision: false,
+      ambiguity: latestActionTimestamp,
+    };
+  }
+  if (!latestKinds.has("DECISION_RECORDED")) {
+    // The latest is a receipt: after a change request the summary is shown again, revised.
+    const changeRequested = latestActions.every((entry) =>
+      auditBlockField(entry.block, "Details") === SUMMARY_CONFIRMATION_CHOICES[1]);
+    return { pending: false, humanAfterDecision: false, ...(changeRequested ? { changeRequested } : {}) };
+  }
+
+  // Whether a reply turn of the person's came after the question's record: the
+  // confirmation stands on one, unless the conductor names the message it read
+  // it from (the caller proves that message). A turn in another shard at the
+  // record's own second proves neither.
+  const humans = entries.filter((entry) => entry.event === "HUMAN_TURN");
+  const humanRelations = humans.map((human) =>
+    latestActions.map((decision) => follows(human, decision))
+  );
+  if (
+    humanRelations.some((relations) =>
+      relations.every((relation) => relation === true)
+    )
+  ) {
+    return { pending: true, humanAfterDecision: true };
+  }
+  if (
+    humanRelations.some((relations) =>
+      !relations.some((relation) => relation === false) &&
+      relations.some((relation) => relation === null)
+    )
+  ) {
+    return {
+      pending: false,
+      humanAfterDecision: false,
+      ambiguity: latestActionTimestamp,
+    };
+  }
+  return { pending: true, humanAfterDecision: false };
+}
+
+// Which chat's reply answers it is the protected question's (requireProtectedResponse):
+// the one this chat asked, or the one another chat asked that the person's reply here took.
+function pendingVerificationDecision(pd: string, stage: string, sha256: string): boolean {
+  const unreadable: string[] = [];
+  const rows = readAuditShardEvents(pd, undefined, undefined, unreadable).filter(
+    (row) => !auditBlockField(row.block, "Workflow")?.startsWith("single-stage:"),
+  );
+  if (unreadable.length) return false;
+  const workflows = maximalAttemptEvents(rows.filter((row) => row.event === "WORKFLOW_STARTED"));
+  if (workflows.length !== 1) return false;
+  // A later proposal or answer supersedes the old question, even when its
+  // command or stage differs. Cross-shard ties never pick an arbitrary winner.
+  const actions = maximalAttemptEvents(rows.filter((row) =>
+    ["DECISION_RECORDED", "QUESTION_ANSWERED", "VERIFICATION_COMMAND_RECORDED"].includes(row.event) &&
+    auditBlockField(row.block, "Checkpoint") === VERIFICATION_COMMAND_CHECKPOINT,
+  ));
+  if (actions.length !== 1) return false;
+  const decision = actions[0];
+  return decision.event === "DECISION_RECORDED" &&
+    attemptEventDefinitelyBefore(workflows[0], decision) &&
+    auditBlockField(decision.block, "Stage") === stage &&
+    auditBlockField(decision.block, "Command SHA-256") === sha256;
+}
+
+function pendingConstructionPolicyDecision(pd: string, stage: string, field: string, value: string): boolean {
+  const unreadable: string[] = [];
+  const rows = readAuditShardEvents(pd, undefined, undefined, unreadable).filter(
+    (row) => !auditBlockField(row.block, "Workflow")?.startsWith("single-stage:"),
+  );
+  if (unreadable.length) return false;
+  const workflows = maximalAttemptEvents(rows.filter((row) => row.event === "WORKFLOW_STARTED"));
+  if (workflows.length !== 1) return false;
+  // A choice for another pending decision must not also answer this challenge.
+  const actions = maximalAttemptEvents(rows.filter((row) =>
+    ["DECISION_RECORDED", "QUESTION_ANSWERED", "STAGE_AWAITING_APPROVAL", "GATE_APPROVED", "GATE_REJECTED",
+      "CONSTRUCTION_POLICY_RECORDED", "VERIFICATION_COMMAND_RECORDED",
+      "SUMMARY_CONFIRMATION_RECORDED", "PLAN_APPROVAL_RECORDED"].includes(row.event),
+  ));
+  if (actions.length !== 1) return false;
+  const decision = actions[0];
+  return decision.event === "DECISION_RECORDED" &&
+    attemptEventDefinitelyBefore(workflows[0], decision) &&
+    auditBlockField(decision.block, "Checkpoint") === CONSTRUCTION_POLICY_CHECKPOINT &&
+    auditBlockField(decision.block, "Stage") === stage &&
+    auditBlockField(decision.block, "Field") === field &&
+    auditBlockField(decision.block, "Value") === value;
+}
+
+
+// The person's own words for a protected question, as the human-turn hook kept
+// them, for the receipt.
+function protectedPersonsWords(pd: string, session: string | undefined): Record<string, string> {
+  return session ? protectedResponseFields(readProtectedResponse(pd, session)) : {};
+}
+
+// The engine's Plan Approval question, loaded only on its answer path.
+function planApprovalAsk(): typeof import("./aidlc-plan-approval-ask.ts") {
+  return require("./aidlc-plan-approval-ask.ts") as typeof import("./aidlc-plan-approval-ask.ts");
+}
+
+// A Request Changes the conductor read is waiting for the person's correction.
+function planApprovalCorrectionPendingSafe(pd: string): boolean {
+  try {
+    return planApprovalAsk().planApprovalCorrectionPending(pd);
+  } catch {
+    return false;
+  }
+}
+
+// The choices the engine's Plan Approval question offers, and the person's
+// request to look at a plan before it is built.
+const PLAN_REVIEW_CHOICE = "Review the plan";
+function enginePlanApprovalChoices(): readonly string[] {
+  const { GROUPED_PLAN_APPROVAL_CHOICES, PLAN_APPROVAL_CHOICES } = planApprovalAsk();
+  return [...PLAN_APPROVAL_CHOICES, ...GROUPED_PLAN_APPROVAL_CHOICES, PLAN_REVIEW_CHOICE];
+}
+
+// What was recorded, when the stop the person asked for with it was not.
+const PARK_FAILED_LEAD = {
+  approve: "The person's Plan Approval is recorded",
+  "request-changes": "The person's change request for the plan is recorded",
+  edit: "The person's choice to edit the plan files is recorded",
+} as const;
+const PARK_FAILED_SAID = {
+  approve: "the plan is approved",
+  "request-changes": "their change request is saved",
+  edit: "their choice to edit the files is saved",
+} as const;
+
+// The person's yes to the legacy Kiro window's recovery question, read by the
+// agent in any words. The chat is the one this command serves, or with none
+// nameable the one chat that has spoken since the last decision.
+function answerLegacyPlanApprovalRecovery(pd: string, flags: Record<string, string>): void {
+  let session = flags.session?.trim() || null;
+  if (session === null) {
+    try {
+      session = resolveInvokingSessionId(pd);
+    } catch {
+      session = null;
+    }
+  }
+  if (session === null) {
+    const rows = readAuditShardEvents(pd);
+    const chats = chatsSince(rows, pd, latestSpendingTimestamp(rows));
+    if (chats.size === 1 && !chats.has("terminal")) session = [...chats][0];
+  }
+  const next = aidlcDispatcherInvocation("orchestrate next");
+  const result = session === null ? "no-question" : recordPlanApprovalLegacyRecoveryAnswer(pd, session);
+  if (result === "no-question") {
+    error(`No question to bring the code plan back is waiting in this chat. Run \`${next}\` and follow what it returns.`);
+  }
+  if (result === "no-reply") {
+    error(
+      "The person has not replied since they were asked whether to bring the code plan back. Show the question if " +
+        "you have not, end the turn, and record their answer once they reply.",
+    );
+  }
+  console.log(JSON.stringify({
+    recorded: "legacy-plan-approval-recovery",
+    message: `Recorded. Run \`${next}\` now: it brings the code plan question back.`,
+  }));
+}
+
+// The conductor records what the person chose at the engine's Plan Approval
+// question, as it read their reply: approve, request changes, or edit the files
+// themselves, for every Unit asked about or the ones named in --unit/--units.
+// What to change is the person's own words unless --reason says it. --park
+// records that they also asked to stop for now.
+// A setting the person asked for in their reply rides only an Approve Plan
+// (settingsBesideDecision); beside any other answer it is run on its own first.
+function settingRidesOnlyApprovePlan(setting: string): never {
+  return error(
+    `A setting (--${setting}) rides only an Approve Plan: run the setter on its own first ` +
+      `(\`${aidlcDispatcherInvocation("config set")}\` with --message <id>, the message they asked in), then this answer without it.`,
+  );
+}
+
+function answerEnginePlanApproval(
+  pd: string,
+  flags: Record<string, string>,
+  picked: { choice: string; rest: string } | null,
+): void {
+  const { PLAN_APPROVAL_CHOICES, recordPlanApprovalAnswer, requestPlanApprovalReviewNow } = planApprovalAsk();
+  if (picked === null) {
+    error(
+      `Plan Approval --details ${formatReceivedReply(flags.details)} does not name a choice. Pass the choice ` +
+        `the person made, as you read it from their reply: "${PLAN_APPROVAL_CHOICES.join('", "')}", or "` +
+        `${PLAN_REVIEW_CHOICE}" when they want to look at a plan before it is built.`,
+    );
+  }
+  if (picked.choice === PLAN_REVIEW_CHOICE) {
+    if (!humanPresenceGuardDisabled() && !humanRepliedSinceGate(pd)) {
+      error(
+        "No reply from the person has arrived since the last decision. Record their request once they ask " +
+          `to review the plan.${commandTurnHint(pd)}${unattendedHumanPresenceHint(pd)}`,
+      );
+    }
+    const message = requestPlanApprovalReviewNow(pd);
+    if (message === null) {
+      error("No Code Generation plan is about to be built, so there is no plan step to hold. Show them the plan file.");
+    }
+    console.log(JSON.stringify({ recorded: "review-request", message }));
+    return;
+  }
+  const choice = picked.choice === "Request Changes"
+    ? "request-changes" as const
+    : picked.choice === "I'll edit the files" ? "edit" as const : "approve" as const;
+  const units = (flags.units ?? flags.unit ?? "").split(",").map((unit) => unit.trim()).filter(Boolean);
+  const feedback = flags.reason ?? (choice === "request-changes" && picked.rest ? picked.rest : undefined);
+  // A change asked for in the message the question opened for: the one the
+  // agent names, or this chat's latest with words, proved as any answer's is,
+  // the reopen it asked for (a Unit's redo) not counting as spending it.
+  // Records keep whole seconds, so two in the latest second cannot be told
+  // apart: neither is taken unless the agent names one.
+  let opening: { words: string; at: string } | undefined;
+  if (choice === "request-changes") {
+    const chat = invokingChat(pd);
+    const said = chat === null ? [] : listMessages(pd).filter((m) => m.session === chat && m.words !== null);
+    const latestAt = said.reduce((at, m) => (m.at > at ? m.at : at), "");
+    const newest = said.filter((m) => m.at === latestAt);
+    const id = flags.message ?? (newest.length === 1 ? newest[0].id : undefined);
+    const proof = id === undefined ? null : proveMessage(pd, id, "answer", { reopened: true });
+    if (proof !== null && "refusal" in proof && flags.message !== undefined) error(proof.refusal);
+    if (proof !== null && "message" in proof && proof.message.words) {
+      opening = { words: personsWordsText(proof.message.words), at: proof.message.at };
+    }
+  }
+  // A setting the same reply asked for ("approve the plan, and turn plan
+  // approval off from here") is written first, on their reply since the plan
+  // question was shown, so the answer after it leaves it standing
+  // (settingsBesideDecision).
+  const settings = CONFIG_KEYS.filter((key) => flags[key] !== undefined).map((key) => [key, flags[key]] as const);
+  let said = "";
+  if (settings.length > 0) {
+    if (choice !== "approve") settingRidesOnlyApprovePlan(settings[0][0]);
+    const shown = planApprovalAsk().planQuestionShown(pd);
+    // Several replies: the agent names the one that asked, so the setting
+    // carries their words for it and no other reply's.
+    const replies = flags.message !== undefined || shown === null || shown === "due" ? [] : repliesAfter(pd, shown);
+    if (replies.length > 1) {
+      error(`Their replies since the plan question was shown, oldest first: ` +
+        `${replies.map((one) => `${one.messageId ?? "(no record)"} (${one.at})`).join(", ")}. ` +
+        "Record their choice again with --message <id>, the one that asked for the setting; nothing was recorded.");
+    }
+    const reply = flags.message ?? (shown === null || shown === "due" ? null : latestReplyAfter(pd, shown)?.messageId ?? null);
+    const set = settingsBesideDecision(pd, resolveInvokingSessionId(pd), settings, reply);
+    if ("refusal" in set) error(`${set.refusal} Nothing was recorded: record their choice again without the setting.`);
+    if (set.lines.length > 0) said = `Say to the person, as it is: "${set.lines.join(" ")}" `;
+  }
+  let result: { message: string; complete: boolean };
+  try {
+    result = recordPlanApprovalAnswer(pd, resolveInvokingSessionId(pd) ?? "", {
+      choice,
+      ...(units.length > 0 ? { units } : {}),
+      ...(feedback ? { feedback } : {}),
+      ...(opening ? { opening } : {}),
+    });
+  } catch (e) {
+    error(`${said}${errorMessage(e)}`);
+  }
+  const message = `${said}${result.message}`;
+  if (flags.park === "true") {
+    // The person replied to this question and asked to stop: their stop wins
+    // over an autonomous grant. Loaded on demand: the state tool's module graph
+    // has a top-level await, which a compiled binary cannot require.
+    void import("./aidlc-state.ts")
+      .then(({ parkWorkflow }) => {
+        parkWorkflow(pd, { attended: true });
+        return `${message} The workflow is parked, as the person asked: run next, which answers parked, and tell them ` +
+          "how to resume.";
+      })
+      // An unattended run has nobody to stop for, so it keeps moving. Anyone
+      // else said stop: their choice stands, and nothing more runs until they
+      // say to go on. The whole message is replaced, since the recorded one
+      // ends by naming next.
+      .catch((e: unknown) => humanTurnMintAllowed()
+        ? `${PARK_FAILED_LEAD[choice]}, but the stop they asked for could not be recorded (${errorMessage(e)}). ` +
+          `Tell them in one line that ${PARK_FAILED_SAID[choice]} and that nothing more runs until they say to go on. ` +
+          "Do not run next or start any work until they do."
+        : `${message} It could not be parked (${errorMessage(e)}); run next.`)
+      .then((text) => console.log(JSON.stringify({ recorded: choice, message: text })));
+    return;
+  }
+  console.log(JSON.stringify({ recorded: choice, message }));
+}
+
+// The person's message behind the answer to the verification command or a
+// Construction policy question, after the stage started: the one the agent
+// names (--message), or, when the hook kept no reply to the question (the agent
+// showed it before logging it), their latest typed reply in this chat that no
+// decision has used yet, as for the agent's other questions. A question box's
+// reply answered the question the box listed, and the hook already kept it when
+// that was this one. A Request Changes recorded on one of this chat's protected
+// questions used the replies before it, though it spends nothing elsewhere.
+function namedProtectedReply(
+  pd: string, stage: string, session: string, message: string | undefined,
+): { message: string; floor: string | null } | undefined {
+  const floor = protectedReplyFloor(pd, [stage]);
+  if (message !== undefined) return { message, floor };
+  const question = readProtectedQuestion(pd, session);
+  if (question !== null && readProtectedResponse(pd, session)?.challengeId === question.challengeId) return undefined;
+  const rows = readAuditShardEvents(pd);
+  const declined = rows.findLastIndex((row) => row.event === "QUESTION_ANSWERED" &&
+    auditBlockField(row.block, "Session") === session &&
+    [VERIFICATION_COMMAND_CHECKPOINT, CONSTRUCTION_POLICY_CHECKPOINT].includes(auditBlockField(row.block, "Checkpoint") ?? ""));
+  const since = new Set(rows.slice(declined + 1).map((row) => auditBlockField(row.block, "Message Id")));
+  const typed = personsGateReply(pd, session, stage).replies
+    .findLast((reply) => since.has(reply.id) && readMessage(pd, reply.id)?.source === "prompt");
+  return typed === undefined ? undefined : { message: typed.id, floor };
+}
+
+// REQUEST_TEXT_DIR is the folder where the agent writes a person's words for
+// `next --request-file` (and carries them to `log answer --request-file`), so
+// they reach AI-DLC with no shell on the way: on Windows, cmd.exe ends a
+// command at a line break and replaces a %NAME% pair even inside quotes, and
+// the aidlc launcher is read by cmd.exe again.
+const REQUEST_TEXT_MAX_BYTES = 64 * 1024;
+
+export const REQUEST_FILE_USAGE =
+  `--request-file needs a file directly inside ${REQUEST_TEXT_DIR}/ in this project, for example ` +
+  `${REQUEST_TEXT_DIR}/request.txt.`;
+
+// Only a plain file directly inside the folder, reached through no link, is
+// read. The command removes it once it goes ahead (spend; a probe leaves it),
+// so a command stopped before then runs again exactly as it was written. A
+// string is the refusal.
+export function readRequestFile(
+  projectDir: string,
+  file: string,
+): { text: string; spend(): void; restore(): void } | string {
+  const relativePath = file.replaceAll("\\", "/");
+  const parts = relativePath.split("/");
+  const folder = REQUEST_TEXT_DIR.split("/");
+  const name = parts[parts.length - 1];
+  if (
+    isAbsolute(file) || parts.length !== folder.length + 1 ||
+    folder.some((part, i) => parts[i] !== part) || name === "" || name === "." || name === ".."
+  ) {
+    return REQUEST_FILE_USAGE;
+  }
+  const unread = `AI-DLC could not read the request in ${relativePath}. Send your request again.`;
+  let text: string;
+  try {
+    text = agentFileText(readRegularFileNoFollowOrThrow(
+      recordFileTargetOrThrow(projectDir, relativePath),
+      "The request file",
+      REQUEST_TEXT_MAX_BYTES,
+    )).replace(/\r?\n$/, "");
+  } catch {
+    return unread;
+  }
+  if (text.trim() === "") return `The request in ${relativePath} is empty. Send your request again.`;
+  return {
+    text,
+    spend: () => {
+      if (isReadOnlyEngineProbe()) return;
+      try {
+        removeRecordFileNoFollow(projectDir, relativePath);
+      } catch {
+        // Left in its gitignored folder; the next request replaces it.
+      }
+    },
+    // The words as they were read, for a step that runs the same command again.
+    restore: () => {
+      if (isReadOnlyEngineProbe()) return;
+      try {
+        writeRecordFileNoFollow(projectDir, relativePath, text);
+      } catch {
+        // Not written back: the same command says the request could not be read.
+      }
+    },
+  };
+}
+
+function handleAnswer(args: string[]): void {
+  const { flags } = parseFlags(args);
+  if (!flags.stage) error("Missing --stage <slug>");
+  // The file an agent wrote for `next --request-file`, carried to the answer.
+  if (flags["request-file"] !== undefined) {
+    if (flags.details !== undefined || flags["details-file"] !== undefined) {
+      error("Pass one of --details, --details-file or --request-file, not two.");
+    }
+    const read = readRequestFile(resolveActiveProjectDir(projectDir, flags.stage), flags["request-file"]);
+    if (typeof read === "string") error(read);
+    flags.details = read.text;
+    spendRequestFile = read.spend;
+  }
+  // Text that holds shell characters arrives in a file the agent wrote, so no
+  // shell (bash, PowerShell, or cmd.exe through aidlc.cmd) reads it on the way.
+  for (const [text, file] of [["details", "details-file"], ["on-instruction", "on-instruction-file"]] as const) {
+    if (flags[file] === undefined) continue;
+    if (flags[text] !== undefined) error(`Pass either --${text} or --${file}, not both.`);
+    try {
+      flags[text] = readAnswerTextFile(resolveActiveProjectDir(projectDir, flags.stage), flags[file]);
+    } catch (err) {
+      error(errorMessage(err));
+    }
+  }
+  if (!flags.details) error("Missing --details <text> (or --details-file <file>)");
+  // The person's reply also asked something: the agent answers it and the
+  // turn ends there, their next reply deciding (the stage protocol). That the
+  // reply asks is the agent's reading (--ends-turn); the turn-end mark replaces
+  // the engine mark, so the Stop hook lets the turn end.
+  if (flags["ends-turn"] === "true") rowEndsTurn = true;
+  // A stage question the person left to the agent. Checkpoints and approvals
+  // stay the person's own each time, and an unattended run has nobody to hand
+  // anything over. Words given with the flag (or in --on-instruction-file) are
+  // the agent's own text, the form from before --message: kept as such, and
+  // never read as the person's.
+  const instruction = flags["on-instruction"] === "true"
+    ? ""
+    : flags["on-instruction"]?.replace(/\s+/g, " ").trim();
+  if (instruction !== undefined) {
+    if (flags.checkpoint !== undefined) {
+      error(`--on-instruction is for a stage question the person left to you; --checkpoint ${flags.checkpoint} ` +
+        "is theirs to answer. Ask them and record their reply.");
+    }
+    if (!humanTurnMintAllowed()) {
+      error("--on-instruction needs a person in the session; AIDLC_UNATTENDED=1 is set.");
+    }
+  }
+
+  if (flags.checkpoint !== undefined && !ANSWER_CHECKPOINTS.includes(flags.checkpoint)) {
+    error(unknownCheckpointMessage(flags.checkpoint, ANSWER_CHECKPOINTS));
+  }
+  // The engine's recovery question: the conductor records the remedy the
+  // person picked, as it read their reply. "Request Changes: <what>" says the
+  // same reply also said what should change.
+  if (flags.checkpoint === "guard-recovery") {
+    const pd = resolveActiveProjectDir(projectDir, flags.stage);
+    let picked: { op: string; action: string; awaitingWords: boolean; stage: string; unit?: string };
+    try {
+      picked = recordGuardRecoveryChoice(pd, flags.details, /:\s*\S/.test(flags.details));
+    } catch (e) {
+      // A refusal can print its choices without opening a question (the
+      // abort and the check switch): there is nothing to record, and the
+      // person's pick is carried out as it stands.
+      if (e instanceof NoGuardRecoveryAskError) {
+        console.log(JSON.stringify({
+          recorded: null,
+          message: "No recovery question is open, so there is nothing to record. Carry out the choice the person " +
+            "picked from the refusal you showed them.",
+        }));
+        return;
+      }
+      error(errorMessage(e));
+    }
+    // Request Changes names the exact step, so the agent never guesses its
+    // flags: a solo walk reports the stage, or sends back the one Unit's step the
+    // refusal named (requestChangesReportCommand), a team-owned Unit gate its Unit.
+    const report = picked.op === "request-changes"
+      ? `run \`${requestChangesReportCommand(pd, picked.stage, picked.unit)}\`: their messages go on the record ` +
+        "as what should change."
+      : "";
+    const message = picked.op !== "request-changes"
+      ? `Recorded that the person chose "${picked.action}". Carry it out now.`
+      : picked.awaitingWords
+        ? 'Recorded that the person chose Request Changes. Ask "What should change?" and end the turn. When ' +
+          `they reply, record what they said with \`${aidlcDispatcherInvocation("log answer")} --stage ` +
+          `${picked.stage} --checkpoint guard-recovery --details 'Request Changes: <their words>'\`, ` +
+          `then ${report}`
+        : `Recorded that the person chose Request Changes. Now ${report}`;
+    console.log(JSON.stringify({ recorded: picked.op, message }));
+    return;
+  }
+  refusePlainSummaryConfirmation(flags, "answer");
+  const summaryCheckpoint = flags.checkpoint === "summary-confirmation";
+  const planCheckpoint = flags.checkpoint === "plan-approval";
+  // A setting rides only the engine's Plan Approval question, below.
+  const setting = CONFIG_KEYS.find((key) => flags[key] !== undefined);
+  // The engine's own Plan Approval question, or the person asking to review a
+  // plan before it is built: the conductor records the choice the person made.
+  // A break-glass override keeps its own path below: the engine does not ask
+  // when the workspace source cannot be bound, which is when the override exists.
+  if (setting !== undefined && !planCheckpoint) settingRidesOnlyApprovePlan(setting);
+  if (planCheckpoint && offeredChoiceLabel(flags.details, [LEGACY_PLAN_APPROVAL_RECOVERY_CHOICE]) !== null) {
+    if (setting !== undefined) settingRidesOnlyApprovePlan(setting);
+    answerLegacyPlanApprovalRecovery(resolveActiveProjectDir(projectDir, flags.stage), flags);
+    return;
+  }
+  if (planCheckpoint && flags.override === undefined && flags["override-file"] === undefined) {
+    const pd = resolveActiveProjectDir(projectDir, flags.stage);
+    if (planApprovalAskIsOpen(pd) || offeredChoiceLabel(flags.details, [PLAN_REVIEW_CHOICE]) !== null ||
+      planApprovalCorrectionPendingSafe(pd)) {
+      answerEnginePlanApproval(pd, flags, offeredChoiceLabel(flags.details, enginePlanApprovalChoices()));
+      return;
+    }
+  }
+  if (setting !== undefined) settingRidesOnlyApprovePlan(setting);
+  const verificationCheckpoint = flags.checkpoint === "verification-command";
+  const policyCheckpoint = flags.checkpoint === "construction-policy";
+  const policyFields = policyCheckpoint ? constructionPolicyFields(resolveActiveProjectDir(projectDir, flags.stage), flags) : null;
+  if (verificationCheckpoint && (flags.single !== undefined || flags.unit !== undefined)) {
+    error("Construction verification commands apply to the whole intent; omit --single and --unit.");
+  }
+  // --details names the choice the person made, which the conductor read from
+  // their reply; the engine records it beside their own words and never reads
+  // meaning into them. An answer with no words keeps its own refusal below.
+  const reply = flags.details;
+  if ((policyCheckpoint || verificationCheckpoint) && !isNonAnswer(reply)) {
+    const picked = offeredChoiceLabel(reply, APPROVAL_GATE_CHOICES);
+    if (picked === null) {
+      error(
+        `${policyCheckpoint ? "Construction policy" : "Construction verification command"} --details ` +
+          `${formatReceivedReply(reply)} does not name a choice. Pass the choice the person made, ` +
+          '"Approve" or "Request Changes", as you read it from their reply.',
+      );
+    }
+    flags.details = picked.choice;
+  }
+  if (flags["batch-file"] !== undefined) {
+    handlePlanApprovalBatch(resolveActiveProjectDir(projectDir, flags.stage), flags, "answer");
+    return;
+  }
+  // The mode question ("How would you like to answer them?"): the agent reads
+  // the way the person chose from their reply and records its option, which
+  // later stages reuse; the person's own words are kept beside it.
+  if (flags.checkpoint === undefined && !isNonAnswer(reply)) {
+    const asked = openDecisionBlock(resolveActiveProjectDir(projectDir, flags.stage), flags.stage);
+    if (asked !== null && isAnswerModeDecision(asked)) {
+      const labels = Object.values(ANSWER_MODE_LABELS);
+      const mode = answerModeFromReply(reply) ??
+        answerModeFromReply(offeredChoiceLabel(reply, labels)?.choice);
+      if (mode === null) {
+        error(
+          `--details ${formatReceivedReply(reply)} does not name a way to answer. Pass the way the person chose, ` +
+            `"${labels[0]}", "${labels[1]}" or "${labels[2]}", as you read it from their reply; their own ` +
+            "words are kept beside it.",
+        );
+      }
+      flags.details = ANSWER_MODE_LABELS[mode];
+    }
+  }
+  let summaryFeedback: string | null = null;
+  if (summaryCheckpoint && !isNonAnswer(reply)) {
+    // The conductor names the choice the person made; what they said to
+    // change may follow the label ("Request changes: rename the handler").
+    const picked = offeredChoiceLabel(reply, SUMMARY_CONFIRMATION_CHOICES);
+    if (picked === null) {
+      error(
+        `Cannot record the summary choice because --details ${formatReceivedReply(reply)} does not name ` +
+          `a choice. Pass the choice the person made, "${SUMMARY_CONFIRMATION_CHOICES.join('" or "')}", as you ` +
+          "read it from their reply, with what they asked to change after it.",
+      );
+    }
+    flags.details = picked.choice;
+    summaryFeedback = picked.choice === SUMMARY_CONFIRMATION_CHOICES[1] && picked.rest ? picked.rest : null;
+  }
+  if (
+    planCheckpoint &&
+    flags.details !== "Approve Plan" &&
+    flags.details !== "Request Changes"
+  ) {
+    error(
+      `Refusing to record Plan Approval: received reply ${formatReceivedReply(flags.details)}. ` +
+        'Valid choices are "Approve Plan" or "Request Changes".',
+    );
+  }
+  // Break-glass (human only). The flag alone authorizes nothing: the person's
+  // own reply after the refusal that offered it is checked below and again
+  // under the lock. Here only the shape is validated. --override-file carries
+  // the reason in a file the conductor wrote with its file tool, so the
+  // person's words never pass through shell text; --override stays for
+  // callers from earlier releases.
+  if (flags.override !== undefined && flags["override-file"] !== undefined) {
+    error("Pass the break-glass reason once: --override-file <path> or --override <reason>, not both.");
+  }
+  const overrideReason = (
+    flags["override-file"] !== undefined
+      ? readOverrideReasonFile(resolveActiveProjectDir(projectDir, flags.stage), flags["override-file"])
+      : flags.override
+  )?.trim() ?? null;
+  if (overrideReason !== null) {
+    if (!planCheckpoint) {
+      error("--override applies only to --checkpoint plan-approval.");
+    }
+    if (overrideReason.length === 0) {
+      error(
+        "Plan Approval override requires a nonblank --override reason: the person's reason, " +
+          "in their own words.",
+      );
+    }
+    if (flags.details !== "Approve Plan") {
+      error('Plan Approval override applies only to --details "Approve Plan".');
+    }
+  }
+
+  // A reply with no words in it is nobody's answer.
+  if (isNonAnswer(flags.details)) {
+    error(
+      `Cannot record reply ${formatReceivedReply(flags.details)} because it has no words in it. ` +
+        "Pass the choice the person made, as you read it from their reply; with no reply of theirs yet, " +
+        "show the question again and wait for one.",
+    );
+  }
+
+  const pd = resolveActiveProjectDir(projectDir, flags.stage);
+  const verificationCommand = verificationCheckpoint
+    ? verificationCommandFromFlags(pd, flags) : null;
+  if (flags.unit) validateLiveUnitScope(pd, flags.unit);
+  const summaryEvidence = summaryCheckpoint
+    ? summaryQuestionEvidence(pd, flags, flags.details)
+    : null;
+  let planEvidence: ReturnType<
+    typeof codeGenerationPlanApprovalQuestionEvidence
+  > | null = null;
+  const fields: Record<string, string> = {
+    Stage: flags.stage,
+    Details: flags.details,
+  };
+  if (summaryCheckpoint) {
+    fields.Checkpoint = SUMMARY_CONFIRMATION_CHECKPOINT;
+    fields["Questions File"] = summaryEvidence!.relativePath;
+    fields["Questions SHA-256"] = summaryEvidence!.sha256;
+    fields["Hash Scope"] = SUMMARY_CONFIRMATION_HASH_SCOPE;
+    // A change request's own words ride on the receipt as its feedback.
+    if (summaryFeedback !== null) fields.Feedback = summaryFeedback.replace(/\s+/g, " ");
+  }
+  if (verificationCommand) {
+    fields.Checkpoint = VERIFICATION_COMMAND_CHECKPOINT;
+    fields["Command SHA-256"] = verificationCommand.sha256;
+    fields["Command Label"] = verificationCommand.label;
+    fields["User Input"] = flags.details;
+    fields.Session = verificationCommandSession(pd, flags);
+  }
+  if (policyFields) {
+    Object.assign(fields, policyFields);
+    fields["User Input"] = flags.details;
+  }
+  if (flags.unit) {
+    fields.Unit = flags.unit;
+    Object.assign(fields, claimAttemptFields(pd, flags.unit));
+  }
+  if (flags.single === "true") fields.Workflow = `single-stage:${flags.stage}`;
+  if (planCheckpoint) {
+    fields.Session = resolvePlanApprovalSession(pd, flags);
+    // The person's reply after the offer is checked before anything else is
+    // read and before any lock is held: without it the only answer is the
+    // step to ask them, whatever else the plan or its answer look like. It is
+    // checked again inside the receipt transaction.
+    if (overrideReason !== null && !personAskedForPlanApprovalOverride(pd)) {
+      error(planApprovalOverrideHumanOnly(pd));
+    }
+  }
+
+  // Classification and emission run under ONE audit lock: a concurrent
+  // gate-start (itself locked) cannot flip the stage to [?] between the
+  // checkbox read below and the QUESTION_ANSWERED append, which would
+  // re-create the answer-consumes-the-turn deadlock this branch prevents.
+  // appendAuditEntry / emitError re-acquire reentrantly (per-pd depth).
+  withAuditLock(pd, () => {
+    if (planCheckpoint) {
+      planEvidence = codeGenerationPlanApprovalQuestionEvidence(
+        pd,
+        planApprovalTarget(flags),
+        flags["questions-file"] ?? "",
+        flags.details as "Approve Plan" | "Request Changes",
+        { breakGlass: overrideReason !== null },
+      );
+      Object.assign(fields, planApprovalFields(planEvidence));
+    }
+    // Human-presence gate (ledger-event design): the interview answer is
+    // a human-judgement event, so require a HUMAN_TURN appended AFTER the last
+    // QUESTION_ANSWERED (ledger order) before recording another. The prior
+    // QUESTION_ANSWERED is the "since" boundary (one reply answers the questions
+    // open when it arrived, and none asked after it), so no separate marker/consume step is needed. Autonomy
+    // carve-out FIRST (Construction swarm/Bolt answers are not human), then the scoped
+    // test off-switch. Fail-open when no ledger exists (presence not tracked yet).
+    const content = existsSync(stateFilePath(pd))
+      ? readFileSync(stateFilePath(pd), "utf-8")
+      : null;
+    const stageNode = loadStageGraphAll().find((stage) => stage.slug === flags.stage);
+    const autonomousDecision = isAutonomousConstructionDecision(content, stageNode?.phase);
+    const workflow =
+      flags.single === "true" ? `single-stage:${flags.stage}` : undefined;
+
+    if (verificationCommand) {
+      if (!pendingVerificationDecision(pd, flags.stage, verificationCommand.sha256)) {
+        error("No matching pending DECISION_RECORDED with the same Command SHA-256 exists in the current workflow. " + verificationCommandRecovery(flags.stage));
+      }
+      // Neither presence bypass nor autonomy supplies the person's recorded reply.
+      requireProtectedResponse(pd, fields.Session, {
+        kind: "verification-command",
+        targetDigest: protectedTargetDigest({ commandSha256: verificationCommand.sha256 }),
+        choice: flags.details,
+      }, namedProtectedReply(pd, flags.stage, fields.Session, flags.message));
+      Object.assign(fields, protectedPersonsWords(pd, fields.Session));
+      const emitted = flags.details === "Approve" ? "VERIFICATION_COMMAND_RECORDED" : "QUESTION_ANSWERED";
+      if (flags.details === "Approve") emitAudit(pd, "VERIFICATION_COMMAND_RECORDED", fields);
+      else emitAudit(pd, "QUESTION_ANSWERED", fields);
+      consumeProtectedQuestion(pd, fields.Session);
+      console.log(JSON.stringify({ emitted, checkpoint: "verification-command", stage: flags.stage, command_sha256: verificationCommand.sha256 }));
+      return;
+    }
+
+    if (policyFields) {
+      if (!pendingConstructionPolicyDecision(pd, flags.stage, fields.Field, fields.Value)) {
+        error("No matching pending DECISION_RECORDED with the same Field and Value exists in the current workflow. " + CONSTRUCTION_POLICY_RECOVERY);
+      }
+      requireProtectedResponse(pd, fields.Session, {
+        kind: "construction-policy",
+        targetDigest: protectedTargetDigest({ field: fields.Field, value: fields.Value }),
+        choice: flags.details,
+      }, namedProtectedReply(pd, flags.stage, fields.Session, flags.message));
+      Object.assign(fields, protectedPersonsWords(pd, fields.Session));
+      const emitted = flags.details === "Approve" ? "CONSTRUCTION_POLICY_RECORDED" : "QUESTION_ANSWERED";
+      // Append first: a failed append leaves the human's one-shot answer retryable.
+      if (flags.details === "Approve") emitAudit(pd, "CONSTRUCTION_POLICY_RECORDED", fields);
+      else emitAudit(pd, "QUESTION_ANSWERED", fields);
+      consumeProtectedQuestion(pd, fields.Session);
+      console.log(JSON.stringify({ emitted, checkpoint: "construction-policy", stage: flags.stage }));
+      return;
+    }
+
+    if (summaryCheckpoint) {
+      const pending = pendingSummaryDecision(
+        pd,
+        flags.stage,
+        flags.unit,
+        workflow,
+        summaryEvidence!.relativePath,
+      );
+      if (pending.ambiguity !== undefined) {
+        error(
+          "Refusing to record summary confirmation: matching prompt, response, " +
+          `or run-boundary events share audit Timestamp "${pending.ambiguity}" ` +
+          "across different shards, so a human response after this prompt cannot " +
+          "be proven. Present a fresh summary prompt after that second, end the " +
+          "turn, and record the human's new response.",
+        );
+      }
+      if (!pending.pending) {
+        error(
+          "Cannot record the summary choice because no matching unanswered summary question " +
+          "exists for this stage and work item. Record the question before presenting it, then " +
+          "wait for the human's choice.",
+        );
+      }
+      if (!humanPresenceGuardDisabled() && !humanActedSinceLastAnswer(pd)) {
+        error(
+          "Cannot record the summary choice because no human reply has arrived since the last "
+            + "decision. End the turn, wait for the human's choice, then try again."
+            + unattendedHumanPresenceHint(pd, { missedReply: false }),
+        );
+      }
+      // The confirmation stands on a reply after the summary's own question
+      // record, as a stage gate's does on one after its showing, or on the
+      // message the agent names: the one it read the confirmation from when it
+      // showed the summary before recording the question, sent after the
+      // summary was last written. With no message named, their reply to the
+      // summary shown first stands as a reply after the record does, as a
+      // question the agent logs after their reply records on it. The engine
+      // proves a named message and never reads its words.
+      let named: StoredMessage | null = null;
+      if (flags.message !== undefined) {
+        const proof = proveMessage(pd, flags.message, "answer");
+        if ("refusal" in proof) error(proof.refusal);
+        named = proof.message;
+      }
+      if (!humanPresenceGuardDisabled()) {
+        if (named !== null && !repliedSinceStageStart(pd, flags.stage, named.id)) {
+          error(stageStartFloorRefusal("confirm the summary of", flags.stage, named.id, "the summary"));
+        }
+        // What the summary showed: its questions file as written before its
+        // question was recorded, or before their reply to it when it was shown
+        // first (filling in its `[Answer]:` comes after either).
+        const questionsAbs = resolve(pd, summaryEvidence!.relativePath);
+        const writes = (row: AuditShardEvent) => auditRowWritesFile(pd, row, questionsAbs);
+        const asked = (row: AuditShardEvent) => row.event === "DECISION_RECORDED" &&
+          summaryRow(pd, row, flags.stage, flags.unit, workflow, summaryEvidence!.relativePath);
+        const shownFirst = pending.humanAfterDecision ? null : replyToSummaryShownFirst(pd, writes, asked);
+        const checked = answeredBeforeShownStep(pd, flags.stage, {
+          refused: "Cannot record the summary choice",
+          question: `the "${flags.stage}" summary`,
+          shown: "the summary",
+          command: "log answer",
+          why: "no reply of the person's has arrived since the summary question was recorded.",
+          shownWriting: {
+            what: "the summary",
+            writes,
+            until: shownFirst === null
+              ? asked
+              : (row) => row.shard === shownFirst.shard && row.pos === shownFirst.pos,
+          },
+        }, named ?? undefined);
+        const repliedToShown = shownFirst !== null && checked.named;
+        if (checked.before || (named === null && !pending.humanAfterDecision && !repliedToShown)) error(checked.step);
+      }
+      // Their words go on the receipt: the message named, or every reply of
+      // theirs in this chat that no decision has used yet (personsGateReply).
+      const reply = named !== null ? null : personsGateReply(pd, invokingChat(pd), flags.stage);
+      const words = named !== null ? (named.words === null ? null : personsWordsText(named.words)) : reply!.words;
+      const messageId = named !== null ? named.id : reply!.messageId;
+      if (messageId) fields["Message Id"] = messageId;
+      if (reply !== null) Object.assign(fields, windowMessageIds(reply));
+      if (words && !isNonAnswer(words)) fields["Person Reply"] = words;
+      // The confirmation authorizes the outputs generated from it. Mint the
+      // authorization id from the attempt, the scope, and the confirmed content
+      // (identical confirmations mint the same id; changed answers a new one),
+      // record it on the receipt, and make it the active authorization for the
+      // scope so every later write of a stage output is stamped with it. A
+      // "Request changes" reply withdraws the active authorization instead.
+      const unitMajor =
+        stageNode !== undefined &&
+        isPerUnitStage(stageNode) &&
+        getField(content ?? "", "Construction Iteration")?.trim() === "unit-major";
+      const auditRows = readAuditShardEvents(pd);
+      const floors = summaryAttemptFloors(
+        auditRows.filter((entry) => SUMMARY_EVIDENCE_EVENTS.has(entry.event)),
+        flags.stage,
+        workflow,
+        unitMajor,
+        stageNode !== undefined && isPerUnitStage(stageNode) ? auditRows : undefined,
+      );
+      const authorization: SummaryAuthorization = {
+        version: 1,
+        id: "",
+        stage: flags.stage,
+        unit: flags.unit ?? null,
+        workflow: workflow ?? null,
+        attempt: summaryAttemptIdentity(floors),
+        questions_file: summaryEvidence!.relativePath,
+        questions_sha256: summaryEvidence!.sha256,
+        choice: flags.details,
+        recorded_at: isoTimestamp(),
+      };
+      authorization.id = summaryAuthorizationId({
+        attempt: authorization.attempt,
+        stage: authorization.stage,
+        unit: authorization.unit,
+        workflow: authorization.workflow,
+        questionsFile: authorization.questions_file,
+        questionsSha256: authorization.questions_sha256,
+        choice: authorization.choice,
+      });
+      const positive = flags.details === "Looks correct";
+      if (positive) fields[SUMMARY_AUTHORIZATION_FIELD] = authorization.id;
+      // Registry first, receipt second, both under the audit lock. A registry
+      // that cannot be written (a redirected `.aidlc-engine/summary-authorization`, a
+      // file where the stage directory belongs, a full disk) refuses the answer
+      // BEFORE any receipt exists, so the pending question and the human's turn
+      // are still there for a retry once the cause is fixed. If the receipt
+      // then fails to append, the registry is restored to what it was, so no
+      // authorization exists without the receipt that minted it.
+      let previousRegistry: Buffer | null = null;
+      try {
+        const target = summaryAuthorizationTargetOrThrow(pd, authorization.stage, authorization.unit);
+        previousRegistry = lstatExists(target)
+          ? readRegularFileNoFollowOrThrow(target, "summary authorization", 64 * 1024)
+          : null;
+        if (positive) {
+          writeSummaryAuthorization(pd, authorization);
+        } else {
+          clearSummaryAuthorization(pd, authorization.stage, authorization.unit);
+        }
+      } catch (e) {
+        error(
+          `Cannot record the summary choice: its authorization record could not be ` +
+            `saved (${errorMessage(e)}). Nothing was recorded; the pending question is ` +
+            "still answerable. Repair the record directory and run this command again.",
+        );
+      }
+      try {
+        emitAudit(pd, "SUMMARY_CONFIRMATION_RECORDED", fields);
+      } catch (e) {
+        // Restore the registry to its exact prior bytes (or absence) so no
+        // authorization exists without the receipt that minted it. A restore
+        // that itself fails is part of the report: the registry is then in a
+        // state the human must know about before retrying.
+        let rollback = "";
+        try {
+          const registryRelative = summaryAuthorizationRelativePath(
+            authorization.stage,
+            authorization.unit,
+          );
+          if (previousRegistry === null) {
+            removeRecordFileNoFollow(runRecordDir(pd) as string, registryRelative);
+          } else {
+            writeRecordFileNoFollow(runRecordDir(pd) as string, registryRelative, previousRegistry);
+          }
+        } catch (restoreError) {
+          rollback =
+            ` The authorization record could not be restored either (${errorMessage(restoreError)}); ` +
+            `remove ${summaryAuthorizationRelativePath(authorization.stage, authorization.unit)} ` +
+            "under the intent record before retrying.";
+        }
+        error(`Audit emission failed: ${errorMessage(e)}.${rollback}`);
+      }
+      // Request changes with nothing said about what: the person answers
+      // next, so the turn ends at the question (the summary protocol). The
+      // question is recorded here, so their reply is its answer, on its own
+      // row behind this change request; with nothing open it had no row, and
+      // the next confirmation took it as its Person Reply.
+      const asksWhat = !positive && summaryFeedback === null;
+      let whatAsked = false;
+      let whatQuestionId: string | null = null;
+      if (asksWhat) {
+        rowEndsTurn = true;
+        try {
+          const asked = askedQuestionFields(pd, {
+            type: "stage-question", shows: questionShows([SUMMARY_CHANGES_QUESTION, undefined]),
+          });
+          emitAudit(pd, "DECISION_RECORDED", {
+            Stage: flags.stage,
+            Decision: SUMMARY_CHANGES_QUESTION,
+            ...(fields.Unit !== undefined ? { Unit: fields.Unit } : {}),
+            ...(fields["Attempt Generation"] !== undefined ? { "Attempt Generation": fields["Attempt Generation"] } : {}),
+            ...(workflow !== undefined ? { Workflow: workflow } : {}),
+            ...asked,
+          });
+          whatAsked = true;
+          whatQuestionId = asked[QUESTION_ID_FIELD];
+        } catch {
+          // The change request is on record; the question is asked all the same.
+        }
+      }
+      const whatAnswer = `${aidlcDispatcherInvocation("log answer")} --stage ${quoteCommandArgument(flags.stage)}` +
+        `${flags.unit ? ` --unit ${quoteCommandArgument(flags.unit)}` : ""}${workflow !== undefined ? " --single" : ""} ` +
+        `--details ${quoteCommandArgument("<their words>")}`;
+      // What to change is known, so the agent revises now.
+      const revised = summaryFeedback !== null ? revisedSummaryNote(pd, stageNode, content, flags.unit, workflow) : null;
+      console.log(
+        JSON.stringify({
+          emitted: "SUMMARY_CONFIRMATION_RECORDED",
+          checkpoint: "summary-confirmation",
+          stage: flags.stage,
+          choice: flags.details,
+          ...(positive ? { summary_authorization_id: authorization.id } : {}),
+          ...(summaryFeedback !== null ? { feedback: summaryFeedback } : {}),
+          ...(whatQuestionId !== null ? { question_id: whatQuestionId } : {}),
+          ...(asksWhat
+            ? {
+              agent_note: `Ask the free-text question "${SUMMARY_CHANGES_QUESTION}" and end the turn; ` +
+                (whatAsked
+                  ? `when they reply, record what they said with \`${whatAnswer}\`.`
+                  : "their next reply is what should change."),
+            }
+            : revised !== null ? { agent_note: revised } : {}),
+        }),
+      );
+      return;
+    }
+
+    if (planCheckpoint && overrideReason !== null) {
+      // The break glass. Autonomous Construction has no person at the
+      // keyboard, so nobody could have asked for it.
+      if (autonomousDecision) {
+        error(
+          "Plan Approval override is refused under autonomous Construction mode: " +
+            "the person must ask for it in an attended chat.",
+        );
+      }
+      // Their words go on the record: their latest reply since the offer, and its message.
+      const personReply = planApprovalOverridePersonReply(pd);
+      if (personReply?.words) fields["Person Reply"] = personReply.words;
+      if (personReply) fields["Message Id"] = personReply.messageId;
+      // Effects, in order: the person's reply is checked again inside the
+      // receipt transaction; the normal path is attempted; when it refuses, the
+      // PLAN_APPROVAL_OVERRIDDEN row is appended BEFORE the override receipt is
+      // written (a ledger that cannot take the row leaves no receipt and ends
+      // no offer); then the receipt; then PLAN_APPROVAL_RECORDED with Override: yes.
+      let recorded: PlanApprovalOverrideReceiptResult;
+      try {
+        recorded = recordPlanApprovalOverrideReceipt(
+          pd,
+          planEvidence!,
+          fields.Session,
+          overrideReason,
+          (failedChecks) => {
+            emitAudit(pd, "PLAN_APPROVAL_OVERRIDDEN", {
+              Stage: flags.stage,
+              Reason: overrideReason,
+              "Failed Checks": failedChecks.join(" | "),
+              Session: fields.Session,
+              Unit: flags.unit ?? "stage-level",
+              Fingerprint: planEvidence!.fingerprint,
+              ...(personReply?.words ? { "Person Reply": personReply.words } : {}),
+              ...(personReply ? { "Message Id": personReply.messageId } : {}),
+            });
+          },
+        );
+      } catch (e) {
+        if (e instanceof PlanApprovalOverrideHumanOnlyError) error(e.message);
+        error(`Refusing to record Plan Approval override: ${errorMessage(e)}`);
+      }
+      const changeNotices = [...planEvidence!.changeNotices, ...recorded.changeNotices];
+      if (recorded.overridden) fields.Override = "yes";
+      try {
+        emitAudit(pd, "PLAN_APPROVAL_RECORDED", fields);
+      } catch (e) {
+        error(`Audit emission failed: ${errorMessage(e)}`);
+      }
+      console.log(
+        JSON.stringify({
+          emitted: "PLAN_APPROVAL_RECORDED",
+          checkpoint: "plan-approval",
+          stage: flags.stage,
+          override: recorded.overridden,
+          ...(recorded.overridden
+            ? { failed_checks: recorded.failedChecks }
+            : { note: "the normal receipt path succeeded, so the override was not needed and nothing was overridden" }),
+          ...(changeNotices.length > 0 ? { change_notices: changeNotices } : {}),
+        }),
+      );
+      return;
+    }
+
+    if (planCheckpoint) {
+      // The evidence recorded any accepted drift before the receipt is
+      // certified; certification may accept and record a later move of its own.
+      const changeNotices = [...planEvidence!.changeNotices];
+      try {
+        const recorded = recordPlanApprovalReceipt(
+          pd,
+          planEvidence!,
+          fields.Session,
+          flags.details as "Approve Plan" | "Request Changes",
+        );
+        changeNotices.push(...recorded.changeNotices);
+      } catch (e) {
+        if (offersPlanApprovalOverride(e)) notePlanApprovalOverrideOffered(pd);
+        if (e instanceof PlanApprovalSourceDriftError) {
+          console.error(JSON.stringify({ remedy: e.remedy }));
+          error(e.message);
+        }
+        if (e instanceof PlanApprovalUnbindableError) {
+          console.error(JSON.stringify({ code: e.code, remedies: e.remedies }));
+          error(e.message);
+        }
+        error(`Refusing to record Plan Approval: ${errorMessage(e)}`);
+      }
+      try {
+        if (flags.details === "Approve Plan") {
+          emitAudit(pd, "PLAN_APPROVAL_RECORDED", fields);
+        } else {
+          emitAudit(pd, "QUESTION_ANSWERED", fields);
+        }
+      } catch (e) {
+        error(`Audit emission failed: ${errorMessage(e)}`);
+      }
+      console.log(
+        JSON.stringify({
+          emitted:
+            flags.details === "Approve Plan"
+              ? "PLAN_APPROVAL_RECORDED"
+              : "QUESTION_ANSWERED",
+          checkpoint: "plan-approval",
+          stage: flags.stage,
+          ...(changeNotices.length > 0 ? { change_notices: changeNotices } : {}),
+        }),
+      );
+      return;
+    }
+
+    // Approval choices are lifecycle transitions, not interview answers. A
+    // conductor may nevertheless route an approval through `answer` before
+    // `report`; emitting QUESTION_ANSWERED here would consume the same
+    // HUMAN_TURN that approval needs. When the target stage is at [?] and no
+    // unresolved non-gate decision was recorded after the gate opened,
+    // acknowledge without emitting so the report command can commit the gate.
+    // The human-presence requirement is NOT waived: a redundant answer with no
+    // fresh HUMAN_TURN refuses, so a fabricated `answer && report rejected`
+    // chain (reject carries no presence guard of its own) breaks at the answer.
+    const targetAtApprovalGate =
+      content !== null &&
+      parseCheckboxes(content).some(
+        (checkbox) =>
+          checkbox.slug === flags.stage &&
+          checkbox.state === "awaiting-approval",
+      );
+    const pendingDecision =
+      targetAtApprovalGate && hasPendingDecisionAtGate(pd, flags.stage);
+    if (targetAtApprovalGate && !pendingDecision) {
+      if (instruction !== undefined) {
+        error("An approval is the person's own each time, so --on-instruction cannot record it. Ask them.");
+      }
+      if (
+        !autonomousDecision &&
+        !humanPresenceGuardDisabled() &&
+        !humanActedSinceLastAnswer(pd)
+      ) {
+        error(
+          "Cannot record this approval choice because no new human reply has arrived. "
+            + "After the human types their choice, use aidlc-orchestrate.ts report --result "
+            + "approved or rejected; do not use aidlc-log.ts answer for an approval."
+            + unattendedHumanPresenceHint(pd),
+        );
+      }
+      console.log(
+        JSON.stringify({
+          skipped: "QUESTION_ANSWERED",
+          stage: flags.stage,
+          reason: "approval-gate-report-owned",
+        }),
+      );
+      return;
+    }
+
+    // The message that answered: named by the agent, or inherited from the
+    // question it was logged with (a question logged after the reply arrived).
+    // An explicit id that fails its proof refuses; an inherited one falls back
+    // to the presence test below.
+    // A choice the person left to the agent names the message that left it the
+    // same way, which may also have given an approval ("approve, the rest is up
+    // to you"); with none named, the answer is the agent's own, with no claim.
+    let named: StoredMessage | null = null;
+    if (!autonomousDecision) {
+      const request = { request: instruction !== undefined };
+      if (flags.message !== undefined) {
+        const proof = proveMessage(pd, flags.message, "answer", request);
+        if ("refusal" in proof) error(proof.refusal);
+        named = proof.message;
+      } else {
+        const inherited = latestDecisionMessageId(pd, flags.stage, flags.unit);
+        if (inherited !== null) {
+          const proof = proveMessage(pd, inherited, "answer", request);
+          if ("message" in proof) named = proof.message;
+        }
+      }
+    }
+    // The person's own words go on the record beside the choice the agent read
+    // in them, as they do at a gate: the message named, or every reply of
+    // theirs in this chat that no decision has used yet (personsGateReply).
+    // Which question a reply answers is the agent's reading, so a question
+    // logged after the reply that answers it records on that reply, unless
+    // another answer already names it: the question's own row says which, the
+    // latest on this clone's shard, where the reply turns are read (a
+    // teammate's shard can sort after it and hold an older one).
+    const ownQuestion = decisionRowsInScope(ownShardRows(pd).mine, flags.stage, flags.unit).at(-1);
+    if (named !== null) {
+      fields["Message Id"] = named.id;
+      const namedWords = named.words === null ? null : personsWordsText(named.words);
+      if (namedWords && !isNonAnswer(namedWords)) fields["Person Reply"] = namedWords;
+    } else if (instruction === undefined && !autonomousDecision) {
+      const reply = personsGateReply(pd, invokingChat(pd), flags.stage, ownQuestion);
+      if (reply.words) fields["Person Reply"] = reply.words;
+      if (reply.messageId) fields["Message Id"] = reply.messageId;
+      Object.assign(fields, windowMessageIds(reply));
+    }
+    if (instruction !== undefined) {
+      if (!personSpokeInThisWork(pd)) {
+        error("Nothing the person said in this piece of work is on record, so no choice was left to you. Ask them." +
+          unattendedHumanPresenceHint());
+      }
+      // The record says the agent chose, reading a message of theirs, only
+      // beside that message, whose whole words it keeps; words the agent
+      // passed with the flag are its own and claim nothing.
+      if (named !== null) {
+        fields["Answer Source"] = ANSWER_SOURCE_ON_INSTRUCTION;
+      }
+      if (instruction !== "") fields[CONDUCTOR_SUMMARY_FIELD] = instruction;
+    } else if (autonomousDecision) {
+      // autonomous Construction: no human presence required
+    } else if (humanPresenceGuardDisabled()) {
+      // scoped test off-switch
+    } else if (named !== null) {
+      // The proved message is the person's reply to this question.
+    } else if (!humanActedSinceLastAnswer(pd)) {
+      // One reply answers every question the agent asked, each as its own
+      // answer: an answer spends no reply.
+      error(
+        keptMessageRefusal(pd) ??
+          "Cannot record this answer because no new human reply has arrived for the question. "
+          + "Wait for the human to type an answer, then try again."
+          + commandTurnHint(pd)
+          + unattendedHumanPresenceHint(pd),
+      );
+    }
+
+    try {
+      emitAudit(pd, "QUESTION_ANSWERED", fields);
+    } catch (e) {
+      error(`Audit emission failed: ${errorMessage(e)}`);
+    }
+
+    // Add a note at an "Anything to add?" question a record still holds (the
+    // step asked it at every gate before it asked only after a correction): the
+    // person's next reply answers what follows, so the turn ends at that question. A pick in a question box is read from the person's own
+    // recorded reply; a typed one from the exact option the agent recorded on
+    // the question its kind (or its two options) names. Whether their reply
+    // already holds the note is the agent's to read.
+    const fromBox = instruction === undefined && !autonomousDecision ? boxPicksAddANote(pd, named?.id) : null;
+    const question = decisionRowsInScope(readAuditShardEvents(pd), flags.stage, flags.unit).at(-1);
+    const asksForNote = fromBox ?? (picksAddANote(flags.details) && question !== undefined &&
+      isLearningsNoteDecision(question.block));
+    if (asksForNote) rowEndsTurn = true;
+    // What should change, or a follow-up, after a Request changes at the summary.
+    // A new chat's step for "What should change?" names no Unit or single-stage
+    // run, and the question's own row has them.
+    const revised = asksForNote ? null : revisedSummaryNote(pd, stageNode, content,
+      flags.unit ?? (question === undefined ? undefined : auditBlockField(question.block, "Unit") ?? undefined),
+      workflow ?? (question === undefined ? undefined : auditBlockField(question.block, "Workflow") ?? undefined));
+    console.log(
+      JSON.stringify({
+        emitted: "QUESTION_ANSWERED",
+        stage: flags.stage,
+        ...(asksForNote
+          ? {
+            agent_note: "When their reply already says what the note is, that is the note: take their words and do " +
+              "not ask for it again. Otherwise ask what the note should say. End the turn at the question you ask " +
+              "next; their next reply answers it.",
+          }
+          : revised !== null ? { agent_note: revised } : {}),
+      })
+    );
+  });
+}
+
+// What a link receipt at a codekb stage over many repositories tells the agent,
+// as facts it words itself: how many repositories are analysed, a note when the
+// count reaches a new tenth of the set (never after every repository), and on
+// the receipt that completes every chain, the approval gate's wait when that is
+// long. The count is kept in the record's engine folder for the status line,
+// with the repositories it counts, so a set the person changes since is a new
+// count and the status line shows no old one.
+function codekbReceiptNotes(pd: string, node: StageEntry): Record<string, unknown> {
+  const notes: Record<string, unknown> = {};
+  const { done, total, repos } = codekbAnalysed(pd, node);
+  if (total < MANY_REPOS) return notes;
+  const mark = join(engineDir(pd), CODEKB_ANALYSED_FILE);
+  let kept: { done: number; tenth: number } | null = null;
+  try {
+    const prior = JSON.parse(readFileSync(mark, "utf-8")) as { done?: unknown; tenth?: unknown; total?: unknown; repos?: unknown };
+    const sameSet = Array.isArray(prior.repos) && prior.repos.join("\n") === repos.join("\n");
+    if (sameSet && prior.total === total && typeof prior.done === "number" && typeof prior.tenth === "number") {
+      kept = { done: prior.done, tenth: prior.tenth };
+    }
+  } catch {
+    // No count kept yet for this set.
+  }
+  // A count that went down is a new attempt (a rescan): its tenths are said again.
+  const saidTenth = kept !== null && kept.done <= done ? kept.tenth : 0;
+  const tenth = Math.floor((done * 10) / total);
+  notes.analysed = { done, total };
+  if (tenth > saidTenth && done < total) {
+    notes.analysed_note = `${done} of ${total} repositories are analysed: tell the person so, in a few words of your own.`;
+  }
+  const seconds = gateEstimateSeconds(total);
+  if (done === total && kept?.done !== total && seconds >= GATE_NOTE_SECONDS) {
+    notes.gate_wait_note = `Every repository is analysed. The report that opens the approval gate checks the files of all ` +
+      `${total} repositories and takes about ${seconds} seconds: before you run it, tell the person so in one line of ` +
+      "your own.";
+  }
+  try {
+    mkdirSync(dirname(mark), { recursive: true });
+    writeFileAtomic(mark, `${JSON.stringify({ stage: node.slug, done, total, tenth: Math.max(tenth, saidTenth), repos })}\n`);
+  } catch {
+    // The count is a courtesy: a record that cannot take it changes nothing.
+  }
+  return notes;
+}
+
+// --- Subcommand: link ---
+// Usage:
+//   aidlc-log link --stage <slug> --link <agent> [--repo <repo>]
+//     [--artifact <path>] [--single]
+//       → PIPELINE_LINK_COMPLETED
+//
+// The receipt is emitted only after a declared pipeline link returns. Ordering
+// and attempt freshness are checked under the audit lock so two concurrent
+// conductors cannot advance the same chain; a link the attempt already holds
+// is answered without a second receipt.
+function handleLink(args: string[]): void {
+  const { flags } = parseFlags(args);
+  if (!flags.stage) error("Missing --stage <slug>");
+  if (!flags.link) error("Missing --link <agent>");
+  if (flags.intent || flags.space) {
+    error(
+      "The link command does not accept --intent/--space selectors. Switch to the target workspace first.",
+    );
+  }
+
+  const singleRun = flags.single === "true";
+  const pd = resolveActiveProjectDir(projectDir, singleRun ? flags.stage : undefined);
+  const selection = resolveWorkflowSelection(pd);
+  const space = selection.space;
+  // An isolated run with no work selected has no intent: its rows go to the
+  // record its start went to.
+  const intent = selection.intent ?? undefined;
+  if (!intent && !singleRun) {
+    error("Cannot resolve the active intent for pipeline link logging.");
+  }
+  // The repo the receipt records (none for the project root).
+  let recordedRepo: string | null = null;
+  let alreadyRecorded = false;
+  // What the receipt tells the agent about a codekb stage over many repositories.
+  let receiptNotes: Record<string, unknown> = {};
+
+  try {
+    withAuditLock(pd, () => {
+      const node = loadStageGraphAll().find((stage) => stage.slug === flags.stage);
+      if (node?.mode !== "pipeline") {
+        throw new Error(
+          `Cannot record pipeline link: stage "${flags.stage}" is not mode: pipeline.`,
+        );
+      }
+      const links = pipelineLinks(node, effectiveSupportAgentsForProject(pd, node, { singleRun }));
+      const index = links.indexOf(flags.link);
+      if (index === -1) {
+        throw new Error(
+          `Cannot record pipeline link for "${flags.stage}": "${flags.link}" is not in its declared lead/support chain (${links.join(", ")}).`,
+        );
+      }
+
+      const evidence = pipelineLinkEvidence(pd, node, { singleRun });
+      // With no registered repo, the project root is the one repo, under the
+      // name codekb-path prints. The codekb commands take that name as --repo,
+      // so a receipt reads it as the root too.
+      const rootName = evidence.repos.length === 0 ? codekbRepoName(pd) : null;
+      const repoFlag = flags.repo !== undefined && flags.repo === rootName ? undefined : flags.repo;
+      if (evidence.repos.length > 0) {
+        if (!repoFlag) {
+          throw new Error(
+            `Cannot record pipeline link for "${flags.stage}": this intent records repository identity; pass --repo <repo>.`,
+          );
+        }
+        if (!evidence.repos.includes(repoFlag)) {
+          throw new Error(
+            `Cannot record pipeline link for "${flags.stage}": repo "${repoFlag}" is not registered for this intent (${evidence.repos.join(", ")}).`,
+          );
+        }
+      } else if (repoFlag) {
+        throw new Error(
+          `Cannot record pipeline link for "${flags.stage}": this intent has no registered repo identity; omit --repo.`,
+        );
+      }
+
+      const repo = repoFlag ?? null;
+      recordedRepo = repo;
+      // A link the attempt already holds lands again with no second receipt:
+      // the agent may run a link again for the person's change, and under
+      // Guard Policy relaxed or off a rejection keeps what it holds. A lead
+      // link naming another handoff file is not that link; the handoff checks
+      // below judge it.
+      const handoffLink = flags.stage === "reverse-engineering" && flags.link === node.lead_agent;
+      const held = evidence.receipts.find((receipt) => receipt.link === flags.link && receipt.repo === repo);
+      if (
+        held !== undefined &&
+        (!handoffLink || !flags.artifact ||
+          (held.artifactPath !== null && resolve(pd, flags.artifact) === resolve(pd, held.artifactPath)))
+      ) {
+        alreadyRecorded = true;
+        return;
+      }
+      if (index > 0) {
+        const previous = links[index - 1];
+        const previousCompleted = evidence.receipts.some((receipt) =>
+          receipt.link === previous && receipt.repo === repo
+        );
+        if (!previousCompleted) {
+          throw new Error(
+            `Cannot record pipeline link for "${flags.stage}": "${flags.link}" is out of order; ` +
+              `position ${index + 1}/${links.length} requires current-attempt receipt for "${previous}"` +
+              `${repo ? ` in repo "${repo}"` : ""}.`,
+          );
+        }
+      }
+
+      const fields: Record<string, string> = {
+        Stage: flags.stage,
+        Link: flags.link,
+        Position: `${index + 1}/${links.length}`,
+      };
+      if (handoffLink) {
+        if (!flags.artifact) {
+          throw new Error(
+            "Cannot record reverse-engineering developer link without its handoff file: run " +
+              `\`${pipelineLinkCommand(pd, node, flags.link, repo, singleRun)}\`.`,
+          );
+        }
+        const accepted = developerHandoffPaths(pd, repo);
+        const artifact = resolve(pd, flags.artifact);
+        if (!accepted.includes(artifact)) {
+          throw new Error(
+            `Cannot record reverse-engineering developer link: --artifact must resolve to ${toPosix(relative(pd, accepted[0]))}.`,
+          );
+        }
+        if (!existsSync(artifact)) {
+          throw new Error(
+            `Cannot record reverse-engineering developer link: handoff file does not exist: ${flags.artifact}.`,
+          );
+        }
+        let artifactBytes: Buffer;
+        let artifactMtimeMs: number;
+        try {
+          const guardedArtifact = assertNoSymlinkInChainOrThrow(
+            realpathSync(pd),
+            relative(pd, artifact),
+          );
+          const snapshot = readRegularFileNoFollowOrThrow(
+            guardedArtifact,
+            "reverse-engineering developer handoff",
+            undefined,
+            guardedArtifact,
+            true,
+          );
+          artifactBytes = snapshot.bytes;
+          artifactMtimeMs = snapshot.mtimeMs;
+        } catch (error) {
+          throw new Error(
+            `Cannot record reverse-engineering developer link: handoff file must be a regular file with no symlink path components (${errorMessage(error)}).`,
+          );
+        }
+        const attemptStartedAt = pipelineAttemptStartedAt(
+          pd,
+          flags.stage,
+          { singleRun },
+        );
+        if (
+          attemptStartedAt === "" ||
+          artifactMtimeMs < Date.parse(attemptStartedAt)
+        ) {
+          throw new Error(
+            `Cannot record reverse-engineering developer link: ${toPosix(relative(pd, artifact))} was not written in the current stage attempt.`,
+          );
+        }
+        const previousMtime = latestPipelineLinkArtifactMtime(
+          pd,
+          flags.stage,
+          flags.link,
+          repo,
+          { singleRun },
+        );
+        if (
+          previousMtime !== null &&
+          artifactMtimeMs <= previousMtime
+        ) {
+          throw new Error(
+            `Cannot record reverse-engineering developer link: ${toPosix(relative(pd, artifact))} was not rewritten after its prior pipeline receipt.`,
+          );
+        }
+        // The handoff's text, CRLF read as LF, so a checkout with the other line
+        // endings reads as the same scan.
+        const digest = createHash("sha256")
+          .update(committedTextBytes(artifactBytes))
+          .digest("hex");
+        fields["Artifact Path"] = toPosix(relative(pd, artifact));
+        fields["Artifact SHA256"] = `sha256:${digest}`;
+        fields["Artifact Mtime Ms"] = String(artifactMtimeMs);
+      }
+      if (repo) fields.Repo = repo;
+      if (singleRun) fields.Workflow = `single-stage:${flags.stage}`;
+      emitAudit(pd, "PIPELINE_LINK_COMPLETED", fields, intent, space);
+      if (KNOWN_CODEKB_STAGES.has(node.slug) && !singleRun) receiptNotes = codekbReceiptNotes(pd, node);
+    }, intent, space);
+  } catch (e) {
+    error(errorMessage(e));
+  }
+
+  console.log(JSON.stringify({
+    ...(alreadyRecorded ? { already_recorded: true } : { emitted: "PIPELINE_LINK_COMPLETED" }),
+    stage: flags.stage,
+    link: flags.link,
+    ...(recordedRepo ? { repo: recordedRepo } : {}),
+    ...(singleRun ? { single: true } : {}),
+    ...receiptNotes,
+  }));
+}
+
+// --- Subcommand: review ---
+// Usage:
+//   aidlc-log review --stage <slug> --reviewer <agent> [--unit <u>] --iteration <n> [--person-asked]
+//       → REVIEW_REQUESTED (fires when the conductor dispatches the reviewer;
+//         --person-asked: the conductor read the person's words as asking for it)
+//   aidlc-log review --stage <slug> --reviewer <agent> [--unit <u>] --iteration <n> --verdict <READY|NOT-READY>
+//       → REVIEW_COMPLETED (fires when the conductor reads the reviewer's verdict)
+//
+// The §12a reviewer step is otherwise prose-driven; these tool-actor rows make
+// it observable and let the engine enforce that a reviewer-bearing stage cannot
+// be approved without a terminal REVIEW_COMPLETED (see verifyReviewerPrecondition
+// in aidlc-state.ts). On a per-unit Construction stage the reviewer fires once
+// PER UNIT, so pass --unit; the approve guard requires one review per unit.
+const VALID_VERDICTS = new Set(["READY", "NOT-READY"]);
+
+// A refusal of a review past the cap when the person spoke since it was last
+// requested and the conductor did not say they asked for it: their words decide
+// which way it goes on, so the flag comes first and the usual way on only if
+// they did not ask. `retryWith` is everything that retry needs (the flag, and
+// the next pass when the request named another), so one refusal says it all.
+function unlessPersonAsked(lead: string, rest: string, retryWith: string | null): string {
+  if (retryWith === null) return lead + rest;
+  const asked = `${lead}If the person asked for this review, run the same command again with ${retryWith}.`;
+  return rest === "" ? asked : `${asked} Otherwise ${rest.charAt(0).toLowerCase()}${rest.slice(1)}`;
+}
+
+function reviewBudgetMessage(stage: string, ordinal: number, budget: number, retryWith: string | null = null): string {
+  return unlessPersonAsked(
+    `Cannot request review pass ${ordinal} for "${stage}" because this stage allows ` +
+      `${budget} review pass${budget === 1 ? "" : "es"}. `,
+    budget === 0
+      ? "This stage runs no review in this work: open the approval gate."
+      : budget === 1
+      ? "Do not ask the reviewer again; include the findings in the approval summary for the human."
+      : "Present the unresolved findings at the approval gate for the human instead of starting another review.",
+    retryWith,
+  );
+}
+
+export function reviewRecoverySpentMessage(
+  stage: string,
+  guidance: string | null,
+  autonomousBolt?: {
+    unit: string;
+    slug: string | null;
+    batch: string | null;
+  },
+  requestChangesResetValid = true,
+  retryWith: string | null = null,
+): string {
+  const prefix =
+    `Cannot start another review for "${stage}": the one recovery review was ` +
+    "already used, and this stage's output document changed again afterward. ";
+  if (autonomousBolt) {
+    const slug = autonomousBolt.slug ?? autonomousBolt.unit;
+    const batch = autonomousBolt.batch
+      ? ` batch ${autonomousBolt.batch}`
+      : " the current batch";
+    return unlessPersonAsked(
+      prefix,
+      `Do not put autonomous Unit "${autonomousBolt.unit}" in --claimed and do ` +
+      "not run finalize or merge it. Halt and ask the human whether to restart " +
+      `the Bolt attempt. On an approved retry, return to the main workspace, run ` +
+      `\`aidlc-bolt.ts abort --name "${autonomousBolt.unit}" --slug "${slug}" ` +
+      `--reason "stale review recovery exhausted" --discard\`. After success, ` +
+      "use the retry-discard SAY line in stage-protocol-swarm.md. Then rerun the " +
+      `current \`aidlc-swarm.ts prepare\` step for Unit "${autonomousBolt.unit}" in` +
+      `${batch} with the original base/repo arguments. The fresh Bolt attempt ` +
+      "restores one review allowance without claiming convergence. Do not " +
+      "record a Request Changes decision on the human's behalf.",
+      retryWith,
+    );
+  }
+  return unlessPersonAsked(
+    prefix,
+    (guidance ?? "") +
+      (requestChangesResetValid
+        ? " Only a human Request Changes decision resets the review attempt; do not " +
+          "record that rejection on the human's behalf."
+        : ""),
+    retryWith,
+  );
+}
+
+function reviewRecoveryGuidance(
+  projectDir: string,
+  stateContent: string,
+  stage: string,
+  unit?: string,
+  teamGate?: TeamUnitGateResolution,
+): string {
+  try {
+    return recoveryGuidance(projectDir, stateContent, stage, {
+      ...(unit ? { unit } : {}),
+      ...(teamGate ? { teamGate } : {}),
+    });
+  } catch {
+    return (
+      `Restart this stage cleanly with ${entrySkillInvocation()} --stage ${stage}, then confirm ` +
+      "its summary and review the finished output again."
+    );
+  }
+}
+
+function reviewSummaryEvidenceMessage(stage: string, message: string): string {
+  const cause = message.replace(
+    /^Refusing to (?:complete|continue) "[^"]+"(?: for unit "[^"]+")?:\s*/,
+    "",
+  );
+  return `Cannot start review for "${stage}": ${cause}`;
+}
+
+function reviewRecoveryAlreadyRequestedMessage(
+  stage: string,
+  iteration: number,
+  guidance: string,
+  requestChangesResetValid: boolean,
+  retryWith: string | null = null,
+): string {
+  return unlessPersonAsked(
+    `Cannot request another recovery review for "${stage}" because one already exists ` +
+      "in this review attempt. ",
+    `If the reviewer has not returned, retry iteration ${iteration} ` +
+      `with --retry-pending. If its verdict was recorded, ${guidance}` +
+      (requestChangesResetValid
+        ? " Only a human Request Changes decision resets the review attempt; do not record " +
+          "that rejection on the human's behalf."
+        : ""),
+    retryWith,
+  );
+}
+
+// Under relaxed or off a change after the review is accepted and no further
+// review is owed (stage-protocol-reviewer.md 12a), so a review past the one
+// recovery names the work's own next step.
+function reviewChangeAcceptedMessage(
+  stage: string,
+  next: string,
+  complete: string | null,
+  retryWith: string | null,
+): string {
+  return unlessPersonAsked(
+    `Cannot start another review for "${stage}": its review receipt stands and the change is accepted, ` +
+      "so no further review is owed. ",
+    `${complete === null ? "Run" : `Record this Unit's completion with \`${complete}\`, then run`} ` +
+      `\`${next}\` and follow the step it returns.`,
+    retryWith,
+  );
+}
+
+// A Unit's completion while its step is still open on the stage: the step a
+// Unit's last review hands on before `next`.
+function openUnitCompletionCommand(pd: string, stage: string, unit: string | undefined): string | null {
+  if (unit === undefined) return null;
+  const open = unitOpenCheckpoints(pd, stage).some((entry) => entry.unit === unit && entry.state === "in-progress");
+  return open ? aidlcDispatcherInvocation(`state unit complete --stage ${stage} --unit ${quoteCommandArgument(unit)}`) : null;
+}
+
+// `changeNotices`: lines this request already recorded as said (a change
+// accepted under relaxed or off), carried on its refusal so they reach the person.
+class ReviewRefusal extends Error {
+  constructor(message: string, readonly changeNotices: readonly string[] = []) {
+    super(message);
+  }
+}
+
+function refuseReview(message: string, changeNotices: readonly string[] = []): never {
+  throw new ReviewRefusal(message, changeNotices);
+}
+
+function refuseReviewGuard(
+  projectDir: string,
+  refusal: GuardRefusal,
+  attempt: GuardAttemptState,
+  resources: string[] = [],
+): never {
+  refuseReview(guardRefusalOutput(projectDir, refusal, attempt, resources));
+}
+
+// One finding of the engine-owned list as a review record stores it.
+function derivedRecordFinding(
+  finding: ReviewFinding,
+): ReviewRecordDerivedFinding {
+  return {
+    id: finding.id,
+    severity: finding.severity,
+    location: finding.location,
+    finding: finding.finding,
+    required_action: finding.requiredAction,
+    status: finding.status,
+    ...(finding.decidedAtSeverity !== undefined
+      ? { decided_at_severity: finding.decidedAtSeverity }
+      : {}),
+    ...(finding.reviewerNote !== undefined
+      ? { reviewer_note: finding.reviewerNote }
+      : {}),
+    ...(finding.notRechecked !== undefined
+      ? { not_rechecked: finding.notRechecked }
+      : {}),
+    ...(finding.resolvedByReviewer !== undefined
+      ? { resolved_by_reviewer: finding.resolvedByReviewer }
+      : {}),
+    ...(finding.resolvedInReview !== undefined
+      ? { resolved_in_review: finding.resolvedInReview }
+      : {}),
+    ...(finding.earlierDecision !== undefined
+      ? { earlier_decision: finding.earlierDecision }
+      : {}),
+    ...(finding.reopenedReason !== undefined
+      ? { reopened_reason: finding.reopenedReason }
+      : {}),
+    ...(finding.relatedFindingId !== undefined
+      ? { related_finding_id: finding.relatedFindingId }
+      : {}),
+    ...(finding.introducedInReview !== undefined
+      ? { introduced_in_review: finding.introducedInReview }
+      : {}),
+  };
+}
+
+/**
+ * The main workspace's intent record when `projectDir` is this Unit's swarm
+ * worktree (swarmWorkerWorktreeMeta), else null. The verdict tidies a record
+ * the conductor wrote; the read grants nothing.
+ */
+function swarmWorktreeParentRecord(projectDir: string, unit: string | undefined): string | null {
+  const meta = swarmWorkerWorktreeMeta(projectDir);
+  if (meta === null || meta.swarmUnit !== unit) return null;
+  return join(meta.parent, meta.intentRecord);
+}
+
+/**
+ * The main workspace's reviewer dispatch record, removed when `projectDir` is a
+ * swarm Unit's worktree and the record names this review (same reviewer, stage
+ * and unit). Best effort: the verdict stands either way.
+ */
+function removeParentReviewerDispatch(
+  projectDir: string,
+  review: { reviewer?: string; stage?: string; unit?: string },
+): void {
+  try {
+    const recordRoot = swarmWorktreeParentRecord(projectDir, review.unit);
+    if (recordRoot === null) return;
+    const path = join(engineDirFor(recordRoot), "reviewer-dispatch.json");
+    if (!existsSync(path)) return;
+    const record = JSON.parse(readFileSync(path, "utf-8")) as { reviewer?: unknown; stage?: unknown; unit?: unknown };
+    if (record.reviewer === review.reviewer && record.stage === review.stage && record.unit === review.unit) {
+      rmSync(path, { force: true });
+    }
+  } catch {
+    // Unreadable provenance or record: leave it to the hook's TTL.
+  }
+}
+
+// A stage whose review is part of its work going on: in progress, at its
+// gate, or being revised. A review of a stage already approved (the person
+// asked for another look) is not, so it never marks the turn as owing work.
+const REVIEW_IN_FLIGHT: ReadonlySet<string> = new Set(["in-progress", "awaiting-approval", "revising"]);
+
+function stageBox(state: string, stage: string): string | undefined {
+  return parseCheckboxes(state).find((row) => row.slug === stage)?.state;
+}
+
+// The agent's next step after a stage's verdict is recorded (#2400). The
+// verdict used to come back with no step, so an agent that took it as the end
+// of the work ended its turn before the approval gate, and on a host that
+// ignores the Stop hook (Kiro IDE) nothing put it back on track. Whether
+// another pass follows is the engine's own terminal rule (terminalReviewVerdict),
+// whether the stage has the learnings step is the run-stage's own rule
+// (learningsRitualRuns), and the gate's command is the report the stage
+// protocol names. A review the person asked for past the budget (even with
+// reviews off) and the one bounded stale-receipt recovery are one-off passes:
+// their verdict is terminal whatever the class. A Unit's last pass hands on to
+// `next`, which names its route's step, after the Unit's completion when it
+// is still open on the stage (a team's route hands the body back without it).
+// A unit-major walk keeps a later per-Unit stage's own box pending, so for a
+// Unit a pending stage is in flight too. An isolated single-stage run, a Unit
+// in a swarm Bolt or a wave (their own loop goes on), an autonomous
+// Construction gate and a stage no longer in flight keep the step their own
+// directive names: no note. `next` names the same step between the verdict
+// and the gate's report (aidlc-orchestrate.ts finishedReviewStep), where the
+// person's words go with the step `next` hands (their branch would name `next`
+// again) and a learnings question answered since the stage started (since the
+// Request Changes, for a stage being revised) is not asked again. Whether the
+// step asks one is the agent's reading of the person's words, so the note names
+// it beside the gate's report, and either may end the turn.
+export function reviewVerdictStep(
+  pd: string,
+  flags: Record<string, string>,
+  verdict: string,
+  iteration: number,
+  context: {
+    state: string;
+    node: { slug: string; phase: string; for_each?: string; mode?: string; reviewer_max_iterations?: number };
+    reviewClass: ReviewClass | null;
+    autonomousCandidate: boolean;
+    attempt: { boltStarted: boolean };
+  },
+  selection: { intent: string | null; space: string },
+  request: { personAsked: boolean; recovery: boolean },
+  fromNext: { learningsAnswered: boolean } | null = null,
+): string | null {
+  const { state, node, reviewClass } = context;
+  const unit = flags.unit;
+  const oneOff = request.personAsked || request.recovery;
+  if (flags.single === "true" || reviewClass === null) return null;
+  if (unit !== undefined && context.autonomousCandidate && context.attempt.boltStarted) return null;
+  if (unit !== undefined && waveEligible(node) && getField(state, "Construction Iteration")?.trim() !== "unit-major") {
+    return null;
+  }
+  if (reviewClass === "none" && !oneOff) return null;
+  if (node.phase === "initialization") return null;
+  const box = stageBox(state, flags.stage);
+  if (box === undefined || !(REVIEW_IN_FLIGHT.has(box) || (unit !== undefined && box === "pending"))) return null;
+  const terminal = oneOff || terminalReviewVerdict(
+    verdict,
+    String(iteration),
+    reviewClass,
+    node.reviewer_max_iterations ?? 2,
+  ) !== null;
+  // What the person said while the reviewer worked comes first
+  // (stage-protocol-reviewer.md): `next` names the step, with their words.
+  if (
+    fromNext === null &&
+    personSpokeSinceReviewRequest(pd, flags.stage, flags.reviewer, unit, selection.intent, selection.space)
+  ) {
+    return reviewVerdictNote({ kind: "person-wrote", next: aidlcDispatcherInvocation("orchestrate next") });
+  }
+  if (!terminal) {
+    if (box === "awaiting-approval") return null;
+    return reviewVerdictNote({
+      kind: "next-pass",
+      request: renderReviewRequestCommand({
+        projectDir: pd,
+        stage: flags.stage,
+        reviewer: flags.reviewer,
+        ...(unit !== undefined ? { unit } : {}),
+        iteration: iteration + 1,
+      }),
+    });
+  }
+  if (unit !== undefined) {
+    const complete = openUnitCompletionCommand(pd, flags.stage, unit);
+    return reviewVerdictNote({
+      kind: "unit",
+      next: aidlcDispatcherInvocation("orchestrate next"),
+      ...(complete !== null ? { complete } : {}),
+    });
+  }
+  if (node.phase === "construction" && isAutonomousConstructionGate(state, node, pd)) return null;
+  // A recovery pass re-checked an invalidated review, and a backward jump began
+  // this attempt: either way the gate's brief is the stale one.
+  const stale = request.recovery ||
+    backwardJumpBoundary(reviewInvalidationAttemptView(readAuditShardEvents(pd), flags.stage).floor) !== undefined;
+  const brief = stageReviewBriefCommand(flags.stage, stale ? "stale" : box === "revising" ? "revision" : "first");
+  const learnings = fromNext?.learningsAnswered !== true &&
+    learningsRitualRuns(ceremonyPolicyValues(getField(state, "Scope"), state).learnings);
+  if (box === "in-progress") {
+    return reviewVerdictNote({
+      kind: learnings ? "learnings" : "gate",
+      report: stageGateReportCommand(flags.stage, "awaiting-approval"),
+      summary: true,
+      brief,
+    });
+  }
+  // The one recovery pass at an open gate the person already answered: the
+  // approval refused for the stale review stands on their reply, which nothing
+  // has used, so the agent records it rather than asking again. A reply in
+  // another chat is not named: the agent here never saw its words. A pass with
+  // a finding they have not seen (a NOT-READY one, or a READY one with a minor
+  // point) brings it to them at the gate, with the brief.
+  const reviewed = loadStageGraphAll().find((stage) => stage.slug === flags.stage);
+  const unseen = () => reviewed === undefined || readReviewArtifactContexts(pd, reviewed).some((context) =>
+    context.findings.some((finding) => finding.status === "New" || finding.status === "Unresolved"));
+  if (request.recovery && box === "awaiting-approval" && verdict === "READY" &&
+    personRepliedSinceGateShown(pd, { stage: flags.stage }) === true && !unseen()) {
+    const replies = personsGateReply(pd, resolveInvokingSessionId(pd), flags.stage).replies;
+    if (replies.length > 0) {
+      const report = `orchestrate report --stage ${quoteCommandArgument(flags.stage)}`;
+      return reviewVerdictNote({
+        kind: "reply-stands",
+        stage: flags.stage,
+        replies,
+        approve: aidlcDispatcherInvocation(`${report} --result approved --user-input "Approve" --message <id>`),
+        reject: aidlcDispatcherInvocation(`${report} --result rejected --user-input "Request Changes" --message <id>`),
+        report: stageGateReportCommand(flags.stage, "awaiting-approval"),
+        brief,
+      });
+    }
+  }
+  return reviewVerdictNote({
+    kind: box === "revising" && learnings ? "learnings" : "gate",
+    report: stageGateReportCommand(flags.stage, box === "revising" ? "revised" : "awaiting-approval"),
+    summary: false,
+    brief,
+  });
+}
+
+// completionChecksStep (aidlc-state.ts, the one owner) for the review request,
+// run as the state tool's own command: that tool's module graph cannot be
+// required here. Sensors off asks nothing of it; a failure holds nothing.
+function completionChecksHold(pd: string, stage: string, unit: string | undefined, request: string): string | null {
+  const state = readStateFile(pd);
+  if (resolveCeremony("sensors", getField(state, "Scope"), state).value === "off") return null;
+  const [command, ...args] = aidlcEngineCommand(
+    "state",
+    ["completion-checks", stage, ...(unit ? ["--unit", unit] : []), "--hand-off", "review", "--again", request, "--project-dir", pd],
+    fileURLToPath(new URL("./aidlc-state.ts", import.meta.url)),
+  );
+  const result = spawnSync(command, args, { encoding: "utf-8", env: { ...process.env, AIDLC_PROJECT_DIR: pd } });
+  try {
+    const line = (result.stdout ?? "").split(/\r?\n/).findLast((entry) => entry.startsWith("{"));
+    const reply = JSON.parse(line ?? "{}") as { held?: unknown; message?: unknown };
+    return reply.held === true && typeof reply.message === "string" ? reply.message : null;
+  } catch {
+    return null;
+  }
+}
+
+function handleReview(args: string[]): void {
+  const { flags } = parseFlags(args);
+  if (!flags.stage) error("Missing --stage <slug>");
+  if (!flags.reviewer) error("Missing --reviewer <agent>");
+  if (flags.intent || flags.space) {
+    error(
+      "The review command does not accept --intent/--space selectors. Switch to the target workspace first.",
+    );
+  }
+
+  const pd = resolveActiveProjectDir(projectDir, flags.stage);
+  if (flags.unit) validateLiveUnitScope(pd, flags.unit);
+  const selection = resolveWorkflowSelection(pd);
+  const space = selection.space;
+  // An isolated run with no work selected has no intent: its review records
+  // in the space's own record, where its start is.
+  const intent = selection.intent ?? undefined;
+  if (!intent && flags.single !== "true") {
+    error("Cannot resolve the active intent for review logging.");
+  }
+  // A stage's own review of work no longer in flight is not the stage's work
+  // going on: it leaves no engine mark (a Unit's review and an isolated run
+  // keep their own flow's).
+  if (!flags.unit && flags.single !== "true") {
+    const box = stageBox(readStateFile(pd, intent, space), flags.stage);
+    if (box === undefined || !REVIEW_IN_FLIGHT.has(box)) stageWorkRow = false;
+  }
+  const fields: Record<string, string> = {
+    Stage: flags.stage,
+    Reviewer: flags.reviewer,
+  };
+  if (flags.unit) {
+    fields.Unit = flags.unit;
+    Object.assign(fields, claimAttemptFields(pd, flags.unit));
+  }
+  if (flags.single === "true") fields.Workflow = `single-stage:${flags.stage}`;
+  const retryPending = flags["retry-pending"] === "true";
+
+  const loadContext = (
+    scanReceipts: boolean,
+    enforceAdmissibility = true,
+  ) => {
+    const state = intent ? readStateFile(pd, intent, space) : "";
+    const node = loadStageGraphAll().find((stage) => stage.slug === flags.stage);
+    if (!node?.reviewer) {
+      refuseReview(`Cannot record review: stage "${flags.stage}" has no declared reviewer.`);
+    }
+    if (!node.review_artifact) {
+      refuseReview(
+        `Cannot record review: stage "${flags.stage}" has no declared review_artifact.`,
+      );
+    }
+    if (flags.reviewer !== node.reviewer) {
+      refuseReview(
+        `Cannot record review for "${flags.stage}": reviewer "${flags.reviewer}" ` +
+          `does not match the declared reviewer "${node.reviewer}".`,
+      );
+    }
+    if (flags.unit && node.for_each !== "unit-of-work") {
+      refuseReview(`Stage "${flags.stage}" is not per-unit; remove --unit.`);
+    }
+    const autonomousCandidate =
+      flags.unit !== undefined && isAutonomousSwarmStage(pd, state, node);
+    const unitResolution =
+      node.for_each === "unit-of-work" ? resolveBoltDag(pd, intent, space) : null;
+    const attemptWindow = reviewAttemptWindow(pd, state, node);
+    const attempt = reviewAttemptAccounting(
+      pd,
+      attemptWindow,
+      state,
+      node,
+      flags.reviewer,
+      flags.unit,
+      fields.Workflow,
+      {
+        eventFilter: (row) =>
+          reviewAttemptEventMatchesCurrentClaim(
+            pd,
+            state,
+            flags.unit,
+            row,
+          ),
+      },
+    );
+    const mergedBoltUnits = attemptWindow.mergedBoltUnits;
+    if (enforceAdmissibility && flags.unit) {
+      const resolution = unitResolution ?? resolveBoltDag(pd, intent, space);
+      if (resolution.state === "malformed") {
+        refuseReview(
+          `Cannot record review for "${flags.stage}" unit "${flags.unit}": the authoritative ` +
+            `unit DAG is ${resolution.reason} (${resolution.detail}). Fix ` +
+            "unit-of-work-dependency.md before recording a per-unit review.",
+        );
+      }
+      if (
+        resolution.state === "none" &&
+        !attempt.boltStarted &&
+        !attemptWindow.mergedBoltUnits.has(flags.unit)
+      ) {
+        refuseReview(
+          `Cannot record review for "${flags.stage}" unit "${flags.unit}": no authoritative ` +
+            "unit DAG exists and no matching active or merged Bolt attempt was found. Run " +
+            `\`aidlc-bolt.ts start --name "${flags.unit}" --batch 1\` before retrying this ` +
+            "per-unit review, or remove --unit and record a stage-level no-DAG review.",
+        );
+      }
+      if (resolution.state === "ok" && !resolution.units.includes(flags.unit)) {
+        refuseReview(
+          `Cannot record review for "${flags.stage}" unit "${flags.unit}": it is not present ` +
+            `in the authoritative unit DAG (${resolution.units.join(", ")}).`,
+        );
+      }
+      if (
+        resolution.state === "ok" &&
+        filterProducesByKind(
+          node.produces_kinds,
+          node.produces ?? [],
+          resolution.unitKinds?.get(flags.unit) ?? null,
+        ).length === 0
+      ) {
+        refuseReview(
+          `Cannot record review for "${flags.stage}": unit "${flags.unit}" has no applicable required outputs for its kind.`,
+        );
+      }
+      if (unitSkippedUnits(pd, flags.stage, readAuditShardEvents(pd, intent, space), state).has(flags.unit)) {
+        refuseReview(
+          `Cannot record review for "${flags.stage}": unit "${flags.unit}" was skipped for this stage, so it has nothing to review.`,
+        );
+      }
+    }
+    const declared = node.review_class ?? "adversarial";
+    if (attempt.ambiguity !== null) {
+      refuseReview(
+        `Cannot record review for "${flags.stage}": ${attempt.ambiguity} makes the current review attempt chronology ambiguous. Record a fresh stage/jump boundary, then request the review again.`,
+      );
+    }
+    let reviewClass: ReviewClass | null = null;
+    let budget: number | null = null;
+    if (autonomousCandidate && attempt.boltStarted) {
+      reviewClass = declared;
+      budget =
+        reviewClass === "advisory"
+          ? 1
+          : node.reviewer_max_iterations ?? 2;
+    } else {
+      try {
+        reviewClass = resolveReviewClass(
+          declared,
+          getField(state, "Scope") ?? "",
+          state,
+        );
+        if (reviewClass === "none") budget = 0;
+        else if (reviewClass === "advisory") budget = 1;
+        else budget = node.reviewer_max_iterations ?? 2;
+      } catch {
+        // Class resolution fails open; ordinal enforcement remains active.
+      }
+    }
+    // Receipt freshness is needed only while minting REVIEW_REQUESTED (to
+    // classify bounded stale-receipt recovery). REVIEW_COMPLETED consumes only
+    // node + attempt and then performs its one authoritative source-state walk
+    // while stamping; scanning here would double-walk on every re-review.
+    const receipts =
+      !scanReceipts || reviewClass === null
+        ? null
+        : freshReviewReceipts(pd, state, node, {
+            reviewClass,
+            attemptWindow,
+            selection: { intent, space },
+          });
+    const requireRequiredArtifacts =
+      resolveProjectFlag("AIDLC_SKIP_ARTIFACT_GUARD", process.env, pd) !== "1" &&
+      !(
+        unitResolution !== null &&
+        unitResolution.state !== "ok" &&
+        flags.unit === undefined &&
+        mergedBoltUnits.size === 0
+      );
+    return {
+      state,
+      node,
+      attempt,
+      budget,
+      reviewClass,
+      receipts,
+      autonomousCandidate,
+      requireRequiredArtifacts,
+      unitResolution,
+      mergedBoltUnits,
+    };
+  };
+
+  // `recordCheckouts`: a fresh request records a checkout one of the Unit's
+  // claims lies in where the source walk does not reach, before the binding,
+  // so this review binds it; a retried request keeps the boundary it had.
+  const stampRequestedSourceBinding = (
+    node: ReturnType<typeof loadStageGraphAll>[number],
+    recordCheckouts = false,
+  ): void => {
+    if (!node.workspace_requires) return;
+    if (
+      recordCheckouts &&
+      flags.unit !== undefined &&
+      node.for_each === "unit-of-work" &&
+      flags.single !== "true"
+    ) {
+      const recorded = recordUnitClaimCheckouts(pd, flags.stage as string, flags.unit as string);
+      if (recorded.length > 0) {
+        fields["Checkouts Recorded"] = recorded.map((checkout) => `${checkout.label} (${checkout.path})`).join(", ");
+      }
+    }
+    const sourceState = workspaceSourceState(pd, intent, space);
+    fields["Source Fingerprint"] =
+      sourceState?.fingerprint ?? UNBINDABLE_FINGERPRINT;
+    // Keep the listing behind that fingerprint, as Plan Approval keeps its
+    // own, so a change after the review can be told to the person as paths.
+    if (sourceState !== null) writeWorkspaceSourceSnapshot(pd, flags.stage as string, sourceState);
+    const bindsUnitSource =
+      flags.unit !== undefined &&
+      node.for_each === "unit-of-work" &&
+      flags.single !== "true";
+    if (!bindsUnitSource) return;
+    const manifest = readUnitSourceManifest(
+      pd,
+      flags.stage as string,
+      flags.unit as string,
+    );
+    if (!manifest.ok) {
+      const manifestPath = `${relativeRecordDir(pd, intent, space) ?? "aidlc"}/construction/${flags.unit}/${flags.stage}/source-manifest.json`;
+      refuseReview(
+        `Cannot record REVIEW_REQUESTED for "${flags.stage}": ${unitManifestRefusal(
+          flags.unit as string,
+          manifestPath,
+          manifest,
+          "Write the manifest listing every application-source path the reviewer will inspect, then dispatch the review.",
+        )}`,
+      );
+    }
+    fields["Unit Source Fingerprint"] =
+      sourceState === null
+        ? UNBINDABLE_FINGERPRINT
+        : writeUnitSourceSnapshot(
+            pd,
+            flags.stage as string,
+            flags.unit as string,
+            sourceState.listing,
+            manifest,
+            manifest.rawBytesSha256,
+          );
+  };
+
+  const mintReviewRequestId = (): string =>
+    `review:${randomBytes(16).toString("hex")}`;
+  // The reviewer writes its review into this slot; the verdict consumes it into
+  // the record. `reviewerPath` is the path the reviewer is handed. The reviewer
+  // runs in the session's folder, which for a side-by-side Unit's worktree is
+  // the project's main folder, so there it is absolute: a project-relative path
+  // put the review in the main folder's record, where no verdict reads it.
+  const reviewSlot = (
+    floor: string,
+    iteration: number,
+    requestId: string | null,
+  ): {
+    draftRelative: string;
+    reviewerPath: string;
+    draftRelativeToRecord: string;
+    recordRelative: string;
+  } => {
+    const record = runRecordDir(pd);
+    if (record === null) refuseReview("Cannot resolve the active intent record.");
+    const attemptId = reviewAttemptId(floor);
+    const draft = reviewDraftRelativePath(flags.stage as string, flags.unit, attemptId, iteration, requestId);
+    const draftPath = join(record, ...draft.split("/"));
+    const draftRelative = toPosix(relative(pd, draftPath));
+    return {
+      draftRelative,
+      reviewerPath: swarmWorkerWorktreeMeta(pd) === null ? draftRelative : toPosix(draftPath),
+      draftRelativeToRecord: draft,
+      recordRelative: reviewRecordRelativePath(flags.stage as string, flags.unit, attemptId, iteration),
+    };
+  };
+
+  // Requests and terminal verdicts use one summary admission contract. In
+  // particular, a Unit's gate state may differ from the global stage checkbox,
+  // and relaxed acceptance must be recorded rather than silently continued.
+  const admitReviewSummary = (
+    context: ReturnType<typeof loadContext>,
+    action: "review-request" | "review-verdict",
+    notices: string[],
+  ) => {
+    const { state, node, attempt, budget, receipts, requireRequiredArtifacts, unitResolution, mergedBoltUnits } = context;
+    const teamGate = teamUnitGateStatus(pd, state, node.slug, flags.unit);
+    // With no work, the run's own recorded scope sets its ceremony, as
+    // `report --single` reads it.
+    const summaryEvidence = checkSummaryConfirmationEvidence(pd, node, {
+      ...(intent ? { stateContent: state } : { stateContent: null, scope: singleStageAttemptScope(pd, node.slug) }),
+      unit: flags.unit,
+      workflow: fields.Workflow,
+      selection: { intent, space },
+    });
+    // Verdict success already takes an authoritative artifact/source snapshot.
+    // Only a refusal needs the additional pending-request view for its remedies.
+    const pendingStatus = action === "review-request" || !summaryEvidence.ok
+      ? pendingReviewRequestStatus(pd, node, flags.unit, attempt, {
+          requireRequiredArtifacts,
+          boltDag: unitResolution ?? undefined,
+          mergedBoltUnits,
+          single: flags.single === "true",
+        })
+      : null;
+    // A review of a Unit whose code or documents changed after its review,
+    // with checkpoints on, re-checks that change: it is reviewed, not accepted.
+    const recheck = flags.unit !== undefined &&
+      getField(state, "Construction Checkpoints") === "enabled";
+    if (receipts?.changeControlRead || summaryEvidence.changeControlRead) {
+      governedChangeControl(pd, state, { intent, space });
+      notices.push(...recordAcceptedChanges(pd, [
+        ...(receipts?.acceptedChanges ?? []).filter((change) => !recheck || change.unit !== flags.unit),
+        ...(summaryEvidence.ok ? summaryEvidence.acceptedChanges ?? [] : []),
+      ], { intent, space }));
+    }
+    if (!summaryEvidence.ok) {
+      const message = action === "review-request"
+        ? reviewSummaryEvidenceMessage(flags.stage, summaryEvidence.message)
+        : `Cannot record a review verdict: ${summaryEvidence.message}`;
+      const snapshot = guardAttemptState(pd, state, node, {
+        ...(flags.unit ? { unit: flags.unit } : {}),
+        ...(flags.single === "true" ? { single: true } : {}),
+        ...(receipts ? { receipts } : {}),
+        summaryCoverage: summaryEvidence.summaryCoverage,
+        reviewBudget: budget,
+        pendingStatus,
+        accounting: attempt,
+        requireRequiredArtifacts,
+      });
+      const evaluated = evaluateGuardRefusal({
+        code: summaryEvidence.refusal?.code ?? "SUMMARY_EVIDENCE_INVALID",
+        blockedAction: action,
+        stage: flags.stage,
+        ...(flags.unit ? { unit: flags.unit } : {}),
+        projectDir: pd,
+        stateContent: state,
+        invariant: summaryEvidence.refusal?.invariant ??
+          "A review requires current human-backed summary authorization and output descent.",
+        userMessage: message,
+        attempt: snapshot.attempt,
+        humanAuthority: humanAuthorityState(pd),
+        ...(teamGate ? { teamGate } : {}),
+        summary: { stage: node, isolated: flags.single === "true" },
+      });
+      const refusal = summaryEvidence.refusal === undefined
+        ? evaluated
+        : {
+            ...summaryEvidence.refusal,
+            blockedAction: action,
+            state: evaluated.state,
+            userMessage: message,
+            remedies: evaluated.remedies,
+          };
+      refuseReviewGuard(pd, refusal, snapshot.attempt, snapshot.resources);
+    }
+    return { teamGate, pendingStatus };
+  };
+
+  // REVIEW_REQUESTED owns its ordinal: require a positive integer, count prior
+  // requests in the current attempt, and append under the same lock. This closes
+  // duplicate/missing-label bypasses and makes concurrent requests serialize.
+  if (flags.verdict === undefined) {
+    if (!flags.iteration || !/^[1-9][0-9]*$/.test(flags.iteration)) {
+      error("Starting a review requires --iteration <positive integer>.");
+    }
+    // Construction walks its Units from Units Generation's units block, so a
+    // block the engine cannot read is fixed before the review, while the
+    // document can still change. Writing it is the agent's step, so it comes
+    // back as a print with the same request to run again: a failed command
+    // would have the agent tell the person a step to take.
+    if (flags.stage === "units-generation" && flags.single !== "true") {
+      const dag = resolveBoltDag(pd, intent, space);
+      if (dag.state === "malformed") {
+        const again = renderReviewRequestCommand({
+          projectDir: pd,
+          stage: flags.stage,
+          reviewer: flags.reviewer,
+          iteration: Number(flags.iteration),
+          ...(retryPending ? { retryPending: true } : {}),
+        });
+        console.log(JSON.stringify({
+          kind: "print",
+          message: `${unitsBlockRepair(dag.reason, dag.detail)} Then run \`${again}\` again.`,
+        }));
+        return;
+      }
+    }
+    // The stage's checks run on its documents before their review, so the
+    // agent fixes its own slips first. A review the person asked for runs at
+    // once, and a retry repeats a request already made.
+    if (!retryPending && flags.single !== "true" && flags["person-asked"] !== "true") {
+      const held = completionChecksHold(pd, flags.stage, flags.unit, renderReviewRequestCommand({
+        projectDir: pd,
+        stage: flags.stage,
+        reviewer: flags.reviewer,
+        ...(flags.unit ? { unit: flags.unit } : {}),
+        iteration: Number(flags.iteration),
+      }));
+      if (held !== null) {
+        console.log(JSON.stringify({ kind: "print", message: held }));
+        return;
+      }
+    }
+    const iteration = Number(flags.iteration);
+    fields.Iteration = flags.iteration;
+    let retried = false;
+    let upgraded = false;
+    let recovery: "stale-receipt" | undefined;
+    let replaces: string | null = null;
+    let requestId: string | null = null;
+    let reviewFile: string | null = null;
+    let workspaceStage = false;
+    const requestChangeNotices: string[] = [];
+    // Open the reviewer's slot for this request: any draft an earlier dispatch of
+    // the same iteration left behind is not this dispatch's review.
+    const openReviewDraftSlot = (floor: string): void => {
+      const slot = reviewSlot(floor, iteration, requestId);
+      // Never through a symlinked `.aidlc-engine/reviews`: a redirected slot is not
+      // this record's, so the request refuses instead of clearing a path
+      // outside the intent record.
+      try {
+        removeRecordFileNoFollow(runRecordDir(pd) as string, slot.draftRelativeToRecord);
+        // The slot's folder exists before the reviewer runs, so the review is
+        // one plain file write with no folder to make first.
+        const draftTarget = recordFileTargetOrThrow(runRecordDir(pd) as string, slot.draftRelativeToRecord);
+        mkdirSync(dirname(draftTarget), { recursive: true });
+        recordFileTargetOrThrow(runRecordDir(pd) as string, slot.draftRelativeToRecord);
+      } catch (e) {
+        refuseReview(
+          `Cannot start review for "${flags.stage}": the review slot ` +
+            `${slot.draftRelativeToRecord} cannot be opened (${errorMessage(e)}).`,
+        );
+      }
+      reviewFile = slot.reviewerPath;
+      // The request names its own review file, so its verdict reads that file
+      // only; a request recorded without one predates per-request files.
+      fields["Review File"] = slot.draftRelativeToRecord;
+    };
+    try {
+      withAuditLock(pd, () => {
+        const context = loadContext(true, !retryPending);
+        const {
+          state,
+          node,
+          attempt,
+          budget,
+          receipts,
+          autonomousCandidate,
+          requireRequiredArtifacts,
+          unitResolution,
+          mergedBoltUnits,
+        } = context;
+        workspaceStage = node.workspace_requires === true;
+        const { pendingStatus, teamGate } = admitReviewSummary(context, "review-request", requestChangeNotices);
+        const expected = attempt.requestCount + 1;
+        const sameSourceRecoveryScope =
+          receipts?.newestSourceUnit === (flags.unit ?? null);
+        const sourceScopeStale =
+          sameSourceRecoveryScope && receipts?.sourceStale === true;
+        // A Unit whose reviewed work changed, whether the Guard Policy made its
+        // review stale or accepted the change, gets the same one recovery pass.
+        const artifactScopeStale =
+          receipts !== null &&
+          (flags.unit
+            ? receipts.unitStale.has(flags.unit) ||
+              receipts.acceptedChanges.some((change) => change.unit === flags.unit)
+            : receipts.stageStale);
+        // With Construction checkpoints on, a review of a Unit whose reviewed
+        // code changed outside any review re-checks that change: it is the
+        // recovery pass.
+        const checkpointUnit = receipts !== null && flags.unit !== undefined &&
+          getField(state, "Construction Checkpoints") === "enabled";
+        const unitSourceScopeStale = checkpointUnit && !artifactScopeStale &&
+          receipts.unitSourceMoved.has(flags.unit as string);
+        const scopeStale =
+          process.env.AIDLC_SKIP_SOURCE_FRESHNESS !== "1" &&
+          fields.Workflow === undefined &&
+          receipts !== null &&
+          (sourceScopeStale || artifactScopeStale || unitSourceScopeStale);
+        const sourceRecoverySpent =
+          sourceScopeStale &&
+          (receipts?.sourceRecoverySpent === true ||
+            receipts?.sourceStaleProgress?.recoverySpent === true);
+        // The person's approval of the Unit or a new attempt they start for it
+        // since its re-check opens a fresh one (unitRecheckReopened says where).
+        const recoverySpent =
+          !(receipts !== null && flags.unit !== undefined && receipts.unitRecheckReopened.has(flags.unit)) &&
+          (attempt.recoverySpent || sourceRecoverySpent);
+        // A review the person asked for is never refused for want of passes:
+        // the conductor says they asked (--person-asked) and names the message
+        // they asked in (--message, proved), sent since the review was last
+        // requested. The lift goes on the row.
+        let spoke: boolean | null = null;
+        const personSpoke = (): boolean =>
+          (spoke ??= personSpokeSinceReviewRequest(pd, flags.stage as string, flags.reviewer as string, flags.unit, intent, space));
+        const saysPersonAsked = flags["person-asked"] === "true";
+        let asked: boolean | null = null;
+        const askedInNamedMessage = (): boolean => {
+          if (asked === null) {
+            if (!saysPersonAsked || flags.message === undefined) {
+              asked = false;
+            } else {
+              const proof = proveMessage(pd, flags.message, "request", { request: true });
+              if ("refusal" in proof) error(proof.refusal);
+              asked = messageSinceReviewRequest(
+                pd, flags.stage as string, flags.reviewer as string, flags.unit, proof.message, intent, space,
+              );
+            }
+          }
+          return asked;
+        };
+        let lifted = false;
+        const boundStands = (): boolean => {
+          if (!askedInNamedMessage()) return true;
+          lifted = true;
+          return false;
+        };
+        const personMayHaveAsked = (): boolean => !askedInNamedMessage() && personSpoke();
+        // `inPlaceOf` names a flag the retry drops: kept, it would land here again.
+        const personAskedRetry = (inPlaceOf?: string): string | null =>
+          !personMayHaveAsked()
+            ? null
+            : `--person-asked --message <id>${iteration === expected ? "" : ` --iteration ${expected}`}` +
+              `${inPlaceOf === undefined ? "" : ` in place of ${inPlaceOf}`}${messageFill(pd)}`;
+        const refuseAttemptGuard = (
+          code: string,
+          invariant: string,
+          message: string,
+        ): never => {
+          const guardAttempt = guardAttemptState(pd, state, node, {
+            ...(flags.unit ? { unit: flags.unit } : {}),
+            ...(flags.single === "true" ? { single: true } : {}),
+            ...(receipts ? { receipts } : {}),
+            reviewBudget: budget,
+            pendingStatus,
+            accounting: attempt,
+          }).attempt;
+          const autonomousBolt =
+            autonomousCandidate && attempt.boltStarted && flags.unit
+              ? {
+                  unit: flags.unit,
+                  slug: attempt.boltSlug,
+                  batch: attempt.boltBatch,
+                }
+              : undefined;
+          const refusal = evaluateGuardRefusal({
+            code,
+            blockedAction: "review-request",
+            stage: flags.stage,
+            ...(flags.unit ? { unit: flags.unit } : {}),
+            projectDir: pd,
+            stateContent: state,
+            invariant,
+            userMessage: message,
+            attempt: guardAttempt,
+            humanAuthority: humanAuthorityState(pd),
+            ...(teamGate ? { teamGate } : {}),
+            ...(autonomousBolt ? { autonomousBolt } : {}),
+            summary: { stage: node, isolated: flags.single === "true" },
+          });
+          refuseReviewGuard(pd, refusal, guardAttempt, [
+            `source:${receipts?.newestSourceFingerprint ?? "none"}`,
+            `artifact-stale:${artifactScopeStale}`,
+          ]);
+        };
+        // The person spoke and the conductor did not say they asked: the refusal
+        // is its step and asks the person nothing, since a guard-recovery ask is
+        // shown to them, never retried, and would refuse a review they asked for.
+        const refuseBound = (code: string, invariant: string, message: string): never =>
+          personMayHaveAsked() ? refuseReview(message) : refuseAttemptGuard(code, invariant, message);
+        // Under relaxed or off the change is accepted and no review is owed (the
+        // rule recoveryReviewOwed in aidlc-state.ts reads), so a review of a Unit
+        // the agent starts on its own past the one recovery is refused to it
+        // alone, and its way on is the Unit's next step: never the person's
+        // question, a redo of built work or a restart of the stage. A stage's own
+        // review keeps its way on, and so does a swarm Bolt.
+        const changeAccepted = (): boolean =>
+          flags.unit !== undefined &&
+          !(autonomousCandidate && attempt.boltStarted) &&
+          guardPolicyAcceptsChanges(pd, state, { selection: { intent, space } });
+        const refuseChangeAccepted = (retryWith: string | null): never =>
+          refuseReview(reviewChangeAcceptedMessage(
+            flags.stage,
+            aidlcDispatcherInvocation("orchestrate next"),
+            openUnitCompletionCommand(pd, flags.stage, flags.unit),
+            retryWith,
+          ), requestChangeNotices);
+        // The one request that still works when a pending review can never
+        // finish (see replaceIteration below): named in every refusal that would
+        // otherwise leave the conductor restoring bytes it cannot restore.
+        const requestAgain = (n: number): string => renderReviewRequestCommand({
+          projectDir: pd,
+          stage: flags.stage,
+          reviewer: flags.reviewer,
+          ...(flags.unit ? { unit: flags.unit } : {}),
+          ...(flags.single === "true" ? { single: true } : {}),
+          iteration: n,
+        });
+        const startAgain = (n: number): string =>
+          pendingStatus?.iteration === n && pendingStatus.replaceable
+            ? ` It never got a verdict, so request it again instead: \`${requestAgain(n)}\`.`
+            : "";
+        if (retryPending) {
+          const pendingRequest = attempt.pendingRequests.get(iteration);
+          if (!pendingRequest) {
+            if (recoverySpent && changeAccepted()) refuseChangeAccepted(personAskedRetry("--retry-pending"));
+            if (scopeStale) {
+              if (recoverySpent) {
+                const message = reviewRecoverySpentMessage(
+                    flags.stage,
+                    autonomousCandidate && attempt.boltStarted
+                      ? null
+                      : reviewRecoveryGuidance(
+                          pd,
+                          state,
+                          flags.stage,
+                          flags.unit,
+                          teamGate,
+                        ),
+                    autonomousCandidate && attempt.boltStarted && flags.unit
+                      ? {
+                          unit: flags.unit,
+                          slug: attempt.boltSlug,
+                          batch: attempt.boltBatch,
+                        }
+                      : undefined,
+                    requestChangesResetIsExecutable(
+                      state,
+                      flags.stage,
+                      teamGate,
+                    ),
+                  );
+                refuseAttemptGuard(
+                  "REVIEW_RECOVERY_SPENT",
+                  "The stale-receipt recovery slot is single-use within an attempt.",
+                  message,
+                );
+              }
+              refuseReview(
+                `Cannot retry the prior review for "${flags.stage}" because it completed ` +
+                  "before the stage output or project source changed. Start the one recovery " +
+                  `pass with \`${requestAgain(expected)}\`.`,
+              );
+            }
+            if (recoverySpent) {
+              const message = reviewRecoveryAlreadyRequestedMessage(
+                  flags.stage,
+                  attempt.recoveryIteration ?? iteration,
+                  reviewRecoveryGuidance(
+                    pd,
+                    state,
+                    flags.stage,
+                    flags.unit,
+                    teamGate,
+                  ),
+                  requestChangesResetIsExecutable(
+                    state,
+                    flags.stage,
+                    teamGate,
+                  ),
+                );
+              refuseAttemptGuard(
+                "REVIEW_RECOVERY_ALREADY_REQUESTED",
+                "Only one stale-receipt recovery request exists in an attempt.",
+                message,
+              );
+            }
+            refuseReview(
+              `Cannot retry review iteration ${iteration} for "${flags.stage}" because no ` +
+                `pending request with that number exists. Start the expected review pass instead.`,
+            );
+          }
+          const requestBinding = pendingRequest.binding;
+          if (requestBinding === null) {
+            refuseReview(
+              `Refusing review retry for "${flags.stage}": the original ` +
+                `REVIEW_REQUESTED iteration ${iteration} has no valid request ` +
+                "binding, so its authority cannot be recovered by rebaselining.",
+            );
+          }
+          if (pendingRequest.retried) {
+            refuseReview(
+              `Refusing review retry for "${flags.stage}": REVIEW_REQUESTED ` +
+                `iteration ${iteration} already used its one pending-request retry. ` +
+                "Do not dispatch it again; record the bounded incomplete-review " +
+                "NOT-READY fallback or start the next permitted review iteration.",
+            );
+          }
+          const snapshot = reviewArtifactSnapshot(pd, node, flags.unit, {
+            requireRequiredArtifacts,
+            boltDag: unitResolution ?? undefined,
+            mergedBoltUnits,
+          });
+          if (snapshot === null) {
+            refuseReview(
+              `Cannot retry review for "${flags.stage}": the declared artifact set ` +
+                "could not be captured as one stable snapshot. Restore regular " +
+                "artifact files and retry.",
+            );
+          }
+          if (
+            !reviewRequestArtifactsCurrent(requestBinding, snapshot) &&
+            !reviewAppendedAfterRequest(requestBinding, snapshot)
+          ) {
+            refuseReview(
+              `Refusing review retry for "${flags.stage}": declared artifacts no ` +
+                `longer match the bytes from REVIEW_REQUESTED iteration ${iteration}. ` +
+                "A retry re-dispatches that exact request and cannot rebaseline changed " +
+                "content. Restore the requested artifact bytes before retrying." +
+                startAgain(iteration),
+            );
+          }
+          // A request written before review records, or before source binding on
+          // a workspace-writing stage, is modernized by this one retry: it gains a
+          // request id and the source fingerprints, keeps its artifact fingerprint,
+          // and is marked so the ledger shows the upgrade.
+          let legacyUpgrade =
+            requestBinding.requestId === null ||
+            (node.workspace_requires &&
+              requestBinding.sourceFingerprint === null) ||
+            (node.workspace_requires &&
+              flags.unit !== undefined &&
+              node.for_each === "unit-of-work" &&
+              flags.single !== "true" &&
+              requestBinding.unitSourceFingerprint === null);
+          if (node.workspace_requires) {
+            stampRequestedSourceBinding(node);
+            const currentSource = fields["Source Fingerprint"];
+            if (
+              requestBinding.sourceFingerprint !== null &&
+              !sameWorkspaceSource(requestBinding.sourceFingerprint, currentSource)
+            ) {
+              refuseReview(
+                `Refusing review retry for "${flags.stage}": workspace source no ` +
+                  `longer matches REVIEW_REQUESTED iteration ${iteration}. A retry ` +
+                  "cannot rebaseline source changed while review was pending." +
+                  startAgain(iteration),
+              );
+            }
+            const currentUnitSource = fields["Unit Source Fingerprint"];
+            if (
+              requestBinding.unitSourceFingerprint !== null &&
+              currentUnitSource !== requestBinding.unitSourceFingerprint
+            ) {
+              refuseReview(
+                `Refusing review retry for "${flags.stage}": unit source or ` +
+                  `source-manifest.json no longer matches REVIEW_REQUESTED ` +
+                  `iteration ${iteration}. A retry cannot rebaseline changed unit source.` +
+                  startAgain(iteration),
+              );
+            }
+          }
+          if (
+            requestBinding.legacyAppendix?.priorAppendix === true &&
+            requestBinding.legacyAppendix.challenge === null
+          ) {
+            legacyUpgrade = true;
+          }
+          requestId = requestBinding.requestId ?? mintReviewRequestId();
+          fields.Retry = "pending-request";
+          fields["Artifact Fingerprint"] = requestBinding.artifactFingerprint;
+          fields["Request Id"] = requestId;
+          if (requestBinding.legacyAppendix !== null) {
+            // The retry pairs with the original request under the legacy matcher;
+            // echo its appendix binding unchanged.
+            Object.assign(
+              fields,
+              legacyReviewAppendixEchoFields(requestBinding.legacyAppendix),
+            );
+          }
+          if (requestBinding.sourceFingerprint !== null) {
+            fields["Source Fingerprint"] = requestBinding.sourceFingerprint;
+          }
+          if (requestBinding.unitSourceFingerprint !== null) {
+            fields["Unit Source Fingerprint"] =
+              requestBinding.unitSourceFingerprint;
+          }
+          if (requestBinding.recoveryCause !== null) {
+            fields["Recovery Cause"] = requestBinding.recoveryCause;
+          }
+          if (legacyUpgrade) {
+            fields.Upgrade = "legacy-request";
+            upgraded = true;
+          }
+          openReviewDraftSlot(attempt.floor);
+          emitAudit(pd, "REVIEW_REQUESTED", fields, intent, space);
+          retried = true;
+          return;
+        }
+        // A pending request whose outputs or source changed before its verdict
+        // can never finish: a retry re-dispatches the old bytes, and a verdict
+        // cannot bind to them. A new request at the same pass replaces it (and a
+        // replacement interrupted in turn is replaced the same way), so an
+        // interrupted review never leaves the stage with no way to be reviewed.
+        const replaceIteration = pendingStatus?.replaceable ? pendingStatus.iteration : null;
+        if (replaceIteration !== null) {
+          if (iteration !== replaceIteration) {
+            refuseReview(
+              `Cannot start review iteration ${iteration} for "${flags.stage}": iteration ` +
+                `${replaceIteration} never got a verdict and its outputs or source changed since, so it ` +
+                `is requested again as iteration ${replaceIteration}: ` +
+                `\`${requestAgain(replaceIteration)}\`.`,
+            );
+          }
+          const snapshot = reviewArtifactSnapshot(pd, node, flags.unit, {
+            requireRequiredArtifacts,
+            boltDag: unitResolution ?? undefined,
+            mergedBoltUnits,
+          });
+          if (snapshot === null) {
+            refuseReview(
+              `Cannot start review for "${flags.stage}": a required output document ` +
+                "is missing or unreadable. Create every required output document " +
+                "for this stage, then retry the review.",
+            );
+          }
+          const replaced = attempt.pendingRequests.get(replaceIteration)?.binding ?? null;
+          replaces = replaced?.requestId ?? "none";
+          fields["Artifact Fingerprint"] = snapshot.fingerprint;
+          requestId = mintReviewRequestId();
+          fields["Request Id"] = requestId;
+          fields["Replaces Request Id"] = replaces;
+          // A replaced recovery request stays the attempt's recovery request.
+          if (replaced?.recoveryCause) {
+            fields.Recovery = "stale-receipt";
+            fields["Recovery Cause"] = replaced.recoveryCause;
+            recovery = "stale-receipt";
+          }
+          stampRequestedSourceBinding(node, true);
+          openReviewDraftSlot(attempt.floor);
+          emitAudit(pd, "REVIEW_REQUESTED", fields, intent, space);
+          return;
+        }
+        const recoveryEligible =
+          budget !== null &&
+          scopeStale &&
+          attempt.pendingIterations.size === 0 &&
+          !recoverySpent;
+        if (recoverySpent && changeAccepted() && boundStands()) refuseChangeAccepted(personAskedRetry());
+        if (scopeStale && recoverySpent && boundStands()) {
+          const message = reviewRecoverySpentMessage(
+              flags.stage,
+              autonomousCandidate && attempt.boltStarted
+                ? null
+                : reviewRecoveryGuidance(
+                    pd,
+                    state,
+                    flags.stage,
+                    flags.unit,
+                    teamGate,
+                  ),
+              autonomousCandidate && attempt.boltStarted && flags.unit
+                ? {
+                    unit: flags.unit,
+                    slug: attempt.boltSlug,
+                    batch: attempt.boltBatch,
+                  }
+                : undefined,
+              requestChangesResetIsExecutable(
+                state,
+                flags.stage,
+                teamGate,
+              ),
+              personAskedRetry(),
+            );
+          refuseBound(
+            "REVIEW_RECOVERY_SPENT",
+            "The stale-receipt recovery slot is single-use within an attempt.",
+            message,
+          );
+        }
+        if (recoverySpent && boundStands()) {
+          const message = reviewRecoveryAlreadyRequestedMessage(
+              flags.stage,
+              attempt.recoveryIteration ?? iteration,
+              reviewRecoveryGuidance(
+                pd,
+                state,
+                flags.stage,
+                flags.unit,
+                teamGate,
+              ),
+              requestChangesResetIsExecutable(
+                state,
+                flags.stage,
+                teamGate,
+              ),
+              personAskedRetry(),
+            );
+          refuseBound(
+            "REVIEW_RECOVERY_ALREADY_REQUESTED",
+            "Only one stale-receipt recovery request exists in an attempt.",
+            message,
+          );
+        }
+        // A pending request comes before the budget: the stage is waiting on its
+        // verdict, not out of passes, and saying "include the findings" for a
+        // review that never returned sent conductors to a gate that refuses.
+        if (attempt.pendingIterations.size > 0) {
+          const pending = [...attempt.pendingIterations].sort((a, b) => a - b);
+          refuseAttemptGuard(
+            "REVIEW_VERDICT_PENDING",
+            "A review request receives its verdict before another request starts.",
+            `Cannot start another review for "${flags.stage}" because iteration ` +
+              `${pending.join(", ")} is still waiting for a verdict. Record that verdict, or ` +
+              "repeat the same iteration with --retry-pending if the reviewer did not run.",
+          );
+        }
+        // The budget is measured against the attempt's own count ONLY (`expected`,
+        // less the passes before a Unit started a finished step again: that run
+        // gets the stage's passes again). `iteration` is the
+        // caller's claim about which pass this is, and it is validated against
+        // `expected` further down with a message that names the right ordinal.
+        // Measuring the budget against the claim instead turned a recoverable
+        // off-by-one into an unrecoverable refusal: after a gate rejection the
+        // accounting floor moves (reviewAttemptAccounting treats GATE_REJECTED as
+        // an attempt boundary), so `expected` is 1 again while a conductor that
+        // kept counting passes `--iteration 2`. On an `advisory` stage, whose
+        // budget is 1, that claim alone produced REVIEW_BUDGET_EXHAUSTED - and
+        // its guidance ("do not ask the reviewer again; include the findings in
+        // the approval summary") then routes to a gate that refuses for
+        // REVIEW_EVIDENCE_MISSING, because the revision path needs the fresh
+        // receipt the refusal just forbade. The only remedy left is a redo jump,
+        // which discards the attempt the human was mid-revision on.
+        const pass = attempt.budgetCount + 1;
+        if (!recoveryEligible && budget !== null && pass > budget && boundStands()) {
+          refuseBound(
+            "REVIEW_BUDGET_EXHAUSTED",
+            "Review requests do not exceed the configured attempt budget.",
+            reviewBudgetMessage(flags.stage, pass, budget, personAskedRetry()),
+          );
+        }
+        if (iteration !== expected) {
+          refuseReview(
+            `Cannot start review iteration ${iteration} for "${flags.stage}" because the next ` +
+              `iteration is ${expected}. Retry with --iteration ${expected}.`,
+          );
+        }
+        if (recoveryEligible) {
+          fields.Recovery = "stale-receipt";
+          fields["Recovery Cause"] =
+            artifactScopeStale && sourceScopeStale
+              ? "artifact+source"
+              : artifactScopeStale
+                ? "artifact"
+                : "source";
+          recovery = "stale-receipt";
+        }
+        const snapshot = reviewArtifactSnapshot(pd, node, flags.unit, {
+          requireRequiredArtifacts,
+          boltDag: unitResolution ?? undefined,
+          mergedBoltUnits,
+        });
+        if (snapshot === null) {
+          refuseReview(
+            `Cannot start review for "${flags.stage}": a required output document ` +
+              "is missing or unreadable. Create every required output document " +
+              "for this stage, then retry the review.",
+          );
+        }
+        fields["Artifact Fingerprint"] = snapshot.fingerprint;
+        requestId = mintReviewRequestId();
+        fields["Request Id"] = requestId;
+        if (lifted) {
+          fields["Person Asked"] = "true";
+          const reply = personsGateReply(pd, invokingChat(pd), flags.stage as string);
+          if (reply.words) fields["Person Reply"] = reply.words;
+          if (reply.messageId) fields["Message Id"] = reply.messageId;
+          Object.assign(fields, windowMessageIds(reply));
+        }
+        stampRequestedSourceBinding(node, true);
+        openReviewDraftSlot(attempt.floor);
+        emitAudit(pd, "REVIEW_REQUESTED", fields, intent, space);
+      }, intent, space);
+    } catch (e) {
+      if (e instanceof ReviewRefusal) error(e.message, e.changeNotices);
+      error(`Audit emission failed: ${errorMessage(e)}`);
+    }
+    // A request is half of the exchange: the slot stays open until the same
+    // command runs again with --verdict. Nothing else the conductor sees before
+    // the gate names that second call, and a request that is never closed
+    // refuses the stage completion much later, for a reason that reads as
+    // unrelated. So the request hands back the exact command that closes it.
+    const recordVerdict = renderReviewVerdictCommand({
+      projectDir: pd,
+      stage: flags.stage,
+      reviewer: flags.reviewer,
+      ...(flags.unit ? { unit: flags.unit } : {}),
+      ...(flags.single === "true" ? { single: true } : {}),
+      iteration,
+    });
+    // A Unit of a parallel batch, reviewed in its worktree: the reviewer runs the
+    // tests the person approved through AI-DLC's own check, as its worker does.
+    const swarmUnit = flags.stage === "code-generation" && flags.unit ? swarmWorkerWorktreeMeta(pd) : null;
+    // On Kiro (kiro-ide), while the reviewer read-scope check holds, this
+    // review's reviewer is dispatched as a copy that carries its read scope; a
+    // replaced request's copy goes with it, and so does the copy of any review
+    // that is over without its verdict.
+    if (replaces !== null) removeReviewCopy(pd, replaces);
+    sweepReviewCopies(pd, { intent, space });
+    const copy = requestId === null ? null : prepareReviewCopy(pd, {
+      requestId,
+      reviewer: flags.reviewer,
+      ...(flags.unit ? { unit: flags.unit } : {}),
+    });
+    const dispatchAgent = copy !== null && "dispatchAgent" in copy ? copy.dispatchAgent : null;
+    if (copy !== null && "notice" in copy) requestChangeNotices.push(copy.notice);
+    // The reviewer is told which files another open piece of work in this
+    // folder claims, as the build was, so it raises no finding about them.
+    const otherWork = workspaceStage ? otherOpenWorkClaims(pd, flags.stage) : [];
+    console.log(JSON.stringify({
+      emitted: "REVIEW_REQUESTED",
+      stage: flags.stage,
+      // The UTC time the reviewer's own `**Date:**` line carries. The
+      // reviewer used to run `engine now` for it, which on Claude Code is an
+      // absolute-path call to the engine from a subagent, so the person was
+      // asked to allow an AI-DLC internal step (two live runs). The request
+      // the conductor already runs hands the time over instead.
+      reviewed_at: isoTimestamp(),
+      agent_note: reviewRequestNote(
+        flags.reviewer,
+        reviewFile ?? "the review file this request opened",
+        recordVerdict,
+        dispatchAgent,
+        otherWork.length > 0 ? otherWorkNote(otherWork, "review") : undefined,
+      ),
+      ...(retried ? { retry: "pending-request" } : {}),
+      ...(upgraded ? { upgrade: "legacy-request" } : {}),
+      ...(recovery ? { recovery } : {}),
+      ...(replaces !== null ? { replaces } : {}),
+      requestId,
+      reviewFile,
+      recordVerdict,
+      ...(dispatchAgent !== null ? { dispatchAgent } : {}),
+      ...(swarmUnit && swarmUnit.swarmUnit === flags.unit
+        ? { test_command: swarmUnitTestCommand(flags.unit) }
+        : {}),
+      ...(requestChangeNotices.length > 0 ? { change_notices: requestChangeNotices } : {}),
+    }));
+    return;
+  }
+
+  if (retryPending) {
+    error(
+      "--retry-pending cannot be combined with --verdict. Run the request with --retry-pending first " +
+        "(no --verdict), dispatch the reviewer again, then record its verdict with --verdict.",
+    );
+  }
+  if (!flags.iteration || !/^[1-9][0-9]*$/.test(flags.iteration)) {
+    error("Recording a review verdict requires --iteration <positive integer>.");
+  }
+  const iteration = Number(flags.iteration);
+  fields.Iteration = flags.iteration;
+  const verdict = flags.verdict.toUpperCase();
+  if (!VALID_VERDICTS.has(verdict)) {
+    error(
+      `Unknown --verdict "${flags.verdict}". Accepted: ${[...VALID_VERDICTS].join(", ")}.`
+    );
+  }
+  fields.Verdict = verdict;
+  const reviewFileFlag = flags["review-file"];
+  let recordPath: string | null = null;
+  let reviewMarkdown: string | null = null;
+  const verdictChangeNotices: string[] = [];
+  // What the verdict was recorded against, for the step it hands the agent.
+  const recorded: {
+    context?: ReturnType<typeof loadContext>;
+    request?: { personAsked: boolean; recovery: boolean };
+  } = {};
+
+  try {
+    withAuditLock(pd, () => {
+      const context = loadContext(false, false);
+      recorded.context = context;
+      const {
+        node,
+        attempt,
+        requireRequiredArtifacts,
+        unitResolution,
+        mergedBoltUnits,
+      } = context;
+      const pendingRequest = attempt.pendingRequests.get(iteration);
+      if (!pendingRequest) {
+        refuseReview(
+          `Cannot record a verdict for review iteration ${iteration} on "${flags.stage}" ` +
+            `because no pending request with that number exists. Start or retry that review first.`,
+        );
+      }
+      const requestBinding = pendingRequest.binding;
+      if (requestBinding === null) {
+        refuseReview(
+          `Refusing REVIEW_COMPLETED for "${flags.stage}": the matching REVIEW_REQUESTED ` +
+            `iteration ${iteration} has no valid request binding. Its authority ` +
+          "cannot be recovered by retrying or rebaselining; start a fresh review attempt.",
+        );
+      }
+      recorded.request = { personAsked: pendingRequest.personAsked, recovery: requestBinding.recoveryCause !== null };
+      // A review can outlive a confirmation/retraction. Recheck the same
+      // summary/output admission used at request time before issuing terminal
+      // authority; an unchanged artifact snapshot alone cannot establish it.
+      admitReviewSummary(context, "review-verdict", verdictChangeNotices);
+      const snapshot = reviewArtifactSnapshot(pd, node, flags.unit, {
+        requireRequiredArtifacts,
+        boltDag: unitResolution ?? undefined,
+        mergedBoltUnits,
+      });
+      if (snapshot === null) {
+        refuseReview(
+          `Cannot record review for "${flags.stage}": the declared artifact set ` +
+            "changed during the snapshot or is no longer a set of regular files.",
+        );
+      }
+      const bindsUnitSource =
+        node.workspace_requires === true &&
+        flags.unit !== undefined &&
+        node.for_each === "unit-of-work" &&
+        flags.single !== "true";
+      const manifest = bindsUnitSource
+        ? readUnitSourceManifest(pd, flags.stage, flags.unit as string)
+        : null;
+      if (manifest?.ok === false) {
+        const manifestPath = `${relativeRecordDir(pd, intent, space) ?? "aidlc"}/construction/${flags.unit}/${flags.stage}/source-manifest.json`;
+        refuseReview(
+          `Cannot record review for "${flags.stage}": ${unitManifestRefusal(
+            flags.unit as string,
+            manifestPath,
+            manifest,
+            "Write the manifest listing every application-source path this unit created or modified, including shell- or generator-written files, then request and record the review again.",
+          )}`,
+        );
+      }
+
+      // This request's own slot: a review left in another request's slot (one
+      // it replaced) is never this one's.
+      const slot = reviewSlot(attempt.floor, iteration, requestBinding.requestId);
+      const legacy = requestBinding.legacyAppendix;
+
+      // A request whose outputs or source changed is requested again at the
+      // same pass; restoring the old bytes would undo the current work. The
+      // restore remedy stays for a request that cannot be replaced.
+      const changedRemedy = (restore: string): string => {
+        const status = pendingReviewRequestStatus(pd, node, flags.unit, attempt, {
+          requireRequiredArtifacts,
+          boltDag: unitResolution ?? undefined,
+          mergedBoltUnits,
+          single: flags.single === "true",
+        });
+        return status?.iteration === iteration && status.replaceable
+          ? "Request it again so the reviewer reviews what is there now: `" +
+              renderReviewRequestCommand({
+                projectDir: pd,
+                stage: flags.stage,
+                reviewer: flags.reviewer,
+                ...(flags.unit ? { unit: flags.unit } : {}),
+                ...(flags.single === "true" ? { single: true } : {}),
+                iteration,
+              }) +
+              "`."
+          : restore;
+      };
+
+      // Deprecated input path: a reviewer that still appends `## Review` to
+      // the artifact (see reviewAppendedAfterRequest). Read, never written to;
+      // the validated section is copied into the completion's review record.
+      const appendedAfterRequest = reviewAppendedAfterRequest(requestBinding, snapshot);
+
+      // The reviewer writes a review, never the artifact: the bytes the reviewer
+      // was dispatched on must be the bytes on disk now. A legacy request is
+      // compared against the body before any embedded appendix, which is what
+      // it fingerprinted.
+      // Under Guard Policy relaxed or off, a change made while the reviewer
+      // worked does not discard the review: the verdict covers the bytes the
+      // reviewer saw, and the change reaches the gate as one line.
+      const changesAccepted = guardPolicyAcceptsChanges(pd, null, { selection: { intent, space } });
+      const artifactsMoved =
+        !reviewRequestArtifactsCurrent(requestBinding, snapshot) && !appendedAfterRequest;
+      if (artifactsMoved && !changesAccepted) {
+        refuseReview(
+          `Cannot record the verdict for "${flags.stage}" because ` +
+            `its output documents changed after review iteration ${iteration} started. ` +
+            changedRemedy(
+              "Restore the bytes the reviewer was dispatched on and re-run that exact " +
+                "iteration; --retry-pending cannot rebaseline changed content.",
+            ),
+        );
+      }
+
+      // The review file is read the way the record will be read back: no
+      // symlinked container or leaf, no hardlink, no oversize file. A slot
+      // draft that is absent is an incomplete review; one that is anything but
+      // a plain file is refused, never silently treated as missing. Each request
+      // is reviewed in one file: the one its row names, or for a request
+      // recorded before per-request files, the pass's shared file, where its
+      // reviewer was told to write. A --review-file must be that same file.
+      const readFrom = pendingRequest.ownReviewFile ? slot : reviewSlot(attempt.floor, iteration, null);
+      let body: Buffer | null = null;
+      try {
+        const recordRoot = realpathSync(runRecordDir(pd) as string);
+        const target = assertNoSymlinkInChainOrThrow(recordRoot, readFrom.draftRelativeToRecord);
+        const present = lstatExists(target);
+        if (reviewFileFlag !== undefined) {
+          // An explicit review file must live inside the active intent record,
+          // where the reviewer's slot lives, reached through no symlink: a
+          // path outside it is not the reviewer's output.
+          const relativeToRecord = toPosix(relative(recordRoot, resolve(pd, reviewFileFlag)));
+          if (
+            relativeToRecord === "" ||
+            relativeToRecord === ".." ||
+            relativeToRecord.startsWith("../") ||
+            isAbsolute(relativeToRecord)
+          ) {
+            throw new Error("the path is outside the active intent record");
+          }
+          const named = assertNoSymlinkInChainOrThrow(recordRoot, relativeToRecord);
+          if (!present || !sameFileIdentity(fileIdentity(named), fileIdentity(target))) {
+            // Named here, it must be that same file, never another request's
+            // review or a copy of one.
+            refuseReview(
+              `Cannot record review for "${flags.stage}": ${reviewFileFlag} is not the review ` +
+                `file for iteration ${iteration}. Have the reviewer write its review to ` +
+                `${readFrom.reviewerPath}, then record the verdict again.`,
+            );
+          }
+        }
+        if (present) {
+          body = readRegularFileNoFollowOrThrow(target, "review file", REVIEW_RECORD_MAX_BYTES);
+        }
+      } catch (readError) {
+        if (readError instanceof ReviewRefusal) throw readError;
+        refuseReview(
+          `Cannot record review for "${flags.stage}": the review file ` +
+            `${reviewFileFlag ?? readFrom.reviewerPath} is not a plain readable file ` +
+            `(${errorMessage(readError)}).`,
+        );
+      }
+      if (body !== null && snapshot.appendix.length > 0 && appendedAfterRequest) {
+        refuseReview(
+          `Cannot record the verdict for "${flags.stage}": a \`## Review\` section was ` +
+            `appended to the reviewed artifact after review iteration ${iteration} started ` +
+            "and a review file was also written. The review file is the review; remove the " +
+            "appended section so the artifact carries the bytes the reviewer was dispatched on.",
+        );
+      }
+      // After the retry, a file that is not a whole review for either verdict
+      // is an incomplete attempt too (the reviewer protocol's step 3) and
+      // records the same fallback as a missing one: none of its text is the
+      // review. A whole review for the other verdict is refused below, so a
+      // finished reviewer's verdict is never recorded as this fallback.
+      const wholeReview = (bytes: Buffer): boolean =>
+        (["READY", "NOT-READY"] as const).some((candidate) => {
+          const expected = {
+            verdict: candidate,
+            reviewer: flags.reviewer,
+            iteration,
+            reviewChallenge: null,
+            standalone: true,
+          };
+          if (validateReviewAppendix(bytes, expected).valid) return true;
+          const demoted = demoteReviewHeadings(bytes);
+          return demoted !== null && validateReviewAppendix(demoted.bytes, expected).valid;
+        });
+      const retriedFallback = !appendedAfterRequest && pendingRequest.retried && verdict === "NOT-READY";
+      const incompleteFile = retriedFallback && body !== null && !wholeReview(body);
+      if (incompleteFile && requestBinding.requestId !== null) {
+        // Only once the reviewer has finished: its completion row since the
+        // retry, or no agent sent in the background since the retry still out
+        // (the SubagentStop hook that writes the row also removes the agent's
+        // in-flight entry). Audit times are whole seconds, so an agent sent in
+        // the second before the retry counts as sent since it. The ledger
+        // names no agent and an interrupted one is never removed, so once the
+        // person has written since the retry their words come first and the
+        // fallback records.
+        const events = readAuditShardEvents(pd, intent, space);
+        const retry = openReviewRequests(events).find((open) => open.requestId === requestBinding.requestId);
+        if (
+          retry !== undefined &&
+          reviewerCompletionAfter(events, flags.reviewer, retry.row) === null &&
+          backgroundAgentOutSince(pd, Date.parse(retry.row.timestamp)) &&
+          !personSpokeSinceReviewRequest(pd, flags.stage, flags.reviewer, flags.unit, intent, space)
+        ) {
+          refuseReview(
+            `Cannot record the verdict for "${flags.stage}" yet: an agent sent in the background ` +
+              `since the retry has not returned, and ${readFrom.reviewerPath} is not a whole review. ` +
+              "Wait for it to return, then record the verdict again.",
+          );
+        }
+      }
+      const incompleteFallback = retriedFallback && (body === null || incompleteFile);
+      const embeddedLegacy = body === null && !incompleteFallback && appendedAfterRequest;
+      if (body === null && !incompleteFallback && !embeddedLegacy) {
+        // After a retry the slot was reopened, so a review written before the
+        // retry is not there any more: the step is a fresh dispatch, not a
+        // search for the earlier file.
+        refuseReview(
+          pendingRequest.retried
+            ? `Cannot record review for "${flags.stage}": no review was written for ` +
+              `iteration ${iteration} since the request was retried. The retry reopened the review ` +
+              `slot, so dispatch the reviewer to write ${readFrom.reviewerPath} again, then record ` +
+              "the verdict; a retried attempt that ends with no review records --verdict NOT-READY " +
+              "without one."
+            : `Cannot record review for "${flags.stage}": no review was written for ` +
+              `iteration ${iteration}. The reviewer writes its review to ` +
+              `${readFrom.reviewerPath}; a retried ` +
+              "incomplete attempt records --verdict NOT-READY without a review.",
+        );
+      }
+      // A review signed by another agent is that agent's (a live run: the
+      // product lead was asked for, the architecture reviewer ran). The step is
+      // the requested reviewer, never a Reviewer line to change; it is said
+      // before anything below marks or says something about this verdict.
+      const signer = body === null || incompleteFallback ? null : reviewFileSigner(body);
+      if (signer !== null && signer !== flags.reviewer) {
+        const signed = `Refusing REVIEW_COMPLETED for "${flags.stage}": ${readFrom.reviewerPath} is signed by ` +
+          `${signer}, and this review was requested from ${flags.reviewer}.`;
+        refuseReview(
+          pendingRequest.retried
+            ? `${signed} Its one retry is spent, so record --verdict NOT-READY: that records a review that did not finish.`
+            : `${signed} Run \`${renderReviewRequestCommand({
+                projectDir: pd,
+                stage: flags.stage,
+                reviewer: flags.reviewer,
+                ...(flags.unit ? { unit: flags.unit } : {}),
+                ...(flags.single === "true" ? { single: true } : {}),
+                iteration,
+                retryPending: true,
+              })}\` and dispatch the reviewer it names to write the review, then record the verdict again.`,
+        );
+      }
+      // The review is the reviewer's: the bytes recorded now are compared with
+      // what it left when it finished, the digest the log-subagent hook put on
+      // its SUBAGENT_COMPLETED row. A file that changed since was written by
+      // someone else (a conductor rewriting a refused review, or editing the
+      // verdict). The verdict still records, as the file reads, and the row
+      // says the review was edited after the reviewer finished: under strict
+      // the gate tells the person in one line; under relaxed or off the change
+      // is accepted and said once here, like every other accepted change. A
+      // completion row without the digest is no evidence, and the row carries
+      // nothing. No completion of the reviewer since the request (its row,
+      // with the digest for this review file; another agent's row is not it)
+      // is evidence only where noReviewerFinishedSinceReview says so (on Claude
+      // Code; elsewhere when every helper sent since the request came back and
+      // none was the reviewer; outside a worktree, with no background agent
+      // sent since): there the row says no reviewer had finished, said once
+      // here, and at the gate under strict.
+      // The fallback records none of the file, so none of this applies to it.
+      if (body !== null && !incompleteFallback && requestBinding.requestId !== null) {
+        const events = readAuditShardEvents(pd, intent, space);
+        const request = openReviewRequests(events)
+          .find((open) => open.requestId === requestBinding.requestId);
+        const finished = request === undefined
+          ? null
+          : reviewerCompletionAfter(events, flags.reviewer, request.row);
+        const left = finished === null
+          ? null
+          : recordedReviewFileDigest(finished.block, readFrom.draftRelativeToRecord);
+        const now = reviewFileDigest(body);
+        if (left !== null && left !== now) {
+          fields[REVIEW_EDITED_FIELD] = "yes";
+          const notice = editedReviewNotice(node.name, flags.unit);
+          if (changesAccepted) {
+            governedChangeControl(pd, context.state, { intent, space });
+            verdictChangeNotices.push(...recordAcceptedChanges(pd, [{
+              checkpoint: "review-receipt",
+              stage: flags.stage,
+              unit: flags.unit ?? null,
+              changed: [readFrom.draftRelative],
+              recorded: left,
+              current: now,
+              notice,
+            }], { intent, space }));
+          } else {
+            verdictChangeNotices.push(notice);
+          }
+        }
+        if (request !== undefined && noReviewerFinishedSinceReview(pd, events, request, selection)) {
+          fields[REVIEWER_FINISHED_FIELD] = "no";
+          verdictChangeNotices.push(noReviewerNotice(node.name, flags.unit));
+        }
+      }
+      let reviewBytes = body ?? snapshot.appendix;
+      if (!incompleteFallback) {
+        const expectedReview = {
+          verdict: verdict as ReviewVerdict,
+          reviewer: flags.reviewer,
+          iteration,
+          reviewChallenge: embeddedLegacy ? legacy?.challenge ?? null : null,
+          standalone: body !== null,
+        };
+        let validity = validateReviewAppendix(reviewBytes, expectedReview);
+        // A whole review whose reviewer wrote `## What I verified` is not a
+        // reason to run the review again: a review file's `#` and `##` heading
+        // lines are recorded as `###`, and the same check runs on those bytes.
+        // It runs whether or not the check saw the heading (one right after a
+        // table reads to it as a table row). Any other defect, or a heading
+        // form this cannot change, refuses as before.
+        const demoted = body === null ? null : demoteReviewHeadings(body);
+        if (demoted !== null) {
+          const again = validateReviewAppendix(demoted.bytes, expectedReview);
+          if (again.valid) {
+            reviewBytes = demoted.bytes;
+            validity = again;
+            // The record shows the reviewer's headings were changed, and which.
+            fields["Review Headings Made Level 3"] = demoted.changed.join("; ");
+          } else if (!validity.valid && validity.heading && !again.heading) {
+            validity = again;
+          }
+        }
+        if (!validity.valid) {
+          refuseReview(
+            `Refusing REVIEW_COMPLETED for "${flags.stage}": ${validity.reason}.` +
+              (pendingRequest.retried && body !== null && !wholeReview(body)
+                ? " Its one retry is spent, so record --verdict NOT-READY: that records a review that did not finish."
+                : ""),
+          );
+        }
+        // The reviewer's own answer to whether its brief told it what to
+        // conclude, recorded as written. `yes` is not the reviewer's judgement
+        // alone, and the person hears that once (with the verdict here; at the
+        // gate under strict). The reviewer read its brief for that; the tool
+        // reads only the line, and a missing or unreadable one records nothing.
+        if (validity.verdictDictated !== null) {
+          fields[REVIEW_DICTATED_FIELD] = validity.verdictDictated;
+          if (validity.verdictDictated === "yes") {
+            verdictChangeNotices.push(dictatedReviewNotice(node.name, flags.unit));
+          }
+        }
+      }
+
+      // No reviewer wrote this verdict: the review did not finish, and every
+      // reader says so (reviewCompletionDidNotFinish).
+      if (incompleteFallback) fields[REVIEW_FINISHED_FIELD] = "no";
+      fields["Request Fingerprint"] = requestBinding.artifactFingerprint;
+      fields["Artifact Fingerprint"] = artifactsMoved ? requestBinding.artifactFingerprint : snapshot.fingerprint;
+      if (requestBinding.requestId !== null) {
+        fields["Request Id"] = requestBinding.requestId;
+      }
+      if (legacy !== null) {
+        Object.assign(fields, legacyReviewAppendixEchoFields(legacy));
+      }
+      // Bind the terminal receipt to the workspace source state the reviewer
+      // inspected. Only workspace-writing stages carry this binding. A newly
+      // unbindable receipt records that explicitly so completion fails closed;
+      // only genuinely legacy fieldless receipts keep migration behavior.
+      let sourceFingerprint: string | null = null;
+      let unitFingerprint: string | null = null;
+      if (node.workspace_requires) {
+        const sourceState = workspaceSourceState(pd, intent, space);
+        sourceFingerprint = sourceState?.fingerprint ?? UNBINDABLE_FINGERPRINT;
+        if (requestBinding.sourceFingerprint === null) {
+          refuseReview(
+            `Refusing REVIEW_COMPLETED for "${flags.stage}": the matching REVIEW_REQUESTED ` +
+              `iteration ${iteration} has no source fingerprint. Modernize that exact ` +
+              "request with --retry-pending before recording the verdict.",
+          );
+        }
+        const sourceMoved = !sameWorkspaceSource(requestBinding.sourceFingerprint, sourceFingerprint);
+        if (sourceMoved && !changesAccepted) {
+          refuseReview(
+            `Refusing REVIEW_COMPLETED for "${flags.stage}": workspace source changed after ` +
+              `REVIEW_REQUESTED iteration ${iteration}. ` +
+              changedRemedy("Restore the requested source state and re-dispatch the reviewer."),
+          );
+        }
+        // Same source; a request recorded before a file was excluded by name keeps
+        // its own value, which is what the completion pairs with.
+        if (requestBinding.sourceFingerprint !== null) sourceFingerprint = requestBinding.sourceFingerprint;
+        fields["Request Source Fingerprint"] = sourceFingerprint;
+        fields["Source Fingerprint"] = sourceFingerprint;
+        // The listing the reviewer saw, so the completion can tell an AI-DLC
+        // update after the review from a change to source. Only when the source
+        // did not move during the review: a move kept under relaxed or off is
+        // still said at the gate. Without it the completion compares
+        // fingerprints, so a failed write never fails the verdict.
+        if (sourceState !== null && !sourceMoved) {
+          try {
+            fields["Source Listing"] = writeBaselineSourceSnapshot(pd, flags.stage as string, sourceState.listing, intent, space);
+          } catch {
+            // Left out: fingerprints decide.
+          }
+        }
+        if (bindsUnitSource) {
+          unitFingerprint =
+            sourceState === null || manifest?.ok !== true
+              ? UNBINDABLE_FINGERPRINT
+              : unitSourceFingerprint(
+                  sourceState.listing,
+                  manifest,
+                  manifest.rawBytesSha256,
+                );
+          if (requestBinding.unitSourceFingerprint === null) {
+            refuseReview(
+              `Refusing REVIEW_COMPLETED for "${flags.stage}": the matching REVIEW_REQUESTED ` +
+                `iteration ${iteration} has no unit source fingerprint. Modernize that exact ` +
+                "request with --retry-pending before recording the verdict.",
+            );
+          }
+          const unitSourceMoved = unitFingerprint !== requestBinding.unitSourceFingerprint;
+          if (unitSourceMoved && changesAccepted) {
+            // The verdict covers the Unit source the reviewer was given; its
+            // request-time snapshot carries the comparison to the gate.
+            unitFingerprint = requestBinding.unitSourceFingerprint;
+          } else if (unitSourceMoved) {
+            refuseReview(
+              `Refusing REVIEW_COMPLETED for "${flags.stage}": unit source or source-manifest.json ` +
+                `changed after REVIEW_REQUESTED iteration ${iteration}. ` +
+                changedRemedy("Restore the requested unit source state and re-dispatch the reviewer."),
+            );
+          }
+          fields["Unit Source Fingerprint"] = unitFingerprint;
+          if (!unitSourceMoved && sourceState !== null && manifest?.ok === true) {
+            writeUnitSourceSnapshot(
+              pd,
+              flags.stage,
+              flags.unit as string,
+              sourceState.listing,
+              manifest,
+              manifest.rawBytesSha256,
+            );
+          }
+        }
+      }
+
+      // Every record-era completion writes the review record named by its row.
+      // A review-file completion stores its validated body, the tolerated
+      // appended form stores the validated appendix, and the bounded incomplete
+      // NOT-READY fallback stores an empty body with no findings.
+      const artifactKey = snapshot.reviewArtifact;
+      const findingArtifact = toPosix(
+        relative(
+          pd,
+          join(runRecordDir(pd) as string, ...artifactKey.split("/")),
+        ),
+      );
+      const recordBody = incompleteFallback ? Buffer.alloc(0) : reviewBytes;
+      let unreadableReason: string | undefined;
+      let tableFindings: ReturnType<typeof readFindingsTable>["findings"] = [];
+      if (!incompleteFallback) {
+        const table = readFindingsTable(
+          recordBody.toString("utf-8"),
+          findingArtifact,
+          verdict as ReviewVerdict,
+          flags.unit,
+        );
+        tableFindings = table.findings;
+        if (table.unreadable !== null) {
+          unreadableReason = table.unreadable;
+        }
+      }
+      // A main-workflow review joins the stage's engine-owned findings list:
+      // the record stores the list as of this review. An isolated `--single`
+      // run reviews for its own gate and keeps its findings as written. Either
+      // way a report the record cannot read is refused while the request can
+      // still be retried, and records once the one retry is spent.
+      let derived: ReturnType<typeof deriveReviewFindingsList> | null = null;
+      let findings = tableFindings;
+      if (fields.Workflow === undefined) {
+        derived = deriveReviewFindingsList(
+          pd,
+          node,
+          findingArtifact,
+          flags.unit,
+          {
+            artifact: findingArtifact,
+            body: recordBody.toString("utf-8"),
+            verdict: verdict as ReviewVerdict,
+            ...(unreadableReason !== undefined
+              ? { unreadableReason }
+              : {}),
+            allowMalformed: pendingRequest.retried,
+            seedLegacy: !embeddedLegacy,
+          },
+        );
+        if (derived.malformedReport !== undefined) {
+          refuseReview(
+            `Refusing REVIEW_COMPLETED for "${flags.stage}": ${derived.malformedReport}. ` +
+              `Rerun this review request with --retry-pending and dispatch the reviewer once more.`,
+          );
+        }
+        findings = derived.findings;
+      } else if (unreadableReason !== undefined) {
+        if (!pendingRequest.retried) {
+          refuseReview(
+            `Refusing REVIEW_COMPLETED for "${flags.stage}": ${unreadableReason}.`,
+          );
+        }
+        findings = [
+          unreadableFindingsTableFinding(
+            findingArtifact,
+            unreadableReason,
+            flags.unit,
+          ),
+        ];
+      }
+      const record: ReviewRecord = {
+        version: 1,
+        stage: flags.stage,
+        unit: flags.unit ?? null,
+        workflow: fields.Workflow ?? null,
+        attempt: reviewAttemptId(attempt.floor),
+        iteration,
+        reviewer: flags.reviewer,
+        verdict: verdict as ReviewVerdict,
+        request_id: requestBinding.requestId,
+        request_challenge: legacy?.challenge ?? null,
+        // The same fingerprint as the row, so the record pairs with it.
+        artifact_fingerprint: fields["Artifact Fingerprint"],
+        source_fingerprint: sourceFingerprint,
+        unit_source_fingerprint: unitFingerprint,
+        // Older readers read `findings` in today's New/Unresolved/Resolved
+        // vocabulary and ignore the derived list, which keeps the decisions.
+        findings: findings.map((finding) => ({
+          id: finding.id,
+          severity: finding.severity,
+          location: finding.location,
+          finding: finding.finding,
+          required_action: finding.requiredAction,
+          status: derived === null
+            ? finding.status
+            : finding.resolvedByReviewer || finding.status === "Resolved"
+              ? "Resolved"
+              : finding.introducedInReview
+                ? "New"
+                : "Unresolved",
+        })),
+        ...(derived !== null
+          ? { derived_findings: derived.findings.map(derivedRecordFinding) }
+          : {}),
+        body: recordBody.toString("utf-8"),
+        recorded_at: isoTimestamp(),
+      };
+      const serialized = serializeReviewRecord(record);
+      // Readers refuse a record over the cap, so one is never written.
+      const recordBytes = Buffer.byteLength(serialized, "utf-8");
+      if (recordBytes > REVIEW_RECORD_MAX_BYTES) {
+        refuseReview(
+          `Cannot record the verdict for "${flags.stage}": the review record ` +
+            `would be ${recordBytes} bytes, over the ${REVIEW_RECORD_MAX_BYTES}-byte ` +
+            `limit readers accept. Shorten the review file ` +
+            `${reviewFileFlag ?? readFrom.reviewerPath} and record the verdict again.`,
+        );
+      }
+      try {
+        writeRecordFileNoFollow(
+          runRecordDir(pd) as string,
+          slot.recordRelative,
+          serialized,
+        );
+      } catch (e) {
+        refuseReview(
+          `Cannot record the verdict for "${flags.stage}": the review record ` +
+            `${slot.recordRelative} cannot be written (${errorMessage(e)}).`,
+        );
+      }
+      fields["Review Record"] = slot.recordRelative;
+      fields["Review Record Digest"] = reviewRecordDigest(serialized);
+      // The build this verdict covers was finished under the Testing Contract
+      // in force now; the completion reads it to tell a practice kept at the
+      // gate from a contract that moved while the build ran. A swarm worker's
+      // checkout (swarmWorkerWorktreeMeta) resolves its own memory while its
+      // approval may read the parent's, so its verdict records none and its
+      // completion is held for a moved contract, as with no contract on record.
+      // A delegated approval also never reads the field
+      // (codeGenerationApprovalArtifacts), which covers a worker checkout whose
+      // meta does not validate. A person's own Unit worktree records it.
+      const reviewedContract = flags.stage === "code-generation" && swarmWorkerWorktreeMeta(pd) === null
+        ? reviewedTestingContract(pd)
+        : null;
+      if (reviewedContract !== null) fields[REVIEW_TESTING_CONTRACT_FIELD] = reviewedContract;
+      recordPath = slot.recordRelative;
+      emitAudit(pd, "REVIEW_COMPLETED", fields, intent, space);
+      // The draft was the reviewer's input; the record now holds it. The
+      // chain was verified when the draft was read, so this cannot redirect.
+      if (body !== null && reviewFileFlag === undefined) {
+        removeRecordFileNoFollow(runRecordDir(pd) as string, readFrom.draftRelativeToRecord);
+      }
+      // A readable copy for people, beside the artifact the review is about:
+      // `<stage dir>/reviews/review-NN.md`, numbered in the order verdicts land.
+      // The JSON record stays the engine's source of truth; nothing reads the
+      // copy back, so a failure to write it never withholds the verdict.
+      if (recordBody.length > 0) {
+        try {
+          const recordRoot = runRecordDir(pd) as string;
+          const reviewsDirRelative = posix.join(posix.dirname(artifactKey), "reviews");
+          const reviewsDir = join(recordRoot, ...reviewsDirRelative.split("/"));
+          let next = 1;
+          if (existsSync(reviewsDir)) {
+            for (const name of readdirSync(reviewsDir)) {
+              const match = /^review-(\d+)\.md$/.exec(name);
+              if (match === null) continue;
+              const suffix = Number.parseInt(match[1], 10);
+              if (Number.isSafeInteger(suffix) && suffix >= next) {
+                next = suffix + 1;
+              }
+            }
+          }
+          const copyRelative =
+            `${reviewsDirRelative}/review-${String(next).padStart(2, "0")}.md`;
+          writeRecordFileNoFollow(
+            recordRoot,
+            copyRelative,
+            derived === null
+              ? recordBody
+              : renderReadableReviewCopy(record, derived),
+          );
+          reviewMarkdown = copyRelative;
+        } catch (e) {
+          console.error(`warning: the readable review copy was not written: ${errorMessage(e)}`);
+        }
+      }
+    }, intent, space);
+  } catch (e) {
+    if (e instanceof ReviewRefusal) error(e.message, verdictChangeNotices);
+    error(`Audit emission failed: ${errorMessage(e)}`, verdictChangeNotices);
+  }
+  // The verdict closes the reviewer-scope enforcement window, so the dispatch
+  // record the conductor wrote before invoking the reviewer goes with it: the
+  // engine removes it here, and the agent never runs an `rm` (a permission card
+  // on Claude Code and Kiro CLI). A record left by a crashed review is covered
+  // by the scope hook's TTL as before.
+  try {
+    rmSync(reviewerDispatchPath(pd, intent, space), { force: true });
+  } catch {
+    // Best effort: the verdict is recorded either way.
+  }
+  // In a swarm the verdict runs with --project-dir <worktree>, while the
+  // conductor wrote the record in the MAIN workspace's intent record, where
+  // the reviewer-scope hook reads it. Remove that one too, when it is this
+  // review's own record; another Unit's review keeps its window.
+  removeParentReviewerDispatch(pd, { reviewer: flags.reviewer, stage: flags.stage, unit: flags.unit });
+  // The verdict closes the request, so its reviewer copy (Kiro) goes too, with
+  // the copy of any review that is over without its verdict.
+  // removeReviewCopy deletes by the request's name whatever the layout reads
+  // now; the sweep reads the ledger.
+  removeReviewCopy(pd, fields["Request Id"]);
+  sweepReviewCopies(pd, { intent, space });
+
+  const agentNote = recorded.context === undefined
+    ? null
+    : reviewVerdictStep(pd, flags, verdict, iteration, recorded.context, { intent: intent ?? null, space }, recorded.request ?? {
+      personAsked: false,
+      recovery: false,
+    });
+  console.log(JSON.stringify({
+    emitted: "REVIEW_COMPLETED",
+    stage: flags.stage,
+    ...(agentNote !== null ? { agent_note: agentNote } : {}),
+    ...(recordPath !== null ? { reviewRecord: recordPath } : {}),
+    ...(reviewMarkdown !== null ? { reviewMarkdown } : {}),
+    ...(verdictChangeNotices.length > 0 ? { change_notices: verdictChangeNotices } : {}),
+  }));
+}
+
+// --- Usage ---
+
+// What `--help` prints (#2449), from the same option and checkpoint lists the
+// subcommands check, so the usage cannot drift from what they accept.
+function logUsage(subcommand: string | undefined): string {
+  const invoke = (verb: string) => aidlcDispatcherInvocation(`log ${verb}`);
+  const flags = (options: ReadonlySet<string>) =>
+    [...options].filter((option) => option !== "--project-dir").sort().join(" ");
+  const usage: Record<string, string[]> = {
+    decision: [
+      `${invoke("decision")} --stage <slug> --decision '<the question>' --options '<choice>,<choice>'`,
+      "  Records a question before it is shown to the person. Required: --stage, --decision.",
+      "  When a choice holds a comma, pass each choice as its own --option '<choice>' in place of --options; when one holds a $ or a backtick, write the choices one a line to <record>/.aidlc-engine/answer-text/options.txt and pass --options-file .aidlc-engine/answer-text/options.txt.",
+      `  --checkpoint: ${DECISION_CHECKPOINTS.join(", ")}. An ordinary question, the learnings one included, takes none.`,
+      `  Options: ${flags(DECISION_OPTIONS)}`,
+    ],
+    answer: [
+      `${invoke("answer")} --stage <slug> --details '<their exact choice>'`,
+      "  Records the person's answer. Required: --stage, and --details, --details-file or --request-file.",
+      `  --checkpoint: ${ANSWER_CHECKPOINTS.join(", ")}. Use the one its question was recorded with.`,
+      `  Options: ${flags(ANSWER_OPTIONS)}`,
+    ],
+    answers: [`${invoke("answers")} --stage <slug> [--unit <unit>]`, "  Lists the answers recorded for a stage."],
+    link: [
+      `${invoke("link")} --stage <slug> --link <agent> [--repo <repo>] [--artifact <path>] [--single]`,
+      "  Records that a declared pipeline link returned. Runs in the active workspace (no --intent or --space).",
+    ],
+    review: [
+      `${invoke("review")} --stage <slug> --reviewer <agent> --iteration <n> [--unit <unit>] [--person-asked]`,
+      "  Records that the reviewer was sent the work.",
+      `${invoke("review")} --stage <slug> --reviewer <agent> --iteration <n> [--unit <unit>] --verdict ${[...VALID_VERDICTS].join("|")} [--review-file <path>]`,
+      "  Records the reviewer's verdict. Also: --retry-pending, --single. Runs in the active workspace (no --intent or --space).",
+    ],
+  };
+  if (subcommand !== undefined && usage[subcommand]) return usage[subcommand].join("\n");
+  return Object.values(usage).map((lines) => lines.join("\n")).join("\n\n");
+}
+
+// --- CLI entry point ---
+
+let projectDir: string | undefined;
+let readOnlyCommand = false;
+
+export function main(argv: string[]): void {
+  const rawArgs = argv;
+
+  // Extract --project-dir
+  const filteredArgs: string[] = [];
+  for (let i = 0; i < rawArgs.length; i++) {
+    if (rawArgs[i] === "--project-dir" && i + 1 < rawArgs.length) {
+      projectDir = rawArgs[i + 1];
+      i++;
+    } else {
+      filteredArgs.push(rawArgs[i]);
+    }
+  }
+
+  const subcommand = filteredArgs[0];
+  if (subcommand === undefined || asksForHelp([subcommand])) printUsageAndExit(logUsage(undefined));
+  if (asksForHelp(filteredArgs.slice(1))) printUsageAndExit(logUsage(subcommand));
+  readOnlyCommand = subcommand === "answers";
+  // What the chat records here (a decision, an answer, a link, a review) is its
+  // step on the work (chatTookStepHere); reading the answers is not.
+  if (!readOnlyCommand) chatTookStepHere(resolveProjectDir(projectDir));
+  if (subcommand === "decision" || subcommand === "answer") {
+    refuseSplitValues(subcommand, rawArgs);
+  }
+
+  try {
+    switch (subcommand) {
+      case "decision":
+        handleDecision(filteredArgs.slice(1));
+        break;
+      case "answer":
+        handleAnswer(filteredArgs.slice(1));
+        break;
+      case "answers":
+        handleAnswers(filteredArgs.slice(1));
+        break;
+      case "link":
+        handleLink(filteredArgs.slice(1));
+        break;
+      case "review":
+        // One review command runs the review accounting per unit, each pass
+        // recomputing the whole-tree source identity. Share one computation
+        // across the command; the scope is dropped when the command returns.
+        withWorkspaceSourceStateCache(() =>
+          handleReview(filteredArgs.slice(1)),
+        );
+        break;
+      default:
+        error(`Unknown subcommand: ${subcommand}. Valid: decision, answer, answers, link, review`);
+    }
+    spendRequestFile();
+    // The stage's work went on through the record, not through `next`: on the
+    // hosts with no transcript, the Stop hook reads that from the engine mark.
+    // Advisory: a mark that is not written never fails the recorded answer.
+    if (recordedRow) {
+      try {
+        if (rowEndsTurn) markTurnEnd(resolveProjectDir(projectDir), true);
+        else if (stageWorkRow) markStageWorkLogged(subcommand, resolveProjectDir(projectDir));
+      } catch {
+        // The row is recorded either way.
+      }
+    }
+  } catch (e) {
+    // A Plan Approval source-drift refusal is the human sentence; the
+    // conductor's remedy (which command reopens approval) rides beside it. An
+    // unbindable source boundary rides its ordered remedies the same way, repair
+    // first and break glass last, and keeps when building anyway was offered.
+    if (offersPlanApprovalOverride(e)) {
+      try {
+        notePlanApprovalOverrideOffered(resolveActiveProjectDir(projectDir));
+      } catch {
+        // The refusal is said either way.
+      }
+    }
+    if (e instanceof PlanApprovalSourceDriftError) {
+      console.error(JSON.stringify({ remedy: e.remedy }));
+    }
+    if (e instanceof PlanApprovalUnbindableError) {
+      console.error(JSON.stringify({ code: e.code, remedies: e.remedies }));
+    }
+    error(errorMessage(e));
+  }
+}
+
+// --- Utility ---
+
+function error(msg: string, changeNotices: readonly string[] = []): never {
+  if (readOnlyCommand) {
+    console.error(JSON.stringify({ error: msg }));
+    process.exit(1);
+  }
+  const pd = resolveProjectDir(projectDir);
+  const command = `aidlc-log ${process.argv.slice(2).join(" ")}`.trim();
+  emitError(pd, "aidlc-log", command, msg, undefined, undefined, changeNotices);
+}
+
+if (import.meta.main) {
+  // Kiro IDE's Command Prompt terminal: the tool runs itself as a child behind
+  // a pointer line (commandPromptReplyTee), or notes at exit a reply Kiro
+  // dropped, and rejoins the quote pair cmd.exe left on the words. Loaded only
+  // in Kiro's terminal, so the dispatcher's front gate and the lean projections
+  // keep their import graph.
+  if (process.env.TERM_PROGRAM === "kiro" && (process.platform === "win32" || process.env.AIDLC_TEST_KIRO_IDE_SETTINGS)) {
+    import("./aidlc-kiro-ide-terminal.ts")
+      .then(async (m) => {
+        if (await m.commandPromptReplyTee()) return;
+        m.noteSlowReplyAtExit();
+        run(m.rejoinCommandPromptQuotes(process.argv.slice(2)));
+      })
+      .catch(() => run(process.argv.slice(2)));
+  } else {
+    run(process.argv.slice(2));
+  }
+}
+
+function run(args: string[]): void {
+  main(args);
+}

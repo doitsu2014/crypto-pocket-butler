@@ -1,23 +1,33 @@
 <!--
-  .claude/rules/aidlc.md - the my-aidlc method @-import stub.
+  .claude/rules/aidlc.md: the AIDLC method @-import stub (NOT a copy to edit).
 
-  my-aidlc runs the native AWS AI-DLC methodology - fetched from
-  awslabs/aidlc-workflows at the version pinned in aidlc-version.json into the
-  engine's native/ directory by `my-aidlc update` - across five phases:
-  Initialization, Ideation, Inception, Construction, Operation. Invoke it as
-  /aidlc.
+  The AIDLC method (the layered practice files: org/team/project + phase rules)
+  is authored ONCE at the workspace root under aidlc/spaces/<space>/memory/,
+  the single hand-editable source of truth, identical on every harness. This
+  file is a REFERENCE: it pulls the method into Claude's ambient context via
+  @-imports so casual chat (outside an AIDLC stage) sees the standing
+  practices. AIDLC's own stage resolver reads the space's tree directly (it
+  never needs this stub).
 
-  Workflow profiles live in the space at aidlc/spaces/<space>/scopes/ and are
-  the team's to edit: each states its complete stage set in `include`.
+  The @-lines name aidlc/active-memory/: AI-DLC's git-ignored copy of the
+  ACTIVE space's memory files, which the engine writes at session start, on a
+  space switch, and with each step whose rules it sends. So this file is the
+  same for every teammate and never changes after install, while each person's
+  copy follows their own active space.
 
-  The method (org/team/project) is authored ONCE at the workspace root under
-  aidlc/spaces/default/memory/. This file references it rather than copying it,
-  so casual chat outside a workflow sees the standing practices. The engine's
-  stage resolver reads the same tree directly and never needs this stub.
+  Claude @-imports name an EXPLICIT file each (no glob support, verified
+  against code.claude.com/docs memory.md), resolve relative paths from THIS
+  file's location, and follow a nested chain up to four hops. From
+  .claude/rules/ the workspace root is ../../.
 
-  Edit the method at aidlc/spaces/default/memory/*, never here.
+  Edit the METHOD at aidlc/spaces/<space>/memory/*, never here and never in
+  the copy. If a new method file is added there, add a matching @-line below.
 -->
 
-@../../aidlc/spaces/default/memory/org.md
-@../../aidlc/spaces/default/memory/team.md
-@../../aidlc/spaces/default/memory/project.md
+@../../aidlc/active-memory/org.md
+@../../aidlc/active-memory/team.md
+@../../aidlc/active-memory/project.md
+@../../aidlc/active-memory/phases/ideation.md
+@../../aidlc/active-memory/phases/inception.md
+@../../aidlc/active-memory/phases/construction.md
+@../../aidlc/active-memory/phases/operation.md

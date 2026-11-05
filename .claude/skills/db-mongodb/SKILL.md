@@ -171,7 +171,7 @@ pooling strategy in `construction/nfr-design`.
 - Treating MongoDB as relational, then fighting `$lookup` for everything.
 - Monotonic shard keys (timestamps) creating a single hot shard.
 
-## How this skill plugs into my-aidlc
+## How this skill plugs into AI-DLC
 
 - Inception: record validation rules in `inception/domain-design`.
 - Construction: record the deployment topology (standalone/replica set/sharded)

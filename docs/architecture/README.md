@@ -114,21 +114,27 @@ Then open <http://localhost:8080> (use another host port if 8080 is taken). Rest
 container after editing the model. It writes a generated `workspace.json` and a
 `.structurizr/` log directory; both are gitignored build artefacts.
 
-Validate and export with the Docker-based CLI:
+Validate and export with the Docker-based CLI — the same `structurizr/structurizr` image the
+preview uses, so validation matches what the preview will accept:
 
 ```bash
 docker run --rm \
   -v "$(pwd)/docs/architecture:/usr/local/structurizr" \
-  structurizr/cli validate \
+  structurizr/structurizr validate \
   -w /usr/local/structurizr/workspace.dsl
 
 docker run --rm \
   -v "$(pwd)/docs/architecture:/usr/local/structurizr" \
-  structurizr/cli export \
+  structurizr/structurizr export \
   -w /usr/local/structurizr/workspace.dsl \
-  -f /usr/local/structurizr/export \
-  -t mermaid
+  -f mermaid \
+  -o /usr/local/structurizr/export
 ```
+
+Relationships are declared at the most specific level — a person or container — and
+Structurizr rolls them up to the parent software system in system-context views. Do not also
+declare the parent-level relationship with the same description and technology: newer
+Structurizr versions reject that as a duplicate, and older ones draw two arrows.
 
 On PowerShell, replace `$(pwd)` with `${PWD}` and use backslashes in the mount path.
 Exports are build artefacts, not part of the model of record.

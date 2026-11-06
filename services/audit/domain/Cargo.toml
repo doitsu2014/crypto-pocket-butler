@@ -1,0 +1,13 @@
+[package]
+name = "audit-domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Audit domain: append-only events, support sessions, retention runs, exports"
+
+[dependencies]
+chrono.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

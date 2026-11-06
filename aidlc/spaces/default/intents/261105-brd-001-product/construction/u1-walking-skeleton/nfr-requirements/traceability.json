@@ -1,0 +1,27 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u1-walking-skeleton",
+  "upstream_ids": ["NFR1", "NFR2", "NFR3", "NFR4", "NFR5", "NFR6", "NFR7", "NFR8", "NFR9", "NFR10", "NFR11", "NFR12", "NFR13", "NFR14", "NFR15", "NFR16", "NFR17", "NFR18", "NFR19", "NFR20"],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.1, NFR1.2, NFR1.3" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.1, NFR2.2" },
+    { "id": "NFR3", "status": "N/A", "target": "no snapshot history in this unit" },
+    { "id": "NFR4", "status": "N/A", "target": "no account sync in this unit" },
+    { "id": "NFR5", "status": "N/A", "target": "price collection and freshness owned by Market Data (u5-market-data)" },
+    { "id": "NFR6", "status": "OK", "target": "NFR6.1" },
+    { "id": "NFR7", "status": "N/A", "target": "valuation math owned by Portfolio and Ledger" },
+    { "id": "NFR8", "status": "N/A", "target": "snapshots and P&L owned by Portfolio and Ledger" },
+    { "id": "NFR9", "status": "OK", "target": "NFR9.1, NFR9.2, NFR9.3" },
+    { "id": "NFR10", "status": "OK", "target": "NFR10.1, NFR10.2" },
+    { "id": "NFR11", "status": "OK", "target": "NFR11.1" },
+    { "id": "NFR12", "status": "OK", "target": "NFR12.1" },
+    { "id": "NFR13", "status": "N/A", "target": "no personal data in this unit" },
+    { "id": "NFR14", "status": "N/A", "target": "retention owned by Audit (u12-audit)" },
+    { "id": "NFR15", "status": "N/A", "target": "core-flow accessibility delivered by the web app unit (u2-web-app)" },
+    { "id": "NFR16", "status": "N/A", "target": "localization delivered by the web app unit (u2-web-app)" },
+    { "id": "NFR17", "status": "OK", "target": "NFR17.1, NFR17.2, NFR17.3, NFR17.4, NFR17.5" },
+    { "id": "NFR18", "status": "OK", "target": "NFR18.1, NFR18.2" },
+    { "id": "NFR19", "status": "OK", "target": "NFR19.1, NFR19.2" },
+    { "id": "NFR20", "status": "OK", "target": "NFR20.1, NFR20.2, NFR20.3, NFR20.4" }
+  ]
+}

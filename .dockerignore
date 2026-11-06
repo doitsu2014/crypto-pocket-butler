@@ -1,0 +1,12 @@
+target/
+web/node_modules/
+web/dist/
+web/.yarn/cache/
+web/.yarn/install-state.gz
+.git/
+.github/
+aidlc/
+design-system/
+docs/
+tools/
+*.md

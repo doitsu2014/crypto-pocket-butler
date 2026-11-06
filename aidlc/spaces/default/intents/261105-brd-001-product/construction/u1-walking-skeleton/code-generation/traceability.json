@@ -1,0 +1,37 @@
+{
+  "stage": "code-generation",
+  "unit": "u1-walking-skeleton",
+  "upstream_ids": ["AC1.2.1", "AC1.2.2", "AC1.2.3", "AC9.2.1", "AC9.2.2", "AC9.2.3"],
+  "coverage": [
+    {
+      "id": "AC1.2.1",
+      "status": "OK",
+      "target": "services/asset-registry/application/src/resolve_asset.rs; services/asset-registry/http/src/handlers.rs; web/src/App.tsx"
+    },
+    {
+      "id": "AC1.2.2",
+      "status": "OK",
+      "target": "web/src/App.tsx; services/asset-registry/application/src/resolve_asset.rs; services/asset-registry/http/src/problem.rs; services/gateway/http/src/problem.rs"
+    },
+    {
+      "id": "AC1.2.3",
+      "status": "Deferred",
+      "target": "delivered by u4-account: wallet balance enumeration and the no-balances empty state"
+    },
+    {
+      "id": "AC9.2.1",
+      "status": "OK",
+      "target": "services/asset-registry/domain/src/contract.rs; services/asset-registry/domain/src/asset.rs; migrations/0001_init.up.sql"
+    },
+    {
+      "id": "AC9.2.2",
+      "status": "OK",
+      "target": "services/asset-registry/application/src/admin.rs; services/asset-registry/infrastructure/src/audit.rs; services/asset-registry/http/src/handlers.rs"
+    },
+    {
+      "id": "AC9.2.3",
+      "status": "OK",
+      "target": "services/asset-registry/domain/src/asset.rs; services/asset-registry/infrastructure/src/repositories/contract.rs"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "stage": "infrastructure-design",
+  "unit": "u1-walking-skeleton",
+  "upstream_ids": ["NFR2.1", "NFR2.2", "NFR6.1", "NFR3.1", "NFR9.1", "NFR9.2", "NFR9.3", "NFR10.1", "NFR10.2", "NFR11.1", "NFR12.1", "NFR19.1", "NFR19.2", "NFR20.1", "NFR20.2", "NFR20.3", "NFR20.4", "NFR1.1", "NFR18.1", "NFR18.2", "NFR1.2", "NFR1.3"],
+  "coverage": [
+    { "id": "NFR2.1", "status": "OK", "target": "Swarm service sizing and registry cache replica sizing" },
+    { "id": "NFR2.2", "status": "OK", "target": "edge TLS termination and gateway replica sizing" },
+    { "id": "NFR6.1", "status": "OK", "target": "gateway and registry replica sizing for the first-value path" },
+    { "id": "NFR3.1", "status": "OK", "target": "in-process cache per replica, no external cache service" },
+    { "id": "NFR9.1", "status": "OK", "target": "edge CDN/WAF with TLS and HSTS" },
+    { "id": "NFR9.2", "status": "OK", "target": "Supabase Vault for registry role and JWKS configuration" },
+    { "id": "NFR9.3", "status": "OK", "target": "log redaction in the observability stack configuration" },
+    { "id": "NFR10.1", "status": "OK", "target": "gateway JWKS cache with 10-minute fail-closed window" },
+    { "id": "NFR10.2", "status": "OK", "target": "SPA served as a static asset; no persistent token storage" },
+    { "id": "NFR11.1", "status": "OK", "target": "edge ingress rate limiting config" },
+    { "id": "NFR12.1", "status": "OK", "target": "CI dependency and image scan gate" },
+    { "id": "NFR19.1", "status": "OK", "target": "audit client and local-log fallback; audit service in U12" },
+    { "id": "NFR19.2", "status": "OK", "target": "audit payload redaction" },
+    { "id": "NFR20.1", "status": "OK", "target": "2-4 replicas per service on the Swarm" },
+    { "id": "NFR20.2", "status": "OK", "target": "Supabase Postgres sizing for 10x registry growth" },
+    { "id": "NFR20.3", "status": "OK", "target": "quarantine cap enforced in the registry service" },
+    { "id": "NFR20.4", "status": "OK", "target": "512 MiB replica memory bound for the cache" },
+    { "id": "NFR1.1", "status": "OK", "target": "health-gated rolling updates; single-node risk recorded" },
+    { "id": "NFR18.1", "status": "OK", "target": "Supabase PITR where configured; restore drill before launch" },
+    { "id": "NFR18.2", "status": "OK", "target": "pipeline migration step with up/down pairs" },
+    { "id": "NFR1.2", "status": "OK", "target": "callers degrade to last-known identity" },
+    { "id": "NFR1.3", "status": "OK", "target": "readiness and liveness checks gate the Swarm update" }
+  ]
+}

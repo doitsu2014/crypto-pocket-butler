@@ -4,6 +4,10 @@ docs/architecture/.structurizr/
 # macOS
 .DS_Store
 
+# Rust build output
+/target/
+**/target/
+
 # BEGIN AI-DLC:gitignore
 # AI-DLC: local working files
 aidlc/active-space

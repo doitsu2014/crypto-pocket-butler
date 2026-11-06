@@ -8,6 +8,11 @@ docs/architecture/.structurizr/
 /target/
 **/target/
 
+# Node
+node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+
 # BEGIN AI-DLC:gitignore
 # AI-DLC: local working files
 aidlc/active-space

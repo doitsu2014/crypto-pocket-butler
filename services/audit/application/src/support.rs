@@ -182,48 +182,130 @@ impl SupportSessions {
         .map_err(|error| SupportError::Rejected(vec![FieldError::from(error)]))?;
 
         let id = SupportSessionId::generate();
-        match SupportSession::approve(request, id, now) {
-            Ok(session) => {
-                self.sessions
-                    .insert(&session)
-                    .await
-                    .map_err(|error| SupportError::Repository(error.to_string()))?;
-                let _ = self
-                    .trail
-                    .record_agent(
-                        session.support_agent_id(),
-                        "support.session.started",
-                        &session.id().to_string(),
-                        Sensitivity::Security,
-                        session_context(session.id()),
-                    )
-                    .await;
-                Ok(session)
-            }
-            Err((request, denial)) => {
-                let session = SupportSession::deny(request, id);
-                self.sessions
-                    .insert(&session)
-                    .await
-                    .map_err(|error| SupportError::Repository(error.to_string()))?;
-                let _ = self
-                    .trail
-                    .record_as(
-                        Some(session.support_agent_id()),
-                        ActorKind::SupportAgent,
-                        "support.session.denied",
-                        &session.id().to_string(),
-                        Outcome::Denied,
-                        Sensitivity::Security,
-                        denial_context(session.id(), denial),
-                    )
-                    .await;
-                Err(SupportError::Denied {
-                    denial,
-                    session_id: session.id(),
-                })
-            }
+        if let Err(denial) = request.check() {
+            let session = SupportSession::deny(request, id);
+            self.sessions
+                .insert(&session)
+                .await
+                .map_err(|error| SupportError::Repository(error.to_string()))?;
+            let _ = self
+                .trail
+                .record_as(
+                    Some(session.support_agent_id()),
+                    ActorKind::SupportAgent,
+                    "support.session.denied",
+                    &session.id().to_string(),
+                    Outcome::Denied,
+                    Sensitivity::Security,
+                    denial_context(session.id(), denial),
+                )
+                .await;
+            return Err(SupportError::Denied {
+                denial,
+                session_id: session.id(),
+            });
         }
+
+        // BR3.1 is satisfied, but a second operator still has to approve. The
+        // request is stored as `requested` so nothing is active until they do.
+        let session = SupportSession::request(request, id);
+        self.sessions
+            .insert(&session)
+            .await
+            .map_err(|error| SupportError::Repository(error.to_string()))?;
+        let _ = self
+            .trail
+            .record_agent(
+                session.support_agent_id(),
+                "support.session.requested",
+                &session.id().to_string(),
+                Sensitivity::Security,
+                session_context(session.id()),
+            )
+            .await;
+        Ok(session)
+    }
+
+    /// Records the named second approver's approval, activating the session.
+    ///
+    /// The caller's authenticated subject must equal the request's
+    /// `secondApproverId`: an agent cannot approve their own request, and an
+    /// arbitrary UUID in the request body is not an approval.
+    ///
+    /// # Errors
+    /// Returns [`SupportError::Forbidden`] when a non-support caller or anyone
+    /// other than the named approver asks, [`SupportError::NotFound`] for an
+    /// unknown session, and [`SupportError::Conflict`] when the session is no
+    /// longer requested or has expired.
+    pub async fn approve(
+        &self,
+        actor: &Principal,
+        session_id: SupportSessionId,
+    ) -> Result<SupportSession, SupportError> {
+        if actor.role != Role::Support {
+            let _ = self
+                .trail
+                .record_denial(
+                    UserId::parse(&actor.subject).ok(),
+                    ActorKind::User,
+                    "support.session.approve_denied",
+                    &session_id.to_string(),
+                    Context::empty(),
+                )
+                .await;
+            return Err(SupportError::Forbidden);
+        }
+        let approver = UserId::parse(&actor.subject)
+            .map_err(|error| SupportError::Rejected(vec![FieldError::from(error)]))?;
+        let session = self
+            .sessions
+            .find_by_id(session_id)
+            .await
+            .map_err(|error| SupportError::Repository(error.to_string()))?
+            .ok_or(SupportError::NotFound)?;
+        let approved = session
+            .approve(approver, self.clock.now())
+            .map_err(|error| {
+                if matches!(
+                    error,
+                    audit_domain::DomainError::Contradiction {
+                        field: "secondApproverId",
+                        ..
+                    }
+                ) {
+                    SupportError::Forbidden
+                } else {
+                    SupportError::Conflict(error.to_string())
+                }
+            })?;
+        self.sessions
+            .update(&approved)
+            .await
+            .map_err(|error| SupportError::Repository(error.to_string()))?;
+        // Two events name both actors: the agent who asked and the operator who
+        // approved. The scope and expiry live on the session row (BR1.4 keeps
+        // the context to identifiers only).
+        let _ = self
+            .trail
+            .record_agent(
+                approved.support_agent_id(),
+                "support.session.started",
+                &approved.id().to_string(),
+                Sensitivity::Security,
+                session_context(approved.id()),
+            )
+            .await;
+        let _ = self
+            .trail
+            .record_agent(
+                approved.second_approver_id(),
+                "support.session.approved",
+                &approved.id().to_string(),
+                Sensitivity::Security,
+                session_context(approved.id()),
+            )
+            .await;
+        Ok(approved)
     }
 
     /// Answers a session check and writes the read event before the allow.
@@ -366,19 +448,26 @@ impl SupportSessions {
         let _ = context.insert("sessionId", &session_id.to_string());
         let _ = context.insert("sourceService", source_service);
         let _ = context.insert("ruleId", reason);
-        let actor = session.map(SupportSession::support_agent_id);
-        let target = session
-            .map(|value| value.subject_user_id().to_string())
-            .unwrap_or_else(|| session_id.to_string());
-        let _ = self
-            .trail
-            .record_denial(
-                actor,
+        // An unknown session has no agent to attribute the denial to, so it is a
+        // system event on the allow-list. Without this branch the denial would be
+        // rejected by the domain's actor-shape check and silently lost.
+        let (actor, kind, action, target) = match session {
+            Some(session) => (
+                Some(session.support_agent_id()),
                 ActorKind::SupportAgent,
                 "support.read.denied",
-                &target,
-                context,
-            )
+                session.subject_user_id().to_string(),
+            ),
+            None => (
+                None,
+                ActorKind::System,
+                "system.support.check_denied",
+                session_id.to_string(),
+            ),
+        };
+        let _ = self
+            .trail
+            .record_denial(actor, kind, action, &target, context)
             .await;
     }
 }

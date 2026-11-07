@@ -176,6 +176,29 @@ async fn an_invalid_envelope_names_the_field_and_never_the_value() {
 }
 
 #[tokio::test]
+async fn an_emitter_cannot_append_a_system_event_over_http() {
+    let harness = harness();
+    let mut body = append_body();
+    body["actorId"] = Value::Null;
+    body["actorKind"] = json!("system");
+    body["action"] = json!("system.retention.run");
+    let (status, _, response) = send(
+        &harness.state,
+        Method::POST,
+        "/v1/events",
+        &[
+            ("authorization", "Bearer test-service-token-identity"),
+            ("idempotency-key", "key-1"),
+        ],
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json_body(&response)["errors"][0]["field"], "actorKind");
+    assert!(harness.events.stored().is_empty());
+}
+
+#[tokio::test]
 async fn a_retry_with_the_same_key_and_payload_returns_the_same_id() {
     let harness = harness();
     let headers = [
@@ -385,7 +408,53 @@ async fn starting_a_session_requires_the_support_role() {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(
+        json_body(&body)["state"],
+        "requested",
+        "a second operator still has to approve"
+    );
+}
+
+#[tokio::test]
+async fn the_named_second_approver_activates_a_requested_session() {
+    let harness = harness();
+    let (status, _, body) = send(
+        &harness.state,
+        Method::POST,
+        "/v1/support-sessions",
+        &[("authorization", "Bearer support-token")],
+        Some(session_body()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let session_id = json_body(&body)["id"].as_str().unwrap().to_string();
+    let uri = format!("/v1/support-sessions/{session_id}/approve");
+
+    let (status, _, _) = send(
+        &harness.state,
+        Method::POST,
+        &uri,
+        &[("authorization", "Bearer support-token")],
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "the requesting agent cannot approve their own session"
+    );
+
+    let (status, _, body) = send(
+        &harness.state,
+        Method::POST,
+        &uri,
+        &[("authorization", "Bearer approver-token")],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(json_body(&body)["state"], "active");
+    assert!(!json_body(&body)["approvedAt"].is_null());
 }
 
 #[tokio::test]
@@ -421,6 +490,15 @@ async fn the_session_check_is_service_authenticated_and_answers_allow() {
     .await;
     assert_eq!(status, StatusCode::CREATED);
     let session_id = json_body(&body)["id"].as_str().unwrap().to_string();
+    let (status, _, _) = send(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/support-sessions/{session_id}/approve"),
+        &[("authorization", "Bearer approver-token")],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 
     let uri = format!("/v1/support-sessions/{session_id}/check?scope=account_metadata");
     let (status, _, _) = send(&harness.state, Method::GET, &uri, &[], None).await;
@@ -469,6 +547,15 @@ async fn revoking_a_session_requires_admin() {
     )
     .await;
     let session_id = json_body(&body)["id"].as_str().unwrap().to_string();
+    let (status, _, _) = send(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/support-sessions/{session_id}/approve"),
+        &[("authorization", "Bearer approver-token")],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     let uri = format!("/v1/support-sessions/{session_id}/revoke");
 
     let (status, _, _) = send(
@@ -520,6 +607,26 @@ async fn a_privacy_deletion_requires_a_service_token() {
     .await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(json_body(&response)["state"], "requested");
+}
+
+#[tokio::test]
+async fn only_identity_may_request_a_privacy_deletion() {
+    let harness = harness();
+    let body = json!({
+        "deletionRequestId": DELETION_REQUEST,
+        "subjectUserId": SUBJECT_USER
+    });
+    let (status, _, response) = send(
+        &harness.state,
+        Method::POST,
+        "/v1/privacy/deletions",
+        &[("authorization", "Bearer test-service-token-ledger")],
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(json_body(&response)["status"], 403);
+    assert!(harness.privacy.stored().is_empty());
 }
 
 fn report_body() -> Value {

@@ -8,7 +8,7 @@ that story. The first named unit is the primary implementation for the traceabil
 | US1.1 | U3; U2 | `u3-identity`; `u2-web-app` |
 | US1.2 | U1; U4; U6 | `u1-walking-skeleton`; `u4-account`; `u6-portfolio` |
 | US1.3 | U4; U2 | `u4-account`; `u2-web-app` |
-| US1.4 | U7; U2 | `u7-ledger`; `u2-web-app` |
+| US1.4 | U7; U4; U2 | `u7-ledger`; `u4-account`; `u2-web-app` |
 | US2.1 | U4; U2 | `u4-account`; `u2-web-app` |
 | US2.2 | U4; U2 | `u4-account`; `u2-web-app` |
 | US2.3 | U4; U2 | `u4-account`; `u2-web-app` |

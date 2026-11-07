@@ -57,8 +57,8 @@ impl ExportRepository for PgExportRepository {
         sqlx::query(
             "INSERT INTO audit_exports
                  (id, requested_by, filter, requested_at, completed_at, row_count, state,
-                  outcome, content_sha256)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                  outcome, content_sha256, failure_reason)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         )
         .bind(export.id().as_uuid())
         .bind(export.requested_by().as_uuid())
@@ -69,6 +69,7 @@ impl ExportRepository for PgExportRepository {
         .bind(export.state().as_str())
         .bind(export.outcome().map(ExportOutcome::as_str))
         .bind(export.content_sha256())
+        .bind(export.failure_reason())
         .execute(&self.pool)
         .await
         .map_err(|error| map_sqlx_error("insert audit export", error))?;
@@ -78,7 +79,8 @@ impl ExportRepository for PgExportRepository {
     async fn update(&self, export: &AuditExport) -> Result<(), RepositoryError> {
         let affected = sqlx::query(
             "UPDATE audit_exports
-             SET state = $2, completed_at = $3, row_count = $4, outcome = $5, content_sha256 = $6
+             SET state = $2, completed_at = $3, row_count = $4, outcome = $5,
+                 content_sha256 = $6, failure_reason = $7
              WHERE id = $1",
         )
         .bind(export.id().as_uuid())
@@ -87,6 +89,7 @@ impl ExportRepository for PgExportRepository {
         .bind(i32::try_from(export.row_count()).unwrap_or(i32::MAX))
         .bind(export.outcome().map(ExportOutcome::as_str))
         .bind(export.content_sha256())
+        .bind(export.failure_reason())
         .execute(&self.pool)
         .await
         .map_err(|error| map_sqlx_error("update audit export", error))?
@@ -107,11 +110,12 @@ impl ExportRepository for PgExportRepository {
     ) -> Result<u64, RepositoryError> {
         let affected = sqlx::query(
             "UPDATE audit_exports
-             SET state = 'failed', outcome = 'failed', completed_at = $2
+             SET state = 'failed', outcome = 'failed', completed_at = $2, failure_reason = $3
              WHERE state = 'requested' AND requested_at < $1",
         )
         .bind(before)
         .bind(at)
+        .bind(audit_domain::export::REPLICA_LOST_REASON)
         .execute(&self.pool)
         .await
         .map_err(|error| map_sqlx_error("recover stale exports", error))?

@@ -163,12 +163,24 @@ pub trait RetentionRepository: Send + Sync {
     /// Summarises every partition of the trail.
     async fn partition_summaries(&self) -> Result<Vec<PartitionSummary>, RepositoryError>;
 
-    /// Drops one whole partition.
-    async fn drop_partition(&self, name: &str) -> Result<(), RepositoryError>;
+    /// Drops one whole partition, re-checking the window and legal holds inside
+    /// the database before the destructive statement.
+    async fn drop_partition(
+        &self,
+        name: &str,
+        cutoff: DateTime<Utc>,
+    ) -> Result<(), RepositoryError>;
 
     /// Deletes one batch of unheld rows strictly older than `cutoff`.
     async fn delete_batch(&self, cutoff: DateTime<Utc>, limit: u32)
         -> Result<u64, RepositoryError>;
+
+    /// Deletes idempotency rows whose event can no longer exist because the
+    /// retention window has passed. Returns the number removed.
+    async fn delete_expired_idempotency(
+        &self,
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, RepositoryError>;
 
     /// Creates partitions for the current month and the next `months_ahead`.
     async fn ensure_partitions_ahead(
@@ -203,8 +215,13 @@ pub trait PrivacyDeletionRepository: Send + Sync {
         limit: u32,
     ) -> Result<Vec<EventLabel>, RepositoryError>;
 
-    /// Deletes every one of the subject's events that carries no legal basis.
-    async fn delete_unlabelled_for_subject(&self, subject: UserId) -> Result<u64, RepositoryError>;
+    /// Deletes exactly these identifiers, which must belong to `subject` and
+    /// carry no legal basis. Returns the number removed.
+    async fn delete_for_subject(
+        &self,
+        subject: UserId,
+        ids: &[AuditEventId],
+    ) -> Result<u64, RepositoryError>;
 }
 
 /// An injectable clock so tests control time.

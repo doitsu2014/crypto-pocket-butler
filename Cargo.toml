@@ -7,6 +7,16 @@
 [workspace]
 resolver = "2"
 members = [
+    "services/account",
+    "services/account/domain",
+    "services/account/application",
+    "services/account/infrastructure",
+    "services/account/http",
+    "services/analytics",
+    "services/analytics/domain",
+    "services/analytics/application",
+    "services/analytics/infrastructure",
+    "services/analytics/http",
     "services/asset-registry",
     "services/asset-registry/domain",
     "services/asset-registry/application",
@@ -22,6 +32,16 @@ members = [
     "services/gateway/application",
     "services/gateway/infrastructure",
     "services/gateway/http",
+    "services/identity",
+    "services/identity/domain",
+    "services/identity/application",
+    "services/identity/infrastructure",
+    "services/identity/http",
+    "services/market-data",
+    "services/market-data/domain",
+    "services/market-data/application",
+    "services/market-data/infrastructure",
+    "services/market-data/http",
 ]
 
 [workspace.package]
@@ -36,13 +56,14 @@ publish = false
 async-trait = "0.1"
 thiserror = "2"
 anyhow = "1"
+futures = "0.3"
 
 # Serialization is confined to the `http` boundary and infrastructure adapters.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Runtime and observability
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 

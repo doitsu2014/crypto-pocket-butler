@@ -1,0 +1,39 @@
+[package]
+name = "market-data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Market Data service: binary wiring for market-data-api, market-data-worker, and market-data-migrate"
+
+[lib]
+name = "market_data"
+path = "src/lib.rs"
+
+[[bin]]
+name = "market-data-api"
+path = "src/bin/api.rs"
+
+[[bin]]
+name = "market-data-worker"
+path = "src/bin/worker.rs"
+
+[[bin]]
+name = "market-data-migrate"
+path = "src/bin/migrate.rs"
+
+[dependencies]
+market-data-domain = { path = "domain" }
+market-data-application = { path = "application" }
+market-data-infrastructure = { path = "infrastructure" }
+market-data-http = { path = "http" }
+
+anyhow.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

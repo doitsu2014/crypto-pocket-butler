@@ -11,8 +11,11 @@
 --   audit_retention -> Supabase Vault path audit/retention_dsn -> Docker secret audit_retention_dsn
 --   audit_migrator  -> Supabase Vault path audit/migrator_dsn  -> pipeline migration step only
 --
--- No credential is written here. The bootstrap stores each password in Vault;
--- nothing is printed.
+-- No credential is written here. The roles below are created NOLOGIN; the
+-- platform's Supabase Vault bootstrap owns the LOGIN attribute and the password
+-- for each role, then stores it at the Vault path named above. This file never
+-- mints a login, so a leaked bootstrap cannot create one, and the pipeline
+-- materialises the Docker secret from Vault.
 
 CREATE SCHEMA IF NOT EXISTS audit;
 

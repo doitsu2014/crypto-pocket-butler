@@ -171,14 +171,25 @@ impl PrivacyDeletionRepository for PgPrivacyDeletionRepository {
             .collect())
     }
 
-    async fn delete_unlabelled_for_subject(&self, subject: UserId) -> Result<u64, RepositoryError> {
-        let affected =
-            sqlx::query("DELETE FROM audit_events WHERE actor_id = $1 AND legal_basis IS NULL")
-                .bind(subject.as_uuid())
-                .execute(&self.pool)
-                .await
-                .map_err(|error| map_sqlx_error("delete subject events", error))?
-                .rows_affected();
+    async fn delete_for_subject(
+        &self,
+        subject: UserId,
+        ids: &[AuditEventId],
+    ) -> Result<u64, RepositoryError> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let ids: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
+        let affected = sqlx::query(
+            "DELETE FROM audit_events
+             WHERE actor_id = $1 AND legal_basis IS NULL AND id = ANY($2)",
+        )
+        .bind(subject.as_uuid())
+        .bind(ids)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| map_sqlx_error("delete subject events", error))?
+        .rows_affected();
         Ok(affected)
     }
 }

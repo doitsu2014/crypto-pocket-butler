@@ -8,9 +8,9 @@ use axum::routing::{get, post};
 use axum::Router;
 
 use crate::handlers::{
-    append_event, check_support_session, create_export, create_privacy_deletion,
-    create_support_session, fallback, health, list_events, metrics, ready, report_retention_run,
-    revoke_support_session,
+    append_event, approve_support_session, check_support_session, create_export,
+    create_privacy_deletion, create_support_session, fallback, health, list_events, metrics, ready,
+    report_retention_run, revoke_support_session,
 };
 use crate::middleware::{
     correlation_id, limit_appends, limit_exports, limit_queries, record_metrics, require_admin,
@@ -45,6 +45,10 @@ pub fn router(state: AppState) -> Router {
 
     let support_start = Router::new()
         .route("/v1/support-sessions", post(create_support_session))
+        .route(
+            "/v1/support-sessions/{id}/approve",
+            post(approve_support_session),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_support,

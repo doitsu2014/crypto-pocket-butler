@@ -375,6 +375,31 @@ fn support_error(error: SupportError, correlation: &str) -> Response {
     }
 }
 
+/// WF2: the named second approver activates a requested support session.
+pub async fn approve_support_session(
+    State(state): State<AppState>,
+    axum::extract::Extension(correlation): axum::extract::Extension<CorrelationId>,
+    axum::extract::Extension(principal): axum::extract::Extension<Principal>,
+    path: Result<Path<String>, PathRejection>,
+) -> Response {
+    let Path(id) = match path {
+        Ok(path) => path,
+        Err(rejection) => {
+            return validation(
+                &correlation.0,
+                vec![FieldError::new("id", rejection.body_text())],
+            );
+        }
+    };
+    let Ok(session_id) = SupportSessionId::parse(&id) else {
+        return not_found(&correlation.0, "support session");
+    };
+    match state.support.approve(&principal, session_id).await {
+        Ok(session) => Json(SupportSessionResponse::from(&session)).into_response(),
+        Err(error) => support_error(error, &correlation.0),
+    }
+}
+
 /// WF3: answer a session check for the gateway or the owning service.
 pub async fn check_support_session(
     State(state): State<AppState>,
@@ -457,6 +482,9 @@ pub async fn create_privacy_deletion(
 
 fn privacy_error(error: PrivacyError, correlation: &str) -> Response {
     match error {
+        PrivacyError::Forbidden(detail) => {
+            problem(403, "forbidden", "Forbidden", detail, correlation)
+        }
         PrivacyError::Rejected(errors) => validation(correlation, errors),
         PrivacyError::Repository(detail) => {
             if is_grant_refusal(&detail) {

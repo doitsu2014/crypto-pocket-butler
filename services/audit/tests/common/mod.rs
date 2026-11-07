@@ -159,6 +159,13 @@ pub fn harness_at(now: DateTime<Utc>, limits: Limits) -> Harness {
             }),
         ),
         (
+            "approver-token",
+            Ok(Principal {
+                subject: SECOND_APPROVER.to_string(),
+                role: Role::Support,
+            }),
+        ),
+        (
             "user-token",
             Ok(Principal {
                 subject: USER_SUBJECT.to_string(),
@@ -247,6 +254,37 @@ pub async fn test_pool() -> (PgPool, String) {
     result.expect("run migrations in the disposable schema");
 
     (pool, schema)
+}
+
+/// Connects to the disposable database, pins `search_path`, and assumes `role`
+/// on every pooled connection so a test exercises the real production grants
+/// instead of the database superuser's.
+///
+/// # Panics
+/// Panics when `TEST_DATABASE_URL` is unset or the role cannot be assumed.
+pub async fn role_pool(schema: &str, role: &str) -> PgPool {
+    let url = std::env::var("TEST_DATABASE_URL")
+        .expect("TEST_DATABASE_URL must point at a disposable Postgres database");
+    let schema_for_connection = schema.to_string();
+    let role_for_connection = role.to_string();
+    PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(move |connection, _meta| {
+            let schema = schema_for_connection.clone();
+            let role = role_for_connection.clone();
+            Box::pin(async move {
+                sqlx::query(&format!("SET search_path TO {schema}"))
+                    .execute(&mut *connection)
+                    .await?;
+                sqlx::query(&format!("SET ROLE {role}"))
+                    .execute(&mut *connection)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await
+        .expect("connect a role-scoped pool")
 }
 
 /// Drops a disposable schema.

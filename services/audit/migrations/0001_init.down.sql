@@ -14,6 +14,14 @@ BEGIN
             RAISE EXCEPTION
                 'refusing to drop the audit trail: it holds records inside the six-month retention window';
         END IF;
+        -- A legally held record must survive a rollback too, even once it is
+        -- past the ordinary window.
+        IF EXISTS (
+            SELECT 1 FROM audit_events WHERE legal_basis IS NOT NULL
+        ) THEN
+            RAISE EXCEPTION
+                'refusing to drop the audit trail: it holds legally held records';
+        END IF;
     END IF;
 END
 $$;
@@ -25,8 +33,10 @@ DROP TABLE IF EXISTS support_access_records;
 DROP TABLE IF EXISTS append_idempotency;
 DROP TABLE IF EXISTS audit_events CASCADE;
 
+DROP FUNCTION IF EXISTS drop_audit_partition(text, timestamptz);
 DROP FUNCTION IF EXISTS ensure_audit_partition(date);
 DROP FUNCTION IF EXISTS create_audit_partition(date);
+DROP FUNCTION IF EXISTS enforce_app_insert_shape();
 DROP FUNCTION IF EXISTS refuse_terminal_update();
 
 -- The roles are cluster bootstrap objects, not this schema's objects: the up

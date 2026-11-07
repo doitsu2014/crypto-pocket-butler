@@ -1,0 +1,22 @@
+{
+  "stage": "functional-design",
+  "unit": "u10-analytics",
+  "upstream_ids": ["AC7.5.1", "AC7.5.2", "AC7.5.3"],
+  "coverage": [
+    { "id": "AC7.5.1", "status": "OK", "target": "BR1.1 (server-side refusal; joint with u2-web-app's not-send)" },
+    { "id": "AC7.5.2", "status": "OK", "target": "BR1.2" },
+    { "id": "AC7.5.3", "status": "OK", "target": "BR1.3 (joint with u2-web-app's no-pre-ticked-box)" }
+  ],
+  "reverse": [
+    { "id": "BR2.1", "status": "OK", "target": "FR12.2 — catalogue and property allow-list" },
+    { "id": "BR2.2", "status": "OK", "target": "FR12.2, NFR13 — PII patterns" },
+    { "id": "BR2.3", "status": "OK", "target": "FR12.2, NFR13 — salted HMAC" },
+    { "id": "BR3.1", "status": "OK", "target": "FR12.2 — metric formulas" },
+    { "id": "BR3.2", "status": "OK", "target": "FR12.2, NFR13 — suppression" },
+    { "id": "BR4.1", "status": "OK", "target": "FR12.3 — flag governance" },
+    { "id": "BR4.2", "status": "OK", "target": "FR12.3 — rollout" },
+    { "id": "BR4.3", "status": "OK", "target": "FR12.3 — expiry" },
+    { "id": "BR5.1", "status": "OK", "target": "NFR13 — analytics retention" },
+    { "id": "BR6.1", "status": "OK", "target": "NFR13 — erasure" }
+  ]
+}

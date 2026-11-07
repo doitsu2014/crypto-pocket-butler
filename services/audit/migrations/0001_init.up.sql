@@ -32,6 +32,12 @@ BEGIN
 END
 $$;
 
+-- The roles are created NOLOGIN here on purpose: a migration must not mint a
+-- login or a password. The platform's Supabase Vault bootstrap owns the LOGIN
+-- attribute and the credential for each role, and stores it at the Vault path
+-- recorded in infra/sql/audit-schema.sql. The pipeline then materialises the
+-- Docker secret the service task mounts.
+
 -- ---------------------------------------------------------------------------
 -- The trail
 -- ---------------------------------------------------------------------------
@@ -94,6 +100,14 @@ BEGIN
             'CREATE TABLE %I PARTITION OF audit_events FOR VALUES FROM (%L) TO (%L)',
             partition_name, range_start, range_end
         );
+        -- Grants on the partitioned parent do not cascade to a child created
+        -- later. The retention role examines and batch-deletes through the
+        -- parent, but it also reads each child's row count and legal holds, so it
+        -- needs SELECT there; DELETE lets a straddling partition be swept.
+        EXECUTE format(
+            'GRANT SELECT, DELETE ON TABLE %I TO audit_retention',
+            partition_name
+        );
     END IF;
     RETURN partition_name;
 END;
@@ -108,6 +122,62 @@ SECURITY DEFINER
 SET search_path FROM CURRENT
 AS $$
     SELECT create_audit_partition($1);
+$$;
+
+-- Drops one month's partition, re-checking the retention window and legal holds
+-- inside the function. The function owner is the migration role (which owns the
+-- partitions), so the retention role never needs DROP ownership of a partition,
+-- and a raw `DROP TABLE` from the sweep cannot bypass the checks.
+CREATE OR REPLACE FUNCTION drop_audit_partition(
+    partition_name text,
+    cutoff_at timestamptz
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path FROM CURRENT
+AS $$
+DECLARE
+    partition_oid oid;
+BEGIN
+    IF partition_name !~ '^audit_events_[0-9]{6}$' THEN
+        RAISE EXCEPTION 'not an audit partition: %', partition_name
+            USING ERRCODE = '22023';
+    END IF;
+
+    SELECT child.oid
+      INTO partition_oid
+      FROM pg_inherits AS inheritance
+      JOIN pg_class AS child ON child.oid = inheritance.inhrelid
+      JOIN pg_class AS parent ON parent.oid = inheritance.inhparent
+     WHERE child.relname = partition_name
+       AND parent.relname = 'audit_events'
+       AND parent.relnamespace = current_schema()::regnamespace;
+
+    IF partition_oid IS NULL THEN
+        RAISE EXCEPTION 'unknown audit partition: %', partition_name
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM audit_events
+         WHERE tableoid = partition_oid AND legal_basis IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'partition % holds a legally held record', partition_name
+            USING ERRCODE = '55000';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM audit_events
+         WHERE tableoid = partition_oid AND recorded_at >= cutoff_at
+    ) THEN
+        RAISE EXCEPTION 'partition % holds a record inside the retention window', partition_name
+            USING ERRCODE = '55000';
+    END IF;
+
+    EXECUTE format('DROP TABLE %I', partition_name);
+    RETURN true;
+END;
 $$;
 
 DO $$
@@ -134,6 +204,10 @@ CREATE TABLE append_idempotency (
     created_at       timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (emitting_service, idempotency_key)
 );
+
+-- The retention sweep removes idempotency rows whose event is past the window,
+-- so the table is bounded too.
+CREATE INDEX append_idempotency_created_idx ON append_idempotency (created_at);
 
 -- ---------------------------------------------------------------------------
 -- Workflow records
@@ -199,6 +273,7 @@ CREATE TABLE audit_exports (
         CHECK (state IN ('requested', 'success', 'denied', 'failed')),
     outcome          text        CHECK (outcome IN ('success', 'denied', 'failed')),
     content_sha256   text        CHECK (content_sha256 IS NULL OR char_length(content_sha256) = 64),
+    failure_reason   text        CHECK (failure_reason IS NULL OR char_length(failure_reason) <= 500),
     CONSTRAINT audit_exports_state_shape CHECK (
         (state = 'requested' AND outcome IS NULL AND completed_at IS NULL)
         OR (state <> 'requested' AND outcome = state AND completed_at IS NOT NULL)
@@ -225,6 +300,56 @@ CREATE TABLE privacy_deletions (
         OR (state <> 'requested' AND completed_at IS NOT NULL)
     )
 );
+
+-- ---------------------------------------------------------------------------
+-- Insert-shape triggers: audit_app records a reported run and a requested
+-- privacy deletion, but the security design gives it no retention grant. These
+-- triggers narrow its INSERT to exactly the two benign shapes, so the
+-- append-serving credential cannot forge an audit_logs run or an already
+-- completed deletion. The retention role is unconstrained here; it is the role
+-- meant to write those rows.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION enforce_app_insert_shape()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF current_user <> 'audit_app' THEN
+        RETURN NEW;
+    END IF;
+
+    IF TG_TABLE_NAME = 'retention_runs' THEN
+        IF NEW.category <> 'reported'
+           OR NEW.owner = 'audit'
+           OR NEW.state = 'running'
+           OR NEW.outcome IS DISTINCT FROM NEW.state THEN
+            RAISE EXCEPTION 'audit_app may insert only a completed reported run'
+                USING ERRCODE = '42501';
+        END IF;
+    ELSIF TG_TABLE_NAME = 'privacy_deletions' THEN
+        IF NEW.state <> 'requested'
+           OR NEW.completed_at IS NOT NULL
+           OR NEW.deleted_count <> 0
+           OR NEW.kept_count <> 0
+           OR NEW.kept_with_legal_basis <> 0
+           OR NEW.defects <> 0
+           OR NEW.failure_reason IS NOT NULL THEN
+            RAISE EXCEPTION 'audit_app may insert only a requested privacy deletion'
+                USING ERRCODE = '42501';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER retention_runs_app_insert
+    BEFORE INSERT ON retention_runs
+    FOR EACH ROW EXECUTE FUNCTION enforce_app_insert_shape();
+
+CREATE TRIGGER privacy_deletions_app_insert
+    BEFORE INSERT ON privacy_deletions
+    FOR EACH ROW EXECUTE FUNCTION enforce_app_insert_shape();
 
 -- ---------------------------------------------------------------------------
 -- Terminal-state trigger: a completed workflow row is immutable too.
@@ -277,11 +402,19 @@ BEGIN
     EXECUTE 'GRANT SELECT, INSERT ON support_access_records TO audit_app';
     EXECUTE 'GRANT UPDATE (state, approved_at, ended_at, outcome) ON support_access_records TO audit_app';
     EXECUTE 'GRANT SELECT, INSERT ON audit_exports TO audit_app';
-    EXECUTE 'GRANT UPDATE (state, completed_at, row_count, outcome, content_sha256) ON audit_exports TO audit_app';
-    -- The API records a reported run and a requested privacy deletion; it has no
-    -- UPDATE on either, so it cannot complete, fail, or alter them.
+    EXECUTE 'GRANT UPDATE (state, completed_at, row_count, outcome, content_sha256, failure_reason) ON audit_exports TO audit_app';
+    -- The API records a reported run and a requested privacy deletion. It has no
+    -- UPDATE on either, so it cannot complete, fail, or alter them, and the
+    -- insert-shape triggers above narrow even the INSERT to those two shapes.
     EXECUTE 'GRANT INSERT ON retention_runs TO audit_app';
     EXECUTE 'GRANT SELECT, INSERT ON privacy_deletions TO audit_app';
+
+    -- /readyz reads this table with the runtime credential. sqlx creates it
+    -- before applying the migration; guard the grant so a hand-run bootstrap
+    -- (psql) still succeeds.
+    IF to_regclass('_sqlx_migrations') IS NOT NULL THEN
+        EXECUTE 'GRANT SELECT ON _sqlx_migrations TO audit_app';
+    END IF;
 
     -- audit_readonly: select only.
     EXECUTE 'GRANT SELECT ON audit_events TO audit_readonly';
@@ -300,6 +433,7 @@ BEGIN
     EXECUTE 'GRANT SELECT, INSERT ON privacy_deletions TO audit_retention';
     EXECUTE 'GRANT UPDATE (state, completed_at, deleted_count, kept_count, kept_with_legal_basis, defects, failure_reason) ON privacy_deletions TO audit_retention';
     EXECUTE 'GRANT EXECUTE ON FUNCTION ensure_audit_partition(date) TO audit_retention';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION drop_audit_partition(text, timestamptz) TO audit_retention';
     EXECUTE 'GRANT EXECUTE ON FUNCTION create_audit_partition(date) TO audit_migrator';
 
     -- audit_migrator: DDL only, used by nothing else.

@@ -151,6 +151,14 @@ impl AppendEvent {
                 None
             }
         };
+        // Only Audit's own publish paths write system attribution. An emitter
+        // could otherwise forge a successful job or retention run.
+        if actor_kind == Some(ActorKind::System) {
+            errors.push(FieldError::new(
+                "actorKind",
+                "system attribution is reserved for Audit's own write path",
+            ));
+        }
         let outcome = match Outcome::parse(&command.outcome) {
             Ok(value) => Some(value),
             Err(error) => {

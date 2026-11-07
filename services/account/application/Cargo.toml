@@ -1,0 +1,21 @@
+[package]
+name = "account-application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Account use cases and inward-defined ports"
+
+[dependencies]
+account-domain = { path = "../domain" }
+async-trait.workspace = true
+chrono.workspace = true
+rust_decimal.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

@@ -1,0 +1,28 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u3-identity",
+  "upstream_ids": ["NFR1", "NFR2", "NFR3", "NFR4", "NFR5", "NFR6", "NFR7", "NFR8", "NFR9", "NFR10", "NFR11", "NFR12", "NFR13", "NFR14", "NFR15", "NFR16", "NFR17", "NFR18", "NFR19", "NFR20"],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.1, NFR1.2" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.1, NFR2.2, NFR2.3, NFR2.4" },
+    { "id": "NFR3", "status": "N/A", "target": "no snapshot history in Identity" },
+    { "id": "NFR4", "status": "N/A", "target": "account sync belongs to u4-account" },
+    { "id": "NFR5", "status": "N/A", "target": "price freshness belongs to u5-market-data" },
+    { "id": "NFR6", "status": "OK", "target": "NFR6.1, NFR6.2" },
+    { "id": "NFR7", "status": "N/A", "target": "valuation accuracy belongs to u5-market-data and u6-portfolio" },
+    { "id": "NFR8", "status": "N/A", "target": "snapshot and P&L integrity belong to u6-portfolio and u7-ledger" },
+    { "id": "NFR9", "status": "OK", "target": "NFR9.1, NFR9.2, NFR9.3" },
+    { "id": "NFR10", "status": "OK", "target": "NFR10.1, NFR10.2, NFR10.3, NFR10.4, NFR10.5, NFR10.6, NFR10.7" },
+    { "id": "NFR11", "status": "OK", "target": "NFR11.1, NFR11.2" },
+    { "id": "NFR12", "status": "OK", "target": "NFR12.1" },
+    { "id": "NFR13", "status": "OK", "target": "NFR13.1, NFR13.2, NFR13.3, NFR13.4, NFR13.5" },
+    { "id": "NFR14", "status": "OK", "target": "NFR14.1, NFR14.2" },
+    { "id": "NFR15", "status": "N/A", "target": "no UI in Identity; accessibility is delivered by u2-web-app and u13-support-console" },
+    { "id": "NFR16", "status": "OK", "target": "NFR16.1, NFR16.2" },
+    { "id": "NFR17", "status": "OK", "target": "NFR17.1, NFR17.2, NFR17.3, NFR17.4, NFR17.5" },
+    { "id": "NFR18", "status": "OK", "target": "NFR18.1" },
+    { "id": "NFR19", "status": "OK", "target": "NFR19.1, NFR19.2, NFR19.3" },
+    { "id": "NFR20", "status": "OK", "target": "NFR20.1, NFR20.2, NFR20.3, NFR20.4" }
+  ],
+  "reverse": []
+}

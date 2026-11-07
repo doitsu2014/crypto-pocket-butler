@@ -208,7 +208,7 @@ impl RetentionService {
             match partition_action(&summary, cutoff) {
                 PartitionAction::Drop => {
                     self.retention
-                        .drop_partition(&summary.name)
+                        .drop_partition(&summary.name, cutoff)
                         .await
                         .map_err(|error| error.to_string())?;
                     *deleted += summary.row_count;
@@ -231,6 +231,18 @@ impl RetentionService {
                 }
                 self.pause.pause().await;
             }
+        }
+
+        // Idempotency rows point at events; once the event is past the window the
+        // row can never be consulted again, so it is swept with the same cutoff
+        // instead of growing for the life of the schema.
+        let expired = self
+            .retention
+            .delete_expired_idempotency(cutoff)
+            .await
+            .map_err(|error| error.to_string())?;
+        if expired > 0 {
+            tracing::info!(rows = expired, "swept expired append idempotency rows");
         }
         Ok(())
     }

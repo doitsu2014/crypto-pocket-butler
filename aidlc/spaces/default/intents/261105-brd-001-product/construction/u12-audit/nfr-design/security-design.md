@@ -92,7 +92,14 @@ replacement marker rather than a rejection, because the run still has to record 
   `audit_events` and its partitions, `CREATE TABLE … PARTITION OF` on `audit_events` (so it can
   pre-create partitions), `INSERT` on `audit_events` (its own run events and its privacy-deletion
   events), and `INSERT`/`UPDATE` on `retention_runs` and `privacy_deletions`. It holds no grant on
-  support sessions or exports, and `audit_app` holds none of the retention grants.
+  support sessions or exports. `audit_app` holds `INSERT` on `retention_runs` and
+  `SELECT, INSERT` on `privacy_deletions` only so the report and deletion-request paths can
+  record what they received; insert-shape triggers refuse any row other than a completed
+  `reported` run (owner not audit) or a `requested` deletion with zero counts, and `audit_app`
+  holds no `UPDATE` or `DELETE` on either. The append-serving credential therefore cannot forge
+  an `audit_logs` run or a completed deletion. The audit-log sweep also removes the
+  `append_idempotency` rows whose event is past the same window, so the idempotency table is
+  bounded with the trail.
 - Workflow-record tables: column-scoped `UPDATE` plus a trigger that refuses a write to a row
   already in a terminal state, so a completed run or export is immutable too.
 - `audit_events` carries no trigger, because no role has `UPDATE` or `DELETE` on it except

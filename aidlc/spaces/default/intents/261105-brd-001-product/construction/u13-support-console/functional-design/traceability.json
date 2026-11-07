@@ -1,0 +1,20 @@
+{
+  "stage": "functional-design",
+  "unit": "u13-support-console",
+  "upstream_ids": ["AC8.1.1", "AC8.1.2", "AC8.1.3", "AC9.3.1", "AC9.3.2", "AC9.3.3"],
+  "coverage": [
+    { "id": "AC8.1.1", "status": "N/A", "target": "help centre and contact channel are rendered by u2-web-app; BR4.1 covers the console's read-only reuse" },
+    { "id": "AC8.1.2", "status": "OK", "target": "BR3.3 (joint with U1's support API and u2-web-app's status page)" },
+    { "id": "AC8.1.3", "status": "OK", "target": "BR3.2 (joint with U1's support API and U9's notification)" },
+    { "id": "AC9.3.1", "status": "OK", "target": "BR1.3" },
+    { "id": "AC9.3.2", "status": "OK", "target": "BR1.2" },
+    { "id": "AC9.3.3", "status": "OK", "target": "BR2.1" }
+  ],
+  "reverse": [
+    { "id": "BR1.1", "status": "OK", "target": "FR11.2 — role gate" },
+    { "id": "BR1.4", "status": "OK", "target": "FR11.2, NFR13 — metadata only" },
+    { "id": "BR2.2", "status": "OK", "target": "NFR13 — identifiers only" },
+    { "id": "BR3.1", "status": "OK", "target": "FR11.1 — admin incident console" },
+    { "id": "BR4.1", "status": "OK", "target": "AC8.1.1 — help reuse" }
+  ]
+}

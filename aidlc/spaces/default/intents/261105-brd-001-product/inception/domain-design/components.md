@@ -123,7 +123,13 @@ components:
       - Support access grants and deletion requests
     depends_on:
       - component: Audit
-        interaction: Records access, role, and privacy events
+        interaction: Records access, role, privacy, and export events
+        style: sync
+      - component: Account
+        interaction: Maintains the has_exchange_credentials claim on the Auth user, read from the JWT
+        style: sync
+      - component: JobOrchestration
+        interaction: Calls the privacy sweep run endpoint to resume exports and deletions
         style: sync
     dependents:
       - component: ApiGateway
@@ -139,6 +145,9 @@ components:
       - name: Supabase Vault
         kind: other
         purpose: Per-subject crypto-shredding keys
+      - name: Supabase Storage
+        kind: third-party-api
+        purpose: Private identity-exports bucket for assembled export archives
     entities:
       - name: User
         identifier: id
@@ -156,18 +165,32 @@ components:
       - name: DeletionRequest
         identifier: id
         attributes: [id, userId, requestedAt, status, retainedCategories]
+      - name: ExportRequest
+        identifier: id
+        attributes: [id, userId, requestedAt, status, progress, assemblyDeadline, downloadExpiresAt]
+      - name: JurisdictionRule
+        identifier: code
+        attributes: [code, allowed, minimumAge, disclosuresRequired]
+      - name: ShreddingKey
+        identifier: id
+        attributes: [id, userId, vaultReference, status]
+      - name: DeviceSession
+        identifier: id
+        attributes: [id, userId, authSessionId, device, location, lastActivityAt]
 
   - name: Account
     summary: Read-only exchange, wallet, and CSV accounts with verified credentials and holdings.
     behaviour: >
       Stores read-only credentials encrypted in Vault and verifies key permissions before use
       and periodically; rejects withdrawal or trading permission. Syncs balances for Binance and
-      OKX, EVM chains, BNB Smart Chain, and Solana, and imports CSV. Labels spam and dust, keeps
-      last-synced time, and never stores private keys or seed phrases.
+      OKX, EVM chains, BNB Smart Chain, and Solana, and imports CSV. Labels spam, keeps
+      last-synced time, and never stores private keys or seed phrases; pricing and dust are
+      Portfolio's (it values holdings).
     responsibilities:
       - Account lifecycle and credential verification
       - Balance and holdings sync across the launch coverage
       - CSV import and sync status
+      - Maintains app_metadata.has_exchange_credentials on the Supabase Auth user when a credential is stored or removed
     depends_on:
       - component: AssetRegistry
         interaction: Resolves observed tokens to canonical assets
@@ -176,8 +199,11 @@ components:
         interaction: Records credential, sync, and account events
         style: sync
       - component: Notification
-        interaction: Sync failures and key verification alerts
-        style: async
+        interaction: Sync failures and key revocation alerts (synchronous HTTP with bounded retry)
+        style: sync
+      - component: Identity
+        interaction: Verifies an approved support grant on a support metadata read
+        style: sync
     dependents:
       - component: ApiGateway
         interaction: Account and sync routes
@@ -203,6 +229,9 @@ components:
       - name: Supabase Vault
         kind: other
         purpose: Encrypted exchange credentials
+      - name: Supabase Auth admin API
+        kind: third-party-api
+        purpose: Maintains app_metadata.has_exchange_credentials on the Auth user
     entities:
       - name: Account
         identifier: id
@@ -216,14 +245,26 @@ components:
             relationship: each credential belongs to one account
       - name: Holding
         identifier: id
-        attributes: [id, accountId, assetId, quantity, observedAt, priced]
+        attributes: [id, accountId, observedToken, assetId, quantity, observedAt, spam]
         references:
           - entity: Asset
             owned_by: AssetRegistry
-            relationship: each holding is of one canonical asset
+            relationship: each resolved holding is of one canonical asset; a spam holding has no asset
       - name: SyncRun
         identifier: id
-        attributes: [id, accountId, startedAt, finishedAt, status, error]
+        attributes: [id, accountId, startedAt, leaseUntil, finishedAt, status, error]
+      - name: WalletConnection
+        identifier: id
+        attributes: [id, accountId, address, observedChain, sessionRef]
+      - name: ImportBatch
+        identifier: id
+        attributes: [id, accountId, source, fileName, importedCount, skippedCount, failedCount]
+      - name: ImportedTransaction
+        identifier: id
+        attributes: [id, batchId, accountId, externalId, dedupeKey, assetId, kind, quantity, price, executedAt]
+      - name: ImportRowError
+        identifier: id
+        attributes: [id, batchId, lineNumber, reason]
 
   - name: AssetRegistry
     summary: Canonical asset identity, chains, token contracts, price sources, and quarantine.
@@ -546,13 +587,13 @@ components:
     entities:
       - name: AnalyticsEvent
         identifier: id
-        attributes: [id, userId, eventName, occurredAt, properties]
+        attributes: [id, userRef, eventName, occurredAt, properties, consentPurpose]
       - name: MetricAggregate
         identifier: id
         attributes: [id, metric, period, value]
       - name: FeatureFlag
         identifier: id
-        attributes: [id, name, owner, expiresAt, rolloutPercent, enabled]
+        attributes: [id, key, owner, expiresAt, rolloutPercentage, status]
 
   - name: JobOrchestration
     summary: Schedules, run records, single-flight, and missed-run detection.
@@ -732,11 +773,11 @@ Notification to deliver email; JobOrchestration calls every component's run endp
 | SupportConsole | Least-privilege support UI | ApiGateway | — | none |
 | ApiGateway | JWT validation, routing, rate limits | Identity, Account, AssetRegistry, MarketData, Portfolio, Ledger, Reporting, Notification, Analytics, JobOrchestration, Audit | WebApp, SupportConsole | none |
 | Identity | Users, roles, consent, preferences, deletion | Audit | ApiGateway, Notification, Analytics | User, ConsentRecord, SupportAccessGrant, DeletionRequest |
-| Account | Read-only accounts, credentials, holdings sync | AssetRegistry, Audit, Notification | ApiGateway, Portfolio, Ledger, JobOrchestration | Account, Credential, Holding, SyncRun |
+| Account | Read-only accounts, credentials, holdings sync, CSV import | AssetRegistry, Audit, Notification, Identity, Supabase Auth | ApiGateway, Portfolio, Ledger, JobOrchestration | Account, Credential, Holding, SyncRun, WalletConnection, ImportBatch, ImportedTransaction, ImportRowError |
 | AssetRegistry | Canonical assets, chains, contracts, sources | Audit | ApiGateway, Account, MarketData, Portfolio, Ledger | Asset, Chain, TokenContract, PriceSource, UnmappedObservation |
-| MarketData | Prices, FX, freshness | AssetRegistry, Audit | ApiGateway, Portfolio, Reporting, JobOrchestration | PriceObservation, FxRate, BenchmarkSeries |
+| MarketData | Prices, FX, freshness | AssetRegistry, Audit | ApiGateway, Portfolio, Reporting, JobOrchestration | PriceObservation, FxRate, RefreshRun, AssetPriceTier |
 | Portfolio | Portfolios, targets, valuation, drift, snapshots, orders | Account, MarketData, Ledger, AssetRegistry, Audit, Notification | ApiGateway, Reporting, JobOrchestration | Portfolio, PortfolioAccount, TargetAllocation, Guardrail, ValuationSnapshot, OrderIntent, RecordedTrade |
-| Ledger | Transactions, cost basis, P&L | AssetRegistry, Account, Audit | ApiGateway, Portfolio, Reporting, JobOrchestration | Transaction, ImportBatch, CostBasisPosition, PnlSnapshot |
+| Ledger | Transactions, cost basis, P&L | AssetRegistry, Account, Audit | ApiGateway, Portfolio, Reporting, JobOrchestration | Transaction, CostBasisPosition, PnlSnapshot |
 | Reporting | Briefs in-app and by email | Portfolio, Ledger, MarketData, Notification, Audit | ApiGateway, JobOrchestration | Brief, BriefDelivery |
 | Notification | Alert catalogue, preferences, delivery | Identity, Audit | ApiGateway, Account, Portfolio, Reporting, JobOrchestration | NotificationPreference, Alert, DeliveryAttempt |
 | Analytics | Consent-aware events, aggregates, flags | Identity, Audit | ApiGateway, JobOrchestration | AnalyticsEvent, MetricAggregate, FeatureFlag |
@@ -755,14 +796,15 @@ Notification to deliver email; JobOrchestration calls every component's run endp
 | Credential | Account | id | id, accountId, vaultSecretRef, permissionsVerifiedAt, readOnly | Account |
 | Holding | Account | id | id, accountId, assetId, quantity, observedAt, priced | Asset |
 | SyncRun | Account | id | id, accountId, startedAt, finishedAt, status, error | — |
-| Asset | AssetRegistry | id | id, symbol, name, decimals, canonical | — |
+| Asset | AssetRegistry | id | id, symbol, name, decimals, canonical, rank | — |
 | Chain | AssetRegistry | id | id, name, family, launchCoverage | — |
 | TokenContract | AssetRegistry | id | id, chainId, contractAddress, assetId, decimals | Asset, Chain |
-| PriceSource | AssetRegistry | id | id, name, priority, licenceRef, enabled | — |
+| PriceSource | AssetRegistry | id | id, name, kind, priority, quoteCurrency, rateLimitPerMinute, delayedFeed, licenceRef, enabled | — |
 | UnmappedObservation | AssetRegistry | id | id, observedSymbol, chainId, firstSeenAt, status | — |
-| PriceObservation | MarketData | id | id, assetId, sourceId, price, observedAt, freshness | Asset |
-| FxRate | MarketData | id | id, baseCurrency, quoteCurrency, rate, observedAt | — |
-| BenchmarkSeries | MarketData | id | id, name, licenceRef, observedAt, value | — |
+| PriceObservation | MarketData | id | id, assetId, sourceName, price, currency, observedAt, receivedAt, status | Asset, PriceSource (by name) |
+| FxRate | MarketData | id | id, base, quote, rate, source, observedAt, receivedAt | PriceSource (by name) |
+| RefreshRun | MarketData | id | id, startedAt, leaseUntil, finishedAt, status, requestedCount, pricedCount, unpricedCount, error | — |
+| AssetPriceTier | MarketData | assetId | assetId, rank, tier, boundSeconds, updatedAt | Asset |
 | Portfolio | Portfolio | id | id, userId, name, baseCurrency, createdAt | — |
 | PortfolioAccount | Portfolio | id | id, portfolioId, accountId | Account |
 | TargetAllocation | Portfolio | id | id, portfolioId, assetId, targetPercent | — |
@@ -779,7 +821,7 @@ Notification to deliver email; JobOrchestration calls every component's run endp
 | NotificationPreference | Notification | id | id, userId, type, inApp, email, mandatory | — |
 | Alert | Notification | id | id, userId, type, payload, createdAt, dedupeKey | — |
 | DeliveryAttempt | Notification | id | id, alertId, channel, status, attemptedAt, error | — |
-| AnalyticsEvent | Analytics | id | id, userId, eventName, occurredAt, properties | — |
+| AnalyticsEvent | Analytics | id | id, userRef (salted hash), eventName, occurredAt, properties, consentPurpose | — |
 | MetricAggregate | Analytics | id | id, metric, period, value | — |
 | FeatureFlag | Analytics | id | id, name, owner, expiresAt, rolloutPercent, enabled | — |
 | JobSchedule | JobOrchestration | id | id, jobName, interval, ownerComponent, enabled | — |

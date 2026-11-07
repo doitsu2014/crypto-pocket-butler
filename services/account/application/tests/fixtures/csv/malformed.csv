@@ -1,0 +1,3 @@
+external_id,kind,asset,quantity,price,executed_at
+t-1,buy,asset-btc,not-a-number,30000.00,2026-11-01T10:00:00Z
+t-2,sell,asset-eth,2,2000.50,2026-11-02T10:00:00Z

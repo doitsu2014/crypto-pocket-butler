@@ -122,11 +122,12 @@ impl SupportSessionRepository for PgSupportSessionRepository {
     async fn update(&self, session: &SupportSession) -> Result<(), RepositoryError> {
         let affected = sqlx::query(
             "UPDATE support_access_records
-             SET state = $2, ended_at = $3, outcome = $4
+             SET state = $2, approved_at = $3, ended_at = $4, outcome = $5
              WHERE id = $1",
         )
         .bind(session.id().as_uuid())
         .bind(session.stored_state().as_str())
+        .bind(session.approved_at())
         .bind(session.ended_at())
         .bind(session.outcome().map(SupportSessionOutcome::as_str))
         .execute(&self.pool)

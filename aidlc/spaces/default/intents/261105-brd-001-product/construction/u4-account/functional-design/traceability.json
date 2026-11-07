@@ -1,0 +1,189 @@
+{
+  "stage": "functional-design",
+  "unit": "u4-account",
+  "upstream_ids": [
+    "AC1.2.1",
+    "AC1.2.2",
+    "AC1.2.3",
+    "AC1.3.1",
+    "AC1.3.2",
+    "AC1.3.3",
+    "AC2.1.1",
+    "AC2.1.2",
+    "AC2.1.3",
+    "AC2.1.4",
+    "AC2.2.1",
+    "AC2.2.2",
+    "AC2.2.3",
+    "AC2.3.1",
+    "AC2.3.2",
+    "AC2.3.3",
+    "AC1.4.1",
+    "AC1.4.2",
+    "AC1.4.3"
+  ],
+  "coverage": [
+    {
+      "id": "AC1.2.1",
+      "status": "OK",
+      "target": "BR3.1, BR4.3"
+    },
+    {
+      "id": "AC1.2.2",
+      "status": "OK",
+      "target": "BR3.2"
+    },
+    {
+      "id": "AC1.2.3",
+      "status": "OK",
+      "target": "BR6.1"
+    },
+    {
+      "id": "AC1.3.1",
+      "status": "OK",
+      "target": "BR2.1, BR4.3"
+    },
+    {
+      "id": "AC1.3.2",
+      "status": "OK",
+      "target": "BR1.4, BR2.1"
+    },
+    {
+      "id": "AC1.3.3",
+      "status": "OK",
+      "target": "BR2.3"
+    },
+    {
+      "id": "AC2.1.1",
+      "status": "OK",
+      "target": "BR3.1"
+    },
+    {
+      "id": "AC2.1.2",
+      "status": "OK",
+      "target": "BR3.1"
+    },
+    {
+      "id": "AC2.1.3",
+      "status": "OK",
+      "target": "BR3.1"
+    },
+    {
+      "id": "AC2.1.4",
+      "status": "OK",
+      "target": "BR3.1, BR3.2"
+    },
+    {
+      "id": "AC2.2.1",
+      "status": "OK",
+      "target": "BR3.3"
+    },
+    {
+      "id": "AC2.2.2",
+      "status": "OK",
+      "target": "BR3.3"
+    },
+    {
+      "id": "AC2.2.3",
+      "status": "OK",
+      "target": "BR3.3"
+    },
+    {
+      "id": "AC2.3.1",
+      "status": "OK",
+      "target": "BR4.3"
+    },
+    {
+      "id": "AC2.3.2",
+      "status": "OK",
+      "target": "BR4.1, BR4.3"
+    },
+    {
+      "id": "AC2.3.3",
+      "status": "OK",
+      "target": "BR4.4"
+    },
+    {
+      "id": "AC1.4.1",
+      "status": "OK",
+      "target": "BR5.1, BR5.4"
+    },
+    {
+      "id": "AC1.4.2",
+      "status": "OK",
+      "target": "BR5.2"
+    },
+    {
+      "id": "AC1.4.3",
+      "status": "OK",
+      "target": "BR5.3"
+    }
+  ],
+  "reverse": [
+    {
+      "id": "BR1.1",
+      "status": "N/A",
+      "target": "ownership and support-grant access required by FR1.6 and FR11.2"
+    },
+    {
+      "id": "BR1.2",
+      "status": "N/A",
+      "target": "unique labels required by FR2.1"
+    },
+    {
+      "id": "BR1.3",
+      "status": "N/A",
+      "target": "no private keys or seed phrases required by FR2.6"
+    },
+    {
+      "id": "BR1.4",
+      "status": "N/A",
+      "target": "account created only after verification, tied to AC1.3.2"
+    },
+    {
+      "id": "BR2.2",
+      "status": "N/A",
+      "target": "verify-then-swap replacement required by FR2.1"
+    },
+    {
+      "id": "BR2.4",
+      "status": "N/A",
+      "target": "claim maintenance required by FR1.2 and NFR10"
+    },
+    {
+      "id": "BR2.5",
+      "status": "N/A",
+      "target": "key revocation required by FR2.1 and US7.1"
+    },
+    {
+      "id": "BR4.2",
+      "status": "N/A",
+      "target": "run-lease recovery required by FR2.5 and NFR1"
+    },
+    {
+      "id": "BR4.5",
+      "status": "N/A",
+      "target": "disconnected recovery required by FR2.1 and FR2.5"
+    },
+    {
+      "id": "BR6.2",
+      "status": "N/A",
+      "target": "decimal quantities and canonical ids required by FR3.1 and NFR7"
+    },
+    {
+      "id": "BR6.3",
+      "status": "N/A",
+      "target": "spam label required by FR3.5; pricing and dust are Portfolio's"
+    },
+    {
+      "id": "BR7.1",
+      "status": "N/A",
+      "target": "failure and revocation notification required by FR7.2"
+    },
+    {
+      "id": "BR7.2",
+      "status": "N/A",
+      "target": "event audit required by NFR19"
+    }
+  ]
+}

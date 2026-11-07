@@ -119,7 +119,7 @@ impl ExportAudit {
 
         if matching > EXPORT_ROW_CAP {
             let failed = export
-                .fail(self.clock.now())
+                .fail("the export exceeded the row cap", self.clock.now())
                 .map_err(|error| ExportError::Repository(error.to_string()))?;
             let _ = self.exports.update(&failed).await;
             let _ = self
@@ -285,7 +285,7 @@ impl ExportSession {
         let failed = self
             .export
             .clone()
-            .fail(self.clock.now())
+            .fail(reason, self.clock.now())
             .map_err(|error| ExportError::Repository(error.to_string()))?;
         self.exports
             .update(&failed)
@@ -293,7 +293,9 @@ impl ExportSession {
             .map_err(|error| ExportError::Repository(error.to_string()))?;
         tracing::error!(
             export_id = %failed.id(),
-            reason = %reason,
+            // The stored reason is redacted; never log the raw error, which can
+            // carry a connection string or a token.
+            reason = failed.failure_reason().unwrap_or("unspecified failure"),
             "audit export failed after the request was recorded"
         );
         let _ = self

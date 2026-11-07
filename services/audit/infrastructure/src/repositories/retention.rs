@@ -185,12 +185,31 @@ impl RetentionRepository for PgRetentionRepository {
         Ok(summaries)
     }
 
-    async fn drop_partition(&self, name: &str) -> Result<(), RepositoryError> {
-        let quoted = quote_partition(name)?;
-        sqlx::query(&format!("DROP TABLE IF EXISTS {quoted}"))
-            .execute(&self.pool)
+    async fn drop_partition(
+        &self,
+        name: &str,
+        cutoff: DateTime<Utc>,
+    ) -> Result<(), RepositoryError> {
+        // The SECURITY DEFINER function owned by the migration role re-checks the
+        // retention window and legal holds inside the database before dropping,
+        // so the retention role never needs DROP ownership of the partition.
+        if partition_bounds(name).is_none() {
+            return Err(invalid_data(
+                "partition name",
+                "the name is not an audit_events_YYYYMM partition",
+            ));
+        }
+        let dropped: bool = sqlx::query_scalar("SELECT drop_audit_partition($1, $2)")
+            .bind(name)
+            .bind(cutoff)
+            .fetch_one(&self.pool)
             .await
             .map_err(|error| map_sqlx_error("drop audit partition", error))?;
+        if !dropped {
+            return Err(RepositoryError::Conflict(format!(
+                "partition {name} was not dropped"
+            )));
+        }
         Ok(())
     }
 
@@ -213,6 +232,19 @@ impl RetentionRepository for PgRetentionRepository {
         .await
         .map_err(|error| map_sqlx_error("delete audit batch", error))?
         .rows_affected();
+        Ok(affected)
+    }
+
+    async fn delete_expired_idempotency(
+        &self,
+        cutoff: DateTime<Utc>,
+    ) -> Result<u64, RepositoryError> {
+        let affected = sqlx::query("DELETE FROM append_idempotency WHERE created_at < $1")
+            .bind(cutoff)
+            .execute(&self.pool)
+            .await
+            .map_err(|error| map_sqlx_error("delete expired idempotency rows", error))?
+            .rows_affected();
         Ok(affected)
     }
 

@@ -7,13 +7,14 @@ use std::collections::BTreeMap;
 use audit_application::append::{AppendCommand, AppendError, Emitter};
 use audit_application::export::ExportError;
 use audit_application::ports::{ExportRepository, Principal, RepositoryError, Role};
-use audit_application::privacy::RequestCommand;
+use audit_application::privacy::{PrivacyError, RequestCommand};
 use audit_application::query::{QueryCommand, QueryError};
 use audit_application::retention::ReportCommand;
 use audit_application::support::{CheckDecision, StartSessionCommand, SupportError};
 use audit_domain::{
     AuditEvent, AuditEventId, AuditExport, AuditExportId, EventLabel, ExportFilter, ExportState,
-    Outcome, PartitionSummary, PrivacyDeletionState, Sensitivity, SupportSession, UserId,
+    Outcome, PartitionSummary, PrivacyDeletionState, Sensitivity, SupportScope, SupportSession,
+    SupportSessionId, SupportSessionState, UserId,
 };
 use chrono::{Duration, TimeZone, Utc};
 use common::*;
@@ -158,6 +159,36 @@ async fn rejects_a_contradicting_event_class() {
     assert!(matches!(error, AppendError::Rejected(_)));
 }
 
+fn approver_principal() -> Principal {
+    Principal {
+        subject: SECOND_APPROVER.to_string(),
+        role: Role::Support,
+    }
+}
+
+#[tokio::test]
+async fn an_emitter_cannot_append_a_system_event() {
+    let harness = harness();
+    let mut command = append_command("key-system");
+    command.actor_id = None;
+    command.actor_kind = "system".to_string();
+    command.action = "system.retention.run".to_string();
+    let error = harness
+        .state
+        .append
+        .execute(&emitter("identity"), command)
+        .await
+        .unwrap_err();
+    match error {
+        AppendError::Rejected(errors) => assert_eq!(errors[0].field, "actorKind"),
+        other => panic!("expected a rejection, got {other:?}"),
+    }
+    assert!(
+        harness.events.stored().is_empty(),
+        "system attribution is reserved for Audit's own write path"
+    );
+}
+
 #[tokio::test]
 async fn rejects_a_system_event_outside_the_allow_list() {
     let harness = harness();
@@ -255,6 +286,39 @@ async fn a_query_pages_newest_first_with_a_cursor() {
     assert_eq!(second.events.len(), 1);
     assert_eq!(second.events[0].occurred_at(), instant(9));
     assert!(second.next_cursor.is_none());
+}
+
+#[tokio::test]
+async fn a_cursor_keeps_sub_millisecond_precision() {
+    let harness = harness();
+    let base = instant(11);
+    for (index, offset) in [0_i64, 1].into_iter().enumerate() {
+        let mut command = append_command(&format!("nanos-{index}"));
+        command.occurred_at = Some(base + Duration::nanoseconds(offset));
+        harness
+            .state
+            .append
+            .execute(&emitter("identity"), command)
+            .await
+            .unwrap();
+    }
+
+    let first = harness
+        .state
+        .query
+        .execute(&admin(), query(Some(1)))
+        .await
+        .unwrap();
+    assert_eq!(first.events.len(), 1);
+    let mut next = query(Some(1));
+    next.cursor = first.next_cursor;
+    let second = harness.state.query.execute(&admin(), next).await.unwrap();
+    assert_eq!(
+        second.events.len(),
+        1,
+        "a second row inside the same millisecond must not be skipped"
+    );
+    assert_eq!(second.events[0].occurred_at(), base);
 }
 
 fn export_filter() -> ExportFilter {
@@ -413,6 +477,11 @@ async fn stale_requested_exports_are_recovered_on_start() {
     let recovered = harness.state.export.recover_stale().await.unwrap();
     assert_eq!(recovered, 1);
     assert_eq!(harness.exports.stored()[0].state(), ExportState::Failed);
+    assert_eq!(
+        harness.exports.stored()[0].failure_reason(),
+        Some(audit_domain::export::REPLICA_LOST_REASON),
+        "an operator can tell a crashed replica from an ordinary failure"
+    );
 }
 
 fn session_command(expires_at: chrono::DateTime<Utc>, reason: &str) -> StartSessionCommand {
@@ -427,7 +496,7 @@ fn session_command(expires_at: chrono::DateTime<Utc>, reason: &str) -> StartSess
 }
 
 #[tokio::test]
-async fn starts_an_active_session_and_audits_it() {
+async fn records_a_requested_session_and_waits_for_the_second_approver() {
     let harness = harness();
     let session = harness
         .state
@@ -438,15 +507,75 @@ async fn starts_an_active_session_and_audits_it() {
         )
         .await
         .unwrap();
-    assert_eq!(
-        session.stored_state(),
-        audit_domain::SupportSessionState::Active
-    );
-    assert!(harness
-        .events
-        .stored()
+    assert_eq!(session.stored_state(), SupportSessionState::Requested);
+    assert_eq!(session.approved_at(), None);
+    let events = harness.events.stored();
+    assert!(events
         .iter()
-        .any(|event| event.action() == "support.session.started"));
+        .any(|event| event.action() == "support.session.requested"));
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.action() == "support.session.started"),
+        "nothing is active until the named approver acts"
+    );
+}
+
+#[tokio::test]
+async fn the_named_second_approver_activates_the_session_and_both_actors_are_audited() {
+    let harness = harness();
+    let requested = harness
+        .state
+        .support
+        .request(
+            &support_principal(),
+            session_command(instant(18), "customer reported a billing error"),
+        )
+        .await
+        .unwrap();
+    let active = harness
+        .state
+        .support
+        .approve(&approver_principal(), requested.id())
+        .await
+        .unwrap();
+    assert_eq!(active.stored_state(), SupportSessionState::Active);
+    assert_eq!(active.approved_at(), Some(fixed_now()));
+    let events = harness.events.stored();
+    let agent = UserId::parse(SUPPORT_SUBJECT).unwrap();
+    let approver = UserId::parse(SECOND_APPROVER).unwrap();
+    assert!(events.iter().any(
+        |event| event.action() == "support.session.started" && event.actor_id() == Some(agent)
+    ));
+    assert!(events
+        .iter()
+        .any(|event| event.action() == "support.session.approved"
+            && event.actor_id() == Some(approver)));
+}
+
+#[tokio::test]
+async fn the_requesting_agent_cannot_approve_their_own_session() {
+    let harness = harness();
+    let requested = harness
+        .state
+        .support
+        .request(
+            &support_principal(),
+            session_command(instant(18), "customer reported a billing error"),
+        )
+        .await
+        .unwrap();
+    let error = harness
+        .state
+        .support
+        .approve(&support_principal(), requested.id())
+        .await
+        .unwrap_err();
+    assert_eq!(error, SupportError::Forbidden);
+    assert_eq!(
+        harness.support.sessions.lock().unwrap()[0].stored_state(),
+        SupportSessionState::Requested
+    );
 }
 
 #[tokio::test]
@@ -487,13 +616,19 @@ async fn a_non_support_caller_cannot_start_a_session() {
 }
 
 async fn started_session(harness: &Harness) -> SupportSession {
-    harness
+    let requested = harness
         .state
         .support
         .request(
             &support_principal(),
             session_command(instant(18), "customer reported a billing error"),
         )
+        .await
+        .unwrap();
+    harness
+        .state
+        .support
+        .approve(&approver_principal(), requested.id())
         .await
         .unwrap()
 }
@@ -557,6 +692,24 @@ async fn check_denies_out_of_scope() {
         CheckDecision::Deny {
             reason: "out-of-scope"
         }
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_session_check_is_denied_and_the_denial_is_recorded() {
+    let harness = harness();
+    let id = SupportSessionId::generate();
+    let decision = harness
+        .state
+        .support
+        .check(id, SupportScope::AccountMetadata, "gateway")
+        .await;
+    assert!(matches!(decision, CheckDecision::Deny { .. }));
+    assert!(
+        harness.events.stored().iter().any(|event| {
+            event.action() == "system.support.check_denied" && event.outcome() == Outcome::Denied
+        }),
+        "a denial that cannot be attributed to an agent is still written"
     );
 }
 
@@ -666,6 +819,19 @@ async fn a_sweep_drops_an_old_partition_and_batch_deletes_a_straddling_one() {
         .stored()
         .iter()
         .any(|event| event.action() == "system.retention.run"));
+}
+
+#[tokio::test]
+async fn a_sweep_sweeps_expired_idempotency_rows() {
+    let harness = harness();
+    *harness.retention.expired_idempotency.lock().unwrap() = 3;
+    let run = harness.state.retention.sweep().await.unwrap();
+    assert_eq!(run.state(), audit_domain::RetentionState::Success);
+    assert_eq!(
+        *harness.retention.expired_idempotency.lock().unwrap(),
+        0,
+        "the sweep consumed the expired rows"
+    );
 }
 
 #[tokio::test]
@@ -865,23 +1031,74 @@ fn seed_labels(harness: &Harness, subject: UserId) {
 }
 
 #[tokio::test]
-async fn a_count_mismatch_marks_the_deletion_failed() {
+async fn a_count_difference_is_recorded_on_the_row_instead_of_failing_after_the_delete() {
     let harness = harness();
     seed_labels(&harness, UserId::parse(SUBJECT_USER).unwrap());
-    *harness.privacy.delete_count.lock().unwrap() = Some(99);
+    *harness.privacy.delete_count.lock().unwrap() = Some(0);
     harness
         .state
         .privacy
         .request("identity", deletion_command())
         .await
         .unwrap();
-    let error = harness.state.privacy.execute_pending(10).await.unwrap_err();
-    assert!(matches!(
-        error,
-        audit_application::privacy::PrivacyError::Inconsistent(_)
-    ));
+    let done = harness.state.privacy.execute_pending(10).await.unwrap();
+    assert_eq!(done.len(), 1);
+    assert_eq!(done[0].state(), PrivacyDeletionState::Completed);
     assert_eq!(
-        harness.privacy.stored()[0].state(),
-        PrivacyDeletionState::Failed
+        done[0].deleted_count(),
+        0,
+        "the row records what was actually deleted"
+    );
+    assert_eq!(done[0].kept_with_legal_basis(), 1);
+}
+
+#[tokio::test]
+async fn a_non_identity_service_cannot_request_a_deletion() {
+    let harness = harness();
+    let error = harness
+        .state
+        .privacy
+        .request("ledger", deletion_command())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, PrivacyError::Forbidden(_)));
+    assert!(
+        harness.privacy.stored().is_empty(),
+        "no deletion is recorded for a caller that may not start one"
+    );
+    assert!(harness.events.stored().iter().any(|event| {
+        event.action() == "system.privacy.deletion" && event.outcome() == Outcome::Denied
+    }));
+}
+
+#[tokio::test]
+async fn one_failed_deletion_does_not_stop_the_rest() {
+    let harness = harness();
+    harness
+        .state
+        .privacy
+        .request("identity", deletion_command())
+        .await
+        .unwrap();
+    harness
+        .state
+        .privacy
+        .request(
+            "identity",
+            RequestCommand {
+                deletion_request_id: "77777777-7777-4777-8777-777777777777".to_string(),
+                subject_user_id: USER_SUBJECT.to_string(),
+            },
+        )
+        .await
+        .unwrap();
+    *harness.privacy.fail_labels.lock().unwrap() =
+        Some(RepositoryError::Unavailable("scan failed".to_string()));
+
+    let done = harness.state.privacy.execute_pending(10).await.unwrap();
+    assert_eq!(
+        done.len(),
+        1,
+        "the second request is executed after the first fails"
     );
 }

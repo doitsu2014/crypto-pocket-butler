@@ -1,0 +1,30 @@
+[package]
+name = "market-data-infrastructure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Market Data adapters: sqlx repositories, C4 client, provider client, Vault, and Audit"
+
+[features]
+# The adapter suite is `#[ignore]`d and keyed on TEST_DATABASE_URL; the feature
+# keeps the documented integration command valid.
+integration = []
+
+[dependencies]
+market-data-domain = { path = "../domain" }
+market-data-application = { path = "../application" }
+async-trait.workspace = true
+chrono.workspace = true
+hex.workspace = true
+reqwest.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true

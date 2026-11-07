@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 use audit_domain::{
     classify, cutoff_six_calendar_months_before, detect_secret, partition_action, ActorKind,
     AuditEvent, AuditEventId, AuditExport, AuditExportId, Context, DeletionRequestId, DomainError,
-    EventClass, EventLabel, ExportFilter, ExportOutcome, NewAuditEvent, Outcome, PartitionAction,
-    PartitionSummary, PrivacyDeletion, PrivacyDeletionId, RetentionOutcome, RetentionOwner,
-    RetentionRun, RetentionRunId, SecretKind, Sensitivity, SupportDenial, SupportScope,
-    SupportSession, SupportSessionId, SupportSessionOutcome, SupportSessionRequest,
+    EventClass, EventLabel, ExportFilter, ExportOutcome, ExportState, NewAuditEvent, Outcome,
+    PartitionAction, PartitionSummary, PrivacyDeletion, PrivacyDeletionId, RetentionOutcome,
+    RetentionOwner, RetentionRun, RetentionRunId, SecretKind, Sensitivity, SupportDenial,
+    SupportScope, SupportSession, SupportSessionId, SupportSessionOutcome, SupportSessionRequest,
     SupportSessionState, UserId,
 };
 use chrono::{TimeZone, Utc};
@@ -204,6 +204,20 @@ fn detects_address_token_key_seed_and_connection_shapes() {
 }
 
 #[test]
+fn the_seed_detector_uses_the_full_bip39_word_list() {
+    assert_eq!(
+        audit_domain::seed_word_count(),
+        2048,
+        "the detector must carry the whole official list, not a slice"
+    );
+    assert_eq!(
+        detect_secret("zoo zone zero youth young you yellow year wrong wrist write wreck"),
+        Some(SecretKind::SeedPhrase),
+        "words outside an alphabetical slice must still be recognised"
+    );
+}
+
+#[test]
 fn does_not_flag_plain_identifiers_or_actions() {
     assert_eq!(detect_secret("asset-usdc"), None);
     assert_eq!(detect_secret("asset.contract.added"), None);
@@ -211,12 +225,15 @@ fn does_not_flag_plain_identifiers_or_actions() {
     assert_eq!(detect_secret("GET /v1/events"), None);
 }
 
+const AGENT: &str = "22222222-2222-4222-8222-222222222222";
+const APPROVER: &str = "44444444-4444-4444-8444-444444444444";
+
 fn request(expires_at: chrono::DateTime<Utc>, reason: &str) -> SupportSessionRequest {
     SupportSessionRequest::new(
-        user("22222222-2222-4222-8222-222222222222"),
+        user(AGENT),
         user("33333333-3333-4333-8333-333333333333"),
         reason,
-        user("44444444-4444-4444-8444-444444444444"),
+        user(APPROVER),
         SupportScope::AccountMetadata,
         instant(2026, 11, 6, 12),
         expires_at,
@@ -224,34 +241,64 @@ fn request(expires_at: chrono::DateTime<Utc>, reason: &str) -> SupportSessionReq
     .unwrap()
 }
 
-#[test]
-fn approves_a_valid_session() {
-    let session = SupportSession::approve(
+fn active_session() -> SupportSession {
+    SupportSession::request(
         request(
             instant(2026, 11, 6, 18),
             "customer reported a billing error",
         ),
         SupportSessionId::generate(),
-        instant(2026, 11, 6, 12),
     )
-    .unwrap();
-    assert_eq!(session.stored_state(), SupportSessionState::Active);
-    assert_eq!(session.outcome(), Some(SupportSessionOutcome::Approved));
-    assert_eq!(session.approved_at(), Some(instant(2026, 11, 6, 12)));
-    assert!(session.is_active_at(instant(2026, 11, 6, 17)));
+    .approve(user(APPROVER), instant(2026, 11, 6, 12))
+    .unwrap()
+}
+
+#[test]
+fn a_requested_session_becomes_active_only_when_the_named_approver_approves() {
+    let requested = SupportSession::request(
+        request(
+            instant(2026, 11, 6, 18),
+            "customer reported a billing error",
+        ),
+        SupportSessionId::generate(),
+    );
+    assert_eq!(requested.stored_state(), SupportSessionState::Requested);
+    assert_eq!(
+        requested.outcome(),
+        None,
+        "a requested session has no terminal outcome"
+    );
+    assert!(!requested.is_active_at(instant(2026, 11, 6, 12)));
+
+    let error = requested
+        .clone()
+        .approve(user(AGENT), instant(2026, 11, 6, 12))
+        .unwrap_err();
+    assert_eq!(
+        error,
+        DomainError::Contradiction {
+            field: "secondApproverId",
+            reason: "only the named second approver may approve the session".to_string(),
+        },
+        "the requesting agent cannot approve their own session"
+    );
+
+    let active = requested
+        .approve(user(APPROVER), instant(2026, 11, 6, 12))
+        .unwrap();
+    assert_eq!(active.stored_state(), SupportSessionState::Active);
+    assert_eq!(active.outcome(), None, "approval is not a terminal outcome");
+    assert_eq!(active.approved_at(), Some(instant(2026, 11, 6, 12)));
+    assert!(active.is_active_at(instant(2026, 11, 6, 17)));
 }
 
 #[test]
 fn denies_a_short_reason_and_stores_the_refusal() {
-    let denied = SupportSession::approve(
-        request(instant(2026, 11, 6, 18), "look"),
-        SupportSessionId::generate(),
-        instant(2026, 11, 6, 12),
-    )
-    .unwrap_err();
-    assert_eq!(denied.1, SupportDenial::ReasonTooShort);
-    let session = SupportSession::deny(denied.0, SupportSessionId::generate());
+    let request = request(instant(2026, 11, 6, 18), "look");
+    assert_eq!(request.check().unwrap_err(), SupportDenial::ReasonTooShort);
+    let session = SupportSession::deny(request, SupportSessionId::generate());
     assert_eq!(session.stored_state(), SupportSessionState::Denied);
+    assert_eq!(session.outcome(), Some(SupportSessionOutcome::Denied));
 }
 
 #[test]
@@ -293,15 +340,7 @@ fn allows_exactly_eight_hours_and_denies_one_second_more() {
 
 #[test]
 fn expires_one_second_after_the_window_but_not_at_it() {
-    let session = SupportSession::approve(
-        request(
-            instant(2026, 11, 6, 18),
-            "customer reported a billing error",
-        ),
-        SupportSessionId::generate(),
-        instant(2026, 11, 6, 12),
-    )
-    .unwrap();
+    let session = active_session();
     assert!(session.is_active_at(instant(2026, 11, 6, 18)));
     assert!(!session.is_active_at(instant(2026, 11, 6, 18) + chrono::Duration::seconds(1)));
     assert_eq!(
@@ -312,15 +351,7 @@ fn expires_one_second_after_the_window_but_not_at_it() {
 
 #[test]
 fn revokes_an_active_session_but_refuses_an_expired_one() {
-    let active = SupportSession::approve(
-        request(
-            instant(2026, 11, 6, 18),
-            "customer reported a billing error",
-        ),
-        SupportSessionId::generate(),
-        instant(2026, 11, 6, 12),
-    )
-    .unwrap();
+    let active = active_session();
     let revoked = active.clone().revoke(instant(2026, 11, 6, 13)).unwrap();
     assert_eq!(revoked.stored_state(), SupportSessionState::Revoked);
     assert_eq!(revoked.ended_at(), Some(instant(2026, 11, 6, 13)));
@@ -516,7 +547,29 @@ fn an_export_requires_a_hex_digest_and_is_immutable_afterwards() {
         .succeed(3, &"a".repeat(64), instant(2026, 11, 6, 13))
         .unwrap();
     assert_eq!(succeeded.outcome(), Some(ExportOutcome::Success));
-    assert!(succeeded.clone().fail(instant(2026, 11, 6, 14)).is_err());
+    assert!(succeeded
+        .clone()
+        .fail("too late", instant(2026, 11, 6, 14))
+        .is_err());
+}
+
+#[test]
+fn a_failed_export_records_a_redacted_reason() {
+    let export = AuditExport::requested(
+        AuditExportId::generate(),
+        user("11111111-1111-4111-8111-111111111111"),
+        filter(),
+        instant(2026, 11, 6, 12),
+    );
+    let failed = export
+        .fail(
+            "postgres://user:secretpassword@db.internal/audit",
+            instant(2026, 11, 6, 13),
+        )
+        .unwrap();
+    assert_eq!(failed.state(), ExportState::Failed);
+    let reason = failed.failure_reason().expect("a failure reason is stored");
+    assert!(!reason.contains("secretpassword"));
 }
 
 #[test]

@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use audit_domain::{
-    classify, Context, DeletionRequestId, Outcome, PrivacyDeletion, PrivacyDeletionId,
-    PrivacyDeletionState, Sensitivity, UserId,
+    classify, AuditEventId, Context, DeletionReport, DeletionRequestId, Outcome, PrivacyDeletion,
+    PrivacyDeletionId, PrivacyDeletionState, Sensitivity, UserId,
 };
 
 use crate::common::FieldError;
@@ -31,16 +31,23 @@ pub struct RequestCommand {
 /// Why a deletion operation was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PrivacyError {
+    /// The caller is not Identity, the only service allowed to start a deletion.
+    #[error("forbidden: {0}")]
+    Forbidden(String),
     /// The request failed validation.
     #[error("the deletion request is invalid")]
     Rejected(Vec<FieldError>),
     /// Storage failed.
     #[error("the deletion could not be stored: {0}")]
     Repository(String),
-    /// The scan and the delete disagreed; the deletion is marked failed.
+    /// The scan and the delete disagreed. Kept for callers of earlier releases;
+    /// a count difference is now recorded on the row rather than raised.
     #[error("the deletion could not be completed: {0}")]
     Inconsistent(String),
 }
+
+/// The only service allowed to ask Audit to delete a user's records.
+pub const DELETION_OWNER_SERVICE: &str = "identity";
 
 /// Records and executes privacy deletions.
 pub struct PrivacyDeletions {
@@ -95,6 +102,25 @@ impl PrivacyDeletions {
         let request = request.expect("validated request");
         let subject = subject.expect("validated subject");
 
+        // WF7: Identity owns the account deletion and is the only service that
+        // may start the audit side of it. Any other registered emitter is refused
+        // and the refusal is audited, because a deletion is destructive.
+        if caller_service != DELETION_OWNER_SERVICE {
+            let _ = self
+                .trail
+                .record_system(
+                    "system.privacy.deletion",
+                    &request.to_string(),
+                    Outcome::Denied,
+                    Sensitivity::Security,
+                    source_context(caller_service),
+                )
+                .await;
+            return Err(PrivacyError::Forbidden(
+                "only Identity may request a privacy deletion".to_string(),
+            ));
+        }
+
         let deletion = PrivacyDeletion::requested(
             PrivacyDeletionId::generate(),
             request,
@@ -144,7 +170,14 @@ impl PrivacyDeletions {
             .map_err(|error| PrivacyError::Repository(error.to_string()))?;
         let mut executed = Vec::with_capacity(waiting.len());
         for deletion in waiting {
-            executed.push(self.execute(deletion).await?);
+            match self.execute(deletion).await {
+                Ok(done) => executed.push(done),
+                // One failed request must not stop the rest; it stays
+                // `requested` and the next tick retries it.
+                Err(error) => {
+                    tracing::error!(%error, "a privacy deletion failed and will be retried");
+                }
+            }
         }
         Ok(executed)
     }
@@ -167,35 +200,26 @@ impl PrivacyDeletions {
             .labels_for_subject(subject, MAX_DELETION_SCAN)
             .await
             .map_err(|error| PrivacyError::Repository(error.to_string()))?;
-        let report = classify(&labels);
+        let scanned = classify(&labels);
+        // Delete exactly the bounded, ordered set that was just scanned. The
+        // previous unbounded delete could remove rows outside the scan and then
+        // report a mismatch after the destructive step, leaving the row
+        // unreconciled. The actual count is what the row records.
+        let ids: Vec<AuditEventId> = labels
+            .iter()
+            .filter(|label| label.legal_basis.is_none())
+            .map(|label| label.id)
+            .collect();
         let deleted = self
             .deletions
-            .delete_unlabelled_for_subject(subject)
+            .delete_for_subject(subject, &ids)
             .await
             .map_err(|error| PrivacyError::Repository(error.to_string()))?;
-
-        if deleted != report.deleted as u64 {
-            let failed = deletion
-                .fail(
-                    "the scanned and deleted record counts disagree",
-                    self.clock.now(),
-                )
-                .map_err(|error| PrivacyError::Repository(error.to_string()))?;
-            let _ = self.deletions.update(&failed).await;
-            let _ = self
-                .trail
-                .record_system(
-                    "system.privacy.deletion",
-                    &failed.deletion_request_id().to_string(),
-                    Outcome::Failed,
-                    Sensitivity::Security,
-                    source_context("audit_retention"),
-                )
-                .await;
-            return Err(PrivacyError::Inconsistent(
-                "the scanned and deleted record counts disagree".to_string(),
-            ));
-        }
+        let report = DeletionReport {
+            deleted: deleted as i64,
+            kept_with_legal_basis: scanned.kept_with_legal_basis,
+            defects: scanned.defects,
+        };
 
         let completed = deletion
             .complete(report, self.clock.now())

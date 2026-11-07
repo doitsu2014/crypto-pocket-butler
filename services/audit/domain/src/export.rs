@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use crate::error::DomainError;
 use crate::event::{Sensitivity, MAX_ACTION_LEN, MAX_TARGET_LEN};
 use crate::ids::{AuditExportId, UserId};
-use crate::secrets::ensure_secret_free;
+use crate::secrets::{ensure_secret_free, redact};
 
 /// The hard cap on one export. Over the cap the request is refused, never
 /// truncated silently.
@@ -16,6 +16,12 @@ pub const MAX_ACTION_PREFIXES: usize = 10;
 
 /// The longest content digest stored on an export.
 pub const MAX_SHA256_LEN: usize = 64;
+
+/// The longest failure reason stored on an export.
+pub const MAX_FAILURE_REASON_LEN: usize = 500;
+
+/// The stable reason WF5 records when a replica disappears mid-export.
+pub const REPLICA_LOST_REASON: &str = "replica_lost";
 
 /// What an export selects. There is no free-text query: action prefixes, a
 /// target, and time ranges only.
@@ -236,6 +242,7 @@ pub struct AuditExport {
     state: ExportState,
     outcome: Option<ExportOutcome>,
     content_sha256: Option<String>,
+    failure_reason: Option<String>,
 }
 
 impl AuditExport {
@@ -257,6 +264,7 @@ impl AuditExport {
             state: ExportState::Requested,
             outcome: None,
             content_sha256: None,
+            failure_reason: None,
         }
     }
 
@@ -289,6 +297,7 @@ impl AuditExport {
         self.outcome = Some(ExportOutcome::Success);
         self.row_count = row_count;
         self.content_sha256 = Some(digest.to_ascii_lowercase());
+        self.failure_reason = None;
         self.completed_at = Some(at);
         Ok(self)
     }
@@ -305,14 +314,22 @@ impl AuditExport {
         Ok(self)
     }
 
-    /// Marks a request as failed.
+    /// Marks a request as failed, recording why. The reason is redacted rather
+    /// than refused, because the export still has to record that it failed.
     ///
     /// # Errors
     /// Returns [`DomainError::InvalidTransition`] when the export is not requested.
-    pub fn fail(mut self, at: DateTime<Utc>) -> Result<Self, DomainError> {
+    pub fn fail(mut self, reason: &str, at: DateTime<Utc>) -> Result<Self, DomainError> {
         self.ensure_requested("failed")?;
+        let trimmed = reason.trim();
+        let (safe, _) = redact(if trimmed.is_empty() {
+            "unspecified failure"
+        } else {
+            trimmed
+        });
         self.state = ExportState::Failed;
         self.outcome = Some(ExportOutcome::Failed);
+        self.failure_reason = Some(safe.chars().take(MAX_FAILURE_REASON_LEN).collect());
         self.completed_at = Some(at);
         Ok(self)
     }
@@ -383,6 +400,12 @@ impl AuditExport {
         self.content_sha256.as_deref()
     }
 
+    /// Why the export failed, when it did.
+    #[must_use]
+    pub fn failure_reason(&self) -> Option<&str> {
+        self.failure_reason.as_deref()
+    }
+
     /// Rebuilds an export from storage.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
@@ -396,6 +419,7 @@ impl AuditExport {
         state: ExportState,
         outcome: Option<ExportOutcome>,
         content_sha256: Option<String>,
+        failure_reason: Option<String>,
     ) -> Self {
         Self {
             id,
@@ -407,6 +431,7 @@ impl AuditExport {
             state,
             outcome,
             content_sha256,
+            failure_reason,
         }
     }
 }

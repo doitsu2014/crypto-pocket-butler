@@ -55,7 +55,7 @@ crypto-shredding keys.
 
 Read-only exchange and wallet accounts for Binance, OKX, EVM chains, BNB Smart Chain, and Solana;
 WalletConnect read-only sessions; CSV import; credential verification; holdings sync; sync
-status; spam and dust filtering.
+status; spam filtering (pricing and dust are Portfolio's).
 
 ### U5 — Market Data
 

@@ -1,0 +1,267 @@
+{
+  "stage": "infrastructure-design",
+  "unit": "u3-identity",
+  "upstream_ids": [
+    "NFR2.1",
+    "NFR2.2",
+    "NFR2.3",
+    "NFR2.4",
+    "NFR6.1",
+    "NFR13.3",
+    "NFR13.5",
+    "NFR16.1",
+    "NFR16.2",
+    "NFR9.1",
+    "NFR9.2",
+    "NFR9.3",
+    "NFR10.1",
+    "NFR10.2",
+    "NFR10.3",
+    "NFR10.4",
+    "NFR10.5",
+    "NFR10.6",
+    "NFR10.7",
+    "NFR11.1",
+    "NFR11.2",
+    "NFR13.1",
+    "NFR13.2",
+    "NFR13.4",
+    "NFR19.1",
+    "NFR19.2",
+    "NFR19.3",
+    "NFR1.1",
+    "NFR1.2",
+    "NFR20.1",
+    "NFR20.2",
+    "NFR20.3",
+    "NFR20.4",
+    "NFR6.2",
+    "NFR14.1",
+    "NFR14.2",
+    "NFR18.1",
+    "NFR12.1",
+    "NFR17.1",
+    "NFR17.2",
+    "NFR17.3",
+    "NFR17.4",
+    "NFR17.5"
+  ],
+  "coverage": [
+    {
+      "id": "NFR2.1",
+      "status": "OK",
+      "target": "API replicas 0.5 vCPU; Postgres identity index; Swarm sizing"
+    },
+    {
+      "id": "NFR2.2",
+      "status": "OK",
+      "target": "Postgres identity index; API sizing"
+    },
+    {
+      "id": "NFR2.3",
+      "status": "OK",
+      "target": "Supabase Postgres"
+    },
+    {
+      "id": "NFR2.4",
+      "status": "OK",
+      "target": "Supabase Postgres; optional Supabase Auth call"
+    },
+    {
+      "id": "NFR6.1",
+      "status": "OK",
+      "target": "API replicas; API Gateway ingress"
+    },
+    {
+      "id": "NFR13.3",
+      "status": "OK",
+      "target": "identity-worker replica; C11 scheduler"
+    },
+    {
+      "id": "NFR13.5",
+      "status": "OK",
+      "target": "identity-worker replica"
+    },
+    {
+      "id": "NFR16.1",
+      "status": "N/A",
+      "target": "application persistence; no infrastructure resource"
+    },
+    {
+      "id": "NFR16.2",
+      "status": "N/A",
+      "target": "application behaviour"
+    },
+    {
+      "id": "NFR9.1",
+      "status": "OK",
+      "target": "edge CDN/WAF with TLS; Swarm encrypted overlay"
+    },
+    {
+      "id": "NFR9.2",
+      "status": "OK",
+      "target": "log redaction; Loki ingest config"
+    },
+    {
+      "id": "NFR9.3",
+      "status": "OK",
+      "target": "Supabase Vault"
+    },
+    {
+      "id": "NFR10.1",
+      "status": "OK",
+      "target": "Supabase Auth JWKS endpoint"
+    },
+    {
+      "id": "NFR10.2",
+      "status": "N/A",
+      "target": "application keeps no token"
+    },
+    {
+      "id": "NFR10.3",
+      "status": "OK",
+      "target": "Supabase Auth AAL2"
+    },
+    {
+      "id": "NFR10.4",
+      "status": "OK",
+      "target": "Supabase Auth owns factors"
+    },
+    {
+      "id": "NFR10.5",
+      "status": "N/A",
+      "target": "application authorization logic"
+    },
+    {
+      "id": "NFR10.6",
+      "status": "N/A",
+      "target": "application ownership checks"
+    },
+    {
+      "id": "NFR10.7",
+      "status": "N/A",
+      "target": "application grant check on C3"
+    },
+    {
+      "id": "NFR11.1",
+      "status": "OK",
+      "target": "API Gateway ingress and deny-by-default routing"
+    },
+    {
+      "id": "NFR11.2",
+      "status": "OK",
+      "target": "Supabase Auth rate limits"
+    },
+    {
+      "id": "NFR13.1",
+      "status": "N/A",
+      "target": "schema design"
+    },
+    {
+      "id": "NFR13.2",
+      "status": "N/A",
+      "target": "application consent logic"
+    },
+    {
+      "id": "NFR13.4",
+      "status": "OK",
+      "target": "Supabase Auth admin user delete; Vault key destroy"
+    },
+    {
+      "id": "NFR19.1",
+      "status": "OK",
+      "target": "Audit service C10"
+    },
+    {
+      "id": "NFR19.2",
+      "status": "OK",
+      "target": "Audit service and Loki redaction"
+    },
+    {
+      "id": "NFR19.3",
+      "status": "OK",
+      "target": "Audit insert-only Postgres role"
+    },
+    {
+      "id": "NFR1.1",
+      "status": "OK",
+      "target": "3 API replicas; health-checked rolling update"
+    },
+    {
+      "id": "NFR1.2",
+      "status": "OK",
+      "target": "3 API replicas; health-checked rolling update"
+    },
+    {
+      "id": "NFR20.1",
+      "status": "OK",
+      "target": "stateless Swarm replicas"
+    },
+    {
+      "id": "NFR20.2",
+      "status": "OK",
+      "target": "3 replicas; 60-connection budget"
+    },
+    {
+      "id": "NFR20.3",
+      "status": "OK",
+      "target": "identity-worker replica; lease compare-and-set"
+    },
+    {
+      "id": "NFR20.4",
+      "status": "OK",
+      "target": "launch capacity review gate"
+    },
+    {
+      "id": "NFR6.2",
+      "status": "OK",
+      "target": "bounded timeouts and retries; Swarm restart"
+    },
+    {
+      "id": "NFR14.1",
+      "status": "OK",
+      "target": "Supabase backup regime; retention labels"
+    },
+    {
+      "id": "NFR14.2",
+      "status": "OK",
+      "target": "Audit service retention window"
+    },
+    {
+      "id": "NFR18.1",
+      "status": "OK",
+      "target": "Supabase backup and restore regime"
+    },
+    {
+      "id": "NFR12.1",
+      "status": "OK",
+      "target": "CI stage 7 dependency and container-image scan"
+    },
+    {
+      "id": "NFR17.1",
+      "status": "OK",
+      "target": "monitoring-design.md structured logging; Loki"
+    },
+    {
+      "id": "NFR17.2",
+      "status": "OK",
+      "target": "monitoring-design.md health and readiness metrics; /healthz and /readyz"
+    },
+    {
+      "id": "NFR17.3",
+      "status": "OK",
+      "target": "monitoring-design.md per-endpoint metrics; Prometheus"
+    },
+    {
+      "id": "NFR17.4",
+      "status": "OK",
+      "target": "monitoring-design.md worker metrics; export/deletion status counters"
+    },
+    {
+      "id": "NFR17.5",
+      "status": "OK",
+      "target": "monitoring-design.md alerts and routing"
+    }
+  ],
+  "reverse": []
+}

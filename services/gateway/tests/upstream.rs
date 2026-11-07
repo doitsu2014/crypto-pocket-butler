@@ -167,7 +167,9 @@ async fn an_unreachable_upstream_maps_to_unavailable() {
     let address = listener.local_addr().expect("address");
     drop(listener);
 
-    let client = ReqwestUpstreamClient::new(format!("http://{address}"), 250);
+    // Windows takes about two seconds to refuse a connection to a closed local
+    // port, so allow well over that for the refusal to be observed.
+    let client = ReqwestUpstreamClient::new(format!("http://{address}"), 5_000);
     let result = client
         .forward(forward("/v1/assets/resolve", Method::Get))
         .await;

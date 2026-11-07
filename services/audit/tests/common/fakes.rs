@@ -331,7 +331,10 @@ impl ExportRepository for FakeExports {
         let mut recovered = 0;
         for export in exports.iter_mut() {
             if export.requested_at() < before && export.state().as_str() == "requested" {
-                *export = export.clone().fail(at).expect("requested export can fail");
+                *export = export
+                    .clone()
+                    .fail(audit_domain::export::REPLICA_LOST_REASON, at)
+                    .expect("requested export can fail");
                 recovered += 1;
             }
         }
@@ -356,6 +359,8 @@ pub struct FakeRetention {
     pub fail_partitions: Mutex<Option<RepositoryError>>,
     /// Months-ahead values passed to `ensure_partitions_ahead`.
     pub ensured: Mutex<Vec<u32>>,
+    /// The number `delete_expired_idempotency` reports.
+    pub expired_idempotency: Mutex<u64>,
 }
 
 impl FakeRetention {
@@ -414,7 +419,11 @@ impl RetentionRepository for FakeRetention {
         Ok(self.partitions.lock().unwrap().clone())
     }
 
-    async fn drop_partition(&self, name: &str) -> Result<(), RepositoryError> {
+    async fn drop_partition(
+        &self,
+        name: &str,
+        _cutoff: DateTime<Utc>,
+    ) -> Result<(), RepositoryError> {
         self.dropped.lock().unwrap().push(name.to_string());
         Ok(())
     }
@@ -430,6 +439,16 @@ impl RetentionRepository for FakeRetention {
         } else {
             Ok(batches.remove(0))
         }
+    }
+
+    async fn delete_expired_idempotency(
+        &self,
+        _cutoff: DateTime<Utc>,
+    ) -> Result<u64, RepositoryError> {
+        let mut count = self.expired_idempotency.lock().unwrap();
+        let reported = *count;
+        *count = 0;
+        Ok(reported)
     }
 
     async fn ensure_partitions_ahead(
@@ -452,6 +471,8 @@ pub struct FakePrivacy {
     pub delete_count: Mutex<Option<u64>>,
     /// One-shot failure on insert.
     pub fail_insert: Mutex<Option<RepositoryError>>,
+    /// One-shot failure when the subject's labels are scanned.
+    pub fail_labels: Mutex<Option<RepositoryError>>,
 }
 
 impl FakePrivacy {
@@ -535,6 +556,9 @@ impl PrivacyDeletionRepository for FakePrivacy {
         subject: UserId,
         limit: u32,
     ) -> Result<Vec<EventLabel>, RepositoryError> {
+        if let Some(error) = self.fail_labels.lock().unwrap().take() {
+            return Err(error);
+        }
         Ok(self
             .labels
             .lock()
@@ -547,23 +571,22 @@ impl PrivacyDeletionRepository for FakePrivacy {
             .collect())
     }
 
-    async fn delete_unlabelled_for_subject(&self, subject: UserId) -> Result<u64, RepositoryError> {
+    async fn delete_for_subject(
+        &self,
+        subject: UserId,
+        ids: &[AuditEventId],
+    ) -> Result<u64, RepositoryError> {
         if let Some(count) = *self.delete_count.lock().unwrap() {
             return Ok(count);
         }
-        let derived = self
-            .labels
-            .lock()
-            .unwrap()
-            .get(&subject.to_string())
-            .map(|labels| {
-                labels
-                    .iter()
-                    .filter(|label| label.legal_basis.is_none())
-                    .count() as u64
-            })
-            .unwrap_or(0);
-        Ok(derived)
+        let requested: std::collections::HashSet<AuditEventId> = ids.iter().copied().collect();
+        let mut labels = self.labels.lock().unwrap();
+        let Some(existing) = labels.get_mut(&subject.to_string()) else {
+            return Ok(0);
+        };
+        let before = existing.len();
+        existing.retain(|label| !(requested.contains(&label.id) && label.legal_basis.is_none()));
+        Ok((before - existing.len()) as u64)
     }
 }
 

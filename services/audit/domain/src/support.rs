@@ -284,27 +284,56 @@ pub struct SupportSession {
 }
 
 impl SupportSession {
-    /// Approves a request and records the session as active.
+    /// Records a support agent's request. BR3.1 is checked by the caller before
+    /// this point; an invalid request is stored with [`SupportSession::deny`].
+    #[must_use]
+    pub fn request(request: SupportSessionRequest, id: SupportSessionId) -> Self {
+        Self {
+            id,
+            request,
+            state: SupportSessionState::Requested,
+            approved_at: None,
+            ended_at: None,
+            outcome: None,
+        }
+    }
+
+    /// Records a second operator's approval, moving the request to `active`.
+    ///
+    /// Only the named second approver may approve, and only while the request is
+    /// still `requested` and inside its window. Approval is not a terminal state,
+    /// so `outcome` stays absent until the session expires, is revoked, or is
+    /// denied (entity model: `outcome` is set only on a terminal state).
     ///
     /// # Errors
-    /// Returns the request and the [`SupportDenial`] that refused it, so the
-    /// caller can store a `denied` record instead.
-    pub fn approve(
-        request: SupportSessionRequest,
-        id: SupportSessionId,
-        at: DateTime<Utc>,
-    ) -> Result<Self, (SupportSessionRequest, SupportDenial)> {
-        match request.check() {
-            Ok(()) => Ok(Self {
-                id,
-                request,
-                state: SupportSessionState::Active,
-                approved_at: Some(at),
-                ended_at: None,
-                outcome: Some(SupportSessionOutcome::Approved),
-            }),
-            Err(denial) => Err((request, denial)),
+    /// Returns [`DomainError::Contradiction`] when `actor` is not the stored
+    /// second approver, and [`DomainError::InvalidTransition`] when the session is
+    /// no longer requested or has already expired.
+    pub fn approve(mut self, actor: UserId, at: DateTime<Utc>) -> Result<Self, DomainError> {
+        if actor != self.request.second_approver_id {
+            return Err(DomainError::Contradiction {
+                field: "secondApproverId",
+                reason: "only the named second approver may approve the session".to_string(),
+            });
         }
+        let current = self.state_at(at);
+        if current != SupportSessionState::Requested {
+            return Err(DomainError::InvalidTransition {
+                entity: "support session",
+                from: current.as_str(),
+                to: "active",
+            });
+        }
+        if let Err(denial) = self.request.check() {
+            return Err(DomainError::Invalid {
+                field: denial.field(),
+                reason: denial.to_string(),
+            });
+        }
+        self.state = SupportSessionState::Active;
+        self.approved_at = Some(at);
+        self.outcome = None;
+        Ok(self)
     }
 
     /// Stores a refused request as a `denied` record.

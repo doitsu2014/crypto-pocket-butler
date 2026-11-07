@@ -12,8 +12,8 @@ mod common;
 use std::collections::BTreeMap;
 
 use audit_application::ports::{
-    AuditEventRepository, ExportRepository, PrivacyDeletionRepository, RepositoryError,
-    RetentionRepository, SupportSessionRepository,
+    AuditEventRepository, ExportRepository, PrivacyDeletionRepository, ReadinessProbe,
+    RepositoryError, RetentionRepository, SupportSessionRepository,
 };
 use audit_domain::{
     ActorKind, AuditEvent, AuditEventId, AuditExport, AuditExportId, Context, DeletionRequestId,
@@ -21,11 +21,13 @@ use audit_domain::{
     PrivacyDeletionState, Sensitivity, SupportScope, SupportSession, SupportSessionId,
     SupportSessionOutcome, SupportSessionRequest, SupportSessionState, UserId,
 };
+use audit_infrastructure::readiness::PgReadinessProbe;
 use audit_infrastructure::repositories::{
     PgAuditEventRepository, PgExportRepository, PgPrivacyDeletionRepository, PgRetentionRepository,
     PgSupportSessionRepository,
 };
 use chrono::{TimeZone, Utc};
+use uuid::Uuid;
 
 fn instant(year: i32, month: u32, day: u32, hour: u32) -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(year, month, day, hour, 0, 0).unwrap()
@@ -291,12 +293,12 @@ async fn a_terminal_support_session_cannot_be_updated() {
         instant(2026, 11, 6, 18),
     )
     .unwrap();
-    let session = SupportSession::approve(
-        request,
-        SupportSessionId::generate(),
-        instant(2026, 11, 6, 12),
-    )
-    .unwrap();
+    let session = SupportSession::request(request, SupportSessionId::generate())
+        .approve(
+            UserId::parse(common::SECOND_APPROVER).unwrap(),
+            instant(2026, 11, 6, 12),
+        )
+        .unwrap();
     repo.insert(&session).await.unwrap();
     assert_eq!(
         repo.find_by_id(session.id()).await.unwrap().unwrap().id(),
@@ -360,6 +362,7 @@ async fn a_terminal_export_cannot_be_updated_and_stale_requests_are_recovered() 
         audit_domain::ExportState::Success,
         Some(audit_domain::ExportOutcome::Success),
         Some("c".repeat(64)),
+        None,
     );
     let error = repo.update(&terminal).await.unwrap_err();
     assert!(matches!(error, RepositoryError::Conflict(_)));
@@ -479,7 +482,12 @@ async fn privacy_labels_keep_a_legally_held_record_and_delete_the_rest() {
         1
     );
 
-    let deleted = repo.delete_unlabelled_for_subject(subject).await.unwrap();
+    let to_delete: Vec<AuditEventId> = labels
+        .iter()
+        .filter(|label| label.legal_basis.is_none())
+        .map(|label| label.id)
+        .collect();
+    let deleted = repo.delete_for_subject(subject, &to_delete).await.unwrap();
     assert_eq!(deleted, 1);
 
     let completed = deletion
@@ -548,7 +556,10 @@ async fn a_dropped_partition_takes_its_rows_with_it() {
         1
     );
 
-    repo.drop_partition("audit_events_202503").await.unwrap();
+    let cutoff = instant(2026, 5, 6, 12);
+    repo.drop_partition("audit_events_202503", cutoff)
+        .await
+        .unwrap();
     assert_eq!(
         repo.partition_summaries()
             .await
@@ -558,7 +569,123 @@ async fn a_dropped_partition_takes_its_rows_with_it() {
             .count(),
         0
     );
-    assert!(repo.drop_partition("not_a_partition").await.is_err());
+    assert!(repo
+        .drop_partition("not_a_partition", cutoff)
+        .await
+        .is_err());
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL (disposable Postgres)"]
+async fn retention_operates_as_the_audit_retention_role() {
+    let (pool, schema) = common::test_pool().await;
+    sqlx::query("SELECT ensure_audit_partition($1)")
+        .bind(chrono::NaiveDate::from_ymd_opt(2025, 1, 1).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let events = PgAuditEventRepository::new(pool.clone());
+    let old = event(instant(2025, 1, 15, 9), None, None, None);
+    events.append(&old, "identity", &hash("old")).await.unwrap();
+
+    // The retention role reads the child partition and drops it through the
+    // SECURITY DEFINER function; it is not the partition owner.
+    let role_pool = common::role_pool(&schema, "audit_retention").await;
+    let repo = PgRetentionRepository::new(role_pool.clone());
+    let summaries = repo.partition_summaries().await.unwrap();
+    let january = summaries
+        .iter()
+        .find(|summary| summary.name == "audit_events_202501")
+        .expect("the retention role can read the partition");
+    assert_eq!(january.row_count, 1);
+    assert!(!january.holds_legal_hold);
+
+    let cutoff = instant(2025, 6, 1, 0);
+    repo.drop_partition("audit_events_202501", cutoff)
+        .await
+        .expect("the retention role can drop a past-window partition");
+    role_pool.close().await;
+
+    let after = PgRetentionRepository::new(pool.clone())
+        .partition_summaries()
+        .await
+        .unwrap();
+    assert!(
+        after
+            .iter()
+            .all(|summary| summary.name != "audit_events_202501"),
+        "the partition is gone"
+    );
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL (disposable Postgres)"]
+async fn readiness_works_for_the_runtime_role() {
+    let (_pool, schema) = common::test_pool().await;
+    let role_pool = common::role_pool(&schema, "audit_app").await;
+    let probe = PgReadinessProbe::new(role_pool.clone());
+    probe
+        .check()
+        .await
+        .expect("audit_app may read the migrations table");
+    role_pool.close().await;
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL (disposable Postgres)"]
+async fn the_runtime_role_cannot_forge_a_running_retention_run() {
+    let (_pool, schema) = common::test_pool().await;
+    let role_pool = common::role_pool(&schema, "audit_app").await;
+    let error = sqlx::query(
+        "INSERT INTO retention_runs
+             (id, category, owner, state, cutoff_at, started_at, privileged_role)
+         VALUES ($1, 'audit_logs', 'audit', 'running', now(), now(), 'audit_retention')",
+    )
+    .bind(Uuid::new_v4())
+    .execute(&role_pool)
+    .await
+    .expect_err("audit_app may not insert an audit_logs run");
+    let code = error.as_database_error().and_then(|error| error.code());
+    assert_eq!(
+        code.as_deref(),
+        Some("42501"),
+        "the insert-shape trigger refuses it as insufficient privilege"
+    );
+    role_pool.close().await;
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL (disposable Postgres)"]
+async fn the_down_migration_refuses_while_a_legal_hold_exists() {
+    let (pool, schema) = common::test_pool().await;
+    sqlx::query("SELECT ensure_audit_partition($1)")
+        .bind(chrono::NaiveDate::from_ymd_opt(2025, 1, 1).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let events = PgAuditEventRepository::new(pool.clone());
+    let held = event(
+        instant(2025, 1, 15, 9),
+        None,
+        Some("legal-obligation"),
+        None,
+    );
+    events
+        .append(&held, "identity", &hash("held"))
+        .await
+        .unwrap();
+
+    let error = audit_infrastructure::migrations::revert(&pool).await;
+    assert!(
+        error.is_err(),
+        "a rollback must not destroy a legally held record"
+    );
 
     common::drop_schema(&schema).await;
 }

@@ -34,7 +34,7 @@ pub use retention::{
     RetentionCategory, RetentionOutcome, RetentionOwner, RetentionRun, RetentionState,
     AUDIT_LOG_RETENTION_MONTHS, AUDIT_RETENTION_ROLE,
 };
-pub use secrets::{detect_secret, ensure_secret_free, redact, SecretKind};
+pub use secrets::{detect_secret, ensure_secret_free, redact, seed_word_count, SecretKind};
 pub use support::{
     SupportDenial, SupportScope, SupportSession, SupportSessionOutcome, SupportSessionRequest,
     SupportSessionState, MAX_REASON_LEN, MAX_SESSION_HOURS, MIN_REASON_LEN,

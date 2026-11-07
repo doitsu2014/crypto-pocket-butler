@@ -21,7 +21,7 @@ pub const MAX_LEGAL_BASIS_LEN: usize = 120;
 /// The actions Audit's own paths may attribute to the system. The entity
 /// model's `system` default is a schema convenience, not a permission: the
 /// service sets it only for these actions.
-pub const SYSTEM_ACTION_ALLOW_LIST: [&str; 8] = [
+pub const SYSTEM_ACTION_ALLOW_LIST: [&str; 9] = [
     "system.job.run",
     "system.retention.run",
     "system.retention.reported",
@@ -30,6 +30,7 @@ pub const SYSTEM_ACTION_ALLOW_LIST: [&str; 8] = [
     "system.privacy.deletion",
     "system.export.recovery",
     "system.support.expiry",
+    "system.support.check_denied",
 ];
 
 /// Who the actor is.

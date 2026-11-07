@@ -5,7 +5,7 @@ use std::sync::Arc;
 use audit_domain::{AuditEvent, Context, Sensitivity};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 
 use crate::common::FieldError;
 use crate::ports::{AuditEventRepository, Cursor, EventQuery, Principal, Role};
@@ -204,10 +204,18 @@ impl QueryEvents {
     }
 }
 
-/// Encodes a cursor as an opaque token.
+/// Encodes a cursor as an opaque token. The instant is written as RFC 3339 with
+/// nanosecond precision: truncating it to milliseconds would let a page boundary
+/// skip every row in the same millisecond that sorts after the cursor.
 #[must_use]
 pub fn encode_cursor(cursor: &Cursor) -> String {
-    let raw = format!("{}|{}", cursor.occurred_at.timestamp_millis(), cursor.id);
+    let raw = format!(
+        "{}|{}",
+        cursor
+            .occurred_at
+            .to_rfc3339_opts(SecondsFormat::Nanos, true),
+        cursor.id
+    );
     URL_SAFE_NO_PAD.encode(raw)
 }
 
@@ -216,21 +224,13 @@ pub fn encode_cursor(cursor: &Cursor) -> String {
 /// # Errors
 /// Returns a [`FieldError`] for a token that is not one this service issued.
 pub fn decode_cursor(raw: &str) -> Result<Cursor, FieldError> {
-    let bytes = URL_SAFE_NO_PAD
-        .decode(raw.trim())
-        .map_err(|_| FieldError::new("cursor", "the cursor is not a token this service issued"))?;
-    let text = String::from_utf8(bytes)
-        .map_err(|_| FieldError::new("cursor", "the cursor is not a token this service issued"))?;
-    let (instant, id) = text.split_once('|').ok_or_else(|| {
-        FieldError::new("cursor", "the cursor is not a token this service issued")
-    })?;
-    let millis: i64 = instant
-        .parse()
-        .map_err(|_| FieldError::new("cursor", "the cursor is not a token this service issued"))?;
-    let occurred_at = DateTime::<Utc>::from_timestamp_millis(millis).ok_or_else(|| {
-        FieldError::new("cursor", "the cursor is not a token this service issued")
-    })?;
-    let id = audit_domain::AuditEventId::parse(id)
-        .map_err(|_| FieldError::new("cursor", "the cursor is not a token this service issued"))?;
+    let invalid = || FieldError::new("cursor", "the cursor is not a token this service issued");
+    let bytes = URL_SAFE_NO_PAD.decode(raw.trim()).map_err(|_| invalid())?;
+    let text = String::from_utf8(bytes).map_err(|_| invalid())?;
+    let (instant, id) = text.split_once('|').ok_or_else(invalid)?;
+    let occurred_at = DateTime::parse_from_rfc3339(instant)
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|_| invalid())?;
+    let id = audit_domain::AuditEventId::parse(id).map_err(|_| invalid())?;
     Ok(Cursor { occurred_at, id })
 }

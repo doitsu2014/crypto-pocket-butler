@@ -6,6 +6,17 @@
 #   docker build -f web/Dockerfile -t <registry>/web:<tag> .
 #   docker build -f services/audit/Dockerfile.api -t <registry>/audit-api:<tag> .
 #   docker build -f services/audit/Dockerfile.retention -t <registry>/audit-retention:<tag> .
+#   docker build -f services/identity/Dockerfile.api -t <registry>/identity-api:<tag> .
+#   docker build -f services/identity/Dockerfile.worker -t <registry>/identity-worker:<tag> .
+#   docker build -f services/account/Dockerfile.api -t <registry>/account-api:<tag> .
+#   docker build -f services/account/Dockerfile.worker -t <registry>/account-worker:<tag> .
+#   docker build -f services/account/Dockerfile.migrate -t <registry>/account-migrate:<tag> .
+#   docker build -f services/market-data/Dockerfile.api -t <registry>/market-data-api:<tag> .
+#   docker build -f services/market-data/Dockerfile.worker -t <registry>/market-data-worker:<tag> .
+#   docker build -f services/market-data/Dockerfile.migrate -t <registry>/market-data-migrate:<tag> .
+#   docker build -f services/analytics/Dockerfile.api -t <registry>/analytics-api:<tag> .
+#   docker build -f services/analytics/Dockerfile.worker -t <registry>/analytics-worker:<tag> .
+#   docker build -f services/analytics/Dockerfile.migrate -t <registry>/analytics-migrate:<tag> .
 #
 # The registry database credential is a Docker secret, never a stack variable:
 #   docker secret create registry_database_url -
@@ -14,6 +25,34 @@
 #   docker secret create audit_app_dsn -
 #   docker secret create audit_retention_dsn -
 #   docker secret create audit_service_tokens -
+# Identity credentials and signing keys are Docker secrets created from Supabase
+# Vault by the pipeline, never stack variables:
+#   docker secret create identity_database_url -
+#   docker secret create identity_service_tokens -
+#   docker secret create identity_supabase_service_role -
+#   docker secret create identity_gate_token_key -
+#
+# Account credentials are Docker secrets created from Supabase Vault by the
+# pipeline, never stack variables. The migrator DSN carries DDL rights; the
+# runtime DSN does not:
+#   docker secret create account_database_url -
+#   docker secret create account_migrate_database_url -
+#   docker secret create account_service_tokens -
+#   docker secret create account_supabase_service_role -
+#
+# Market Data credentials are Docker secrets created from Supabase Vault by the
+# pipeline. The C11 run token, the outbound service token, and provider keys are
+# read from Vault at startup through the SECURITY DEFINER function; only the
+# database DSN and the release smoke token are Docker secrets:
+#   docker secret create market_data_database_url -
+#   docker secret create market_data_smoke_token -
+#
+# Analytics credentials are Docker secrets created from Supabase Vault by the
+# pipeline. The runtime DSN carries no DDL rights; the migrator DSN does:
+#   docker secret create analytics_database_url -
+#   docker secret create analytics_migrate_database_url -
+#   docker secret create analytics_outbound_token -
+#   docker secret create analytics_smoke_token -
 #
 # Non-secret configuration (JWT_JWKS_URL, JWT_ISSUER, JWT_AUDIENCE,
 # REGISTRY/TAG) is supplied by the deployer's environment.
@@ -238,12 +277,502 @@ services:
           cpus: "0.25"
           memory: 256M
 
+  identity-api:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/identity-api:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      IDENTITY_PORT: "8083"
+      DATABASE_URL_FILE: /run/secrets/identity_database_url
+      SERVICE_TOKENS_FILE: /run/secrets/identity_service_tokens
+      SUPABASE_SERVICE_ROLE_KEY_FILE: /run/secrets/identity_supabase_service_role
+      GATE_TOKEN_KEY_FILE: /run/secrets/identity_gate_token_key
+      JWT_JWKS_URL: ${JWT_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      SUPABASE_AUTH_URL: ${SUPABASE_AUTH_URL}
+      SUPABASE_STORAGE_URL: ${SUPABASE_STORAGE_URL}
+      IDENTITY_EXPORT_BUCKET: "${IDENTITY_EXPORT_BUCKET:-identity-exports}"
+      IDENTITY_WORKER_URL: http://identity-worker:8085
+      IDENTITY_TOKEN_SERVICE: identity
+      IDENTITY_API_POOL: "12"
+      AUDIT_URL: http://audit-api:8084
+      ACCOUNT_URL: ${ACCOUNT_URL:-http://account:8091}
+      LEDGER_URL: ${LEDGER_URL:-http://ledger:8092}
+      PORTFOLIO_URL: ${PORTFOLIO_URL:-http://portfolio:8093}
+    secrets:
+      - identity_database_url
+      - identity_service_tokens
+      - identity_supabase_service_role
+      - identity_gate_token_key
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8083/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  identity-worker:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/identity-worker:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      IDENTITY_WORKER_PORT: "8085"
+      DATABASE_URL_FILE: /run/secrets/identity_database_url
+      SERVICE_TOKENS_FILE: /run/secrets/identity_service_tokens
+      SUPABASE_SERVICE_ROLE_KEY_FILE: /run/secrets/identity_supabase_service_role
+      SUPABASE_AUTH_URL: ${SUPABASE_AUTH_URL}
+      SUPABASE_STORAGE_URL: ${SUPABASE_STORAGE_URL}
+      IDENTITY_EXPORT_BUCKET: "${IDENTITY_EXPORT_BUCKET:-identity-exports}"
+      IDENTITY_TOKEN_SERVICE: identity
+      IDENTITY_WORKER_POOL: "8"
+      IDENTITY_SWEEP_INTERVAL_SECONDS: "${IDENTITY_SWEEP_INTERVAL_SECONDS:-60}"
+      AUDIT_URL: http://audit-api:8084
+      ACCOUNT_URL: ${ACCOUNT_URL:-http://account:8091}
+      LEDGER_URL: ${LEDGER_URL:-http://ledger:8092}
+      PORTFOLIO_URL: ${PORTFOLIO_URL:-http://portfolio:8093}
+    secrets:
+      - identity_database_url
+      - identity_service_tokens
+      - identity_supabase_service_role
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8085/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  account-api:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/account-api:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      ACCOUNT_PORT: "8091"
+      DATABASE_URL_FILE: /run/secrets/account_database_url
+      SERVICE_TOKENS_FILE: /run/secrets/account_service_tokens
+      SUPABASE_SERVICE_ROLE_KEY_FILE: /run/secrets/account_supabase_service_role
+      JWT_JWKS_URL: ${JWT_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      SUPABASE_AUTH_URL: ${SUPABASE_AUTH_URL}
+      ACCOUNT_WORKER_URL: http://account-worker:8092
+      ACCOUNT_TOKEN_SERVICE: account
+      ACCOUNT_API_POOL: "12"
+      AUDIT_URL: http://audit-api:8084
+      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8094}
+      ASSET_REGISTRY_URL: http://asset-registry:8081
+      EVM_RPC_URL: ${EVM_RPC_URL}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL}
+    secrets:
+      - account_database_url
+      - account_service_tokens
+      - account_supabase_service_role
+    networks:
+      - internal
+      - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8091/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  account-worker:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/account-worker:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      ACCOUNT_WORKER_PORT: "8092"
+      DATABASE_URL_FILE: /run/secrets/account_database_url
+      SERVICE_TOKENS_FILE: /run/secrets/account_service_tokens
+      SUPABASE_SERVICE_ROLE_KEY_FILE: /run/secrets/account_supabase_service_role
+      SUPABASE_AUTH_URL: ${SUPABASE_AUTH_URL}
+      ACCOUNT_TOKEN_SERVICE: account
+      ACCOUNT_WORKER_POOL: "8"
+      ACCOUNT_SYNC_INTERVAL_SECONDS: "${ACCOUNT_SYNC_INTERVAL_SECONDS:-60}"
+      ACCOUNT_VERIFY_INTERVAL_SECONDS: "${ACCOUNT_VERIFY_INTERVAL_SECONDS:-21600}"
+      AUDIT_URL: http://audit-api:8084
+      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8094}
+      ASSET_REGISTRY_URL: http://asset-registry:8081
+      EVM_RPC_URL: ${EVM_RPC_URL}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL}
+    secrets:
+      - account_database_url
+      - account_service_tokens
+      - account_supabase_service_role
+    networks:
+      - internal
+      - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8092/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  account-migrate:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/account-migrate:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      DATABASE_URL_FILE: /run/secrets/account_migrate_database_url
+    secrets:
+      - account_migrate_database_url
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  market-data-api:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/market-data-api:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      MARKET_DATA_PORT: "8093"
+      DATABASE_URL_FILE: /run/secrets/market_data_database_url
+      MARKET_DATA_TOKEN_SERVICE: market-data
+      MARKET_DATA_API_POOL: "12"
+      ASSET_REGISTRY_URL: http://asset-registry:8081
+      AUDIT_URL: http://audit-api:8084
+      MARKET_DATA_PROVIDER_URLS: ${MARKET_DATA_PROVIDER_URLS}
+      MARKET_DATA_FX_BASE_CURRENCIES: ${MARKET_DATA_FX_BASE_CURRENCIES:-EUR,GBP,VND,USDT}
+    secrets:
+      - market_data_database_url
+    networks:
+      - internal
+      - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8093/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 660s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  market-data-worker:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/market-data-worker:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      MARKET_DATA_WORKER_PORT: "8094"
+      DATABASE_URL_FILE: /run/secrets/market_data_database_url
+      MARKET_DATA_TOKEN_SERVICE: market-data
+      MARKET_DATA_WORKER_POOL: "8"
+      MARKET_DATA_SWEEP_INTERVAL_SECONDS: "${MARKET_DATA_SWEEP_INTERVAL_SECONDS:-60}"
+      ASSET_REGISTRY_URL: http://asset-registry:8081
+      AUDIT_URL: http://audit-api:8084
+      MARKET_DATA_PROVIDER_URLS: ${MARKET_DATA_PROVIDER_URLS}
+      MARKET_DATA_FX_BASE_CURRENCIES: ${MARKET_DATA_FX_BASE_CURRENCIES:-EUR,GBP,VND,USDT}
+    secrets:
+      - market_data_database_url
+    networks:
+      - internal
+      - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8094/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  market-data-migrate:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/market-data-migrate:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      DATABASE_URL_FILE: /run/secrets/market_data_database_url
+    secrets:
+      - market_data_database_url
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  analytics-api:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/analytics-api:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      ANALYTICS_PORT: "8095"
+      DATABASE_URL_FILE: /run/secrets/analytics_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/analytics_outbound_token
+      SMOKE_TOKEN_FILE: /run/secrets/analytics_smoke_token
+      IDENTITY_URL: http://identity-api:8083
+      AUDIT_URL: http://audit-api:8084
+      JWT_JWKS_URL: ${JWT_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      ANALYTICS_API_POOL: "10"
+    secrets:
+      - analytics_database_url
+      - analytics_outbound_token
+      - analytics_smoke_token
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8095/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 192M
+
+  analytics-worker:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/analytics-worker:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      ANALYTICS_WORKER_PORT: "8096"
+      DATABASE_URL_FILE: /run/secrets/analytics_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/analytics_outbound_token
+      SMOKE_TOKEN_FILE: /run/secrets/analytics_smoke_token
+      IDENTITY_URL: http://identity-api:8083
+      AUDIT_URL: http://audit-api:8084
+      ANALYTICS_WORKER_POOL: "6"
+    secrets:
+      - analytics_database_url
+      - analytics_outbound_token
+      - analytics_smoke_token
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8096/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  analytics-migrate:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/analytics-migrate:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      DATABASE_URL_FILE: /run/secrets/analytics_migrate_database_url
+    secrets:
+      - analytics_migrate_database_url
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
 networks:
   public:
     driver: overlay
   internal:
     driver: overlay
     internal: true
+    # NFR9.1: the internal overlay between services is encrypted.
+    encrypted: true
 
 secrets:
   registry_database_url:
@@ -253,4 +782,32 @@ secrets:
   audit_retention_dsn:
     external: true
   audit_service_tokens:
+    external: true
+  identity_database_url:
+    external: true
+  identity_service_tokens:
+    external: true
+  identity_supabase_service_role:
+    external: true
+  identity_gate_token_key:
+    external: true
+  account_database_url:
+    external: true
+  account_migrate_database_url:
+    external: true
+  account_service_tokens:
+    external: true
+  account_supabase_service_role:
+    external: true
+  market_data_database_url:
+    external: true
+  market_data_smoke_token:
+    external: true
+  analytics_database_url:
+    external: true
+  analytics_migrate_database_url:
+    external: true
+  analytics_outbound_token:
+    external: true
+  analytics_smoke_token:
     external: true

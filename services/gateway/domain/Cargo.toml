@@ -1,0 +1,11 @@
+[package]
+name = "gateway-domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "API Gateway domain: route table, principal, correlation id, errors"
+
+[dependencies]
+thiserror.workspace = true

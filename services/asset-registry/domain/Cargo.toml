@@ -1,0 +1,13 @@
+[package]
+name = "asset-registry-domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Asset Registry domain: entities, value types, business rules"
+
+[dependencies]
+chrono.workspace = true
+rust_decimal.workspace = true
+thiserror.workspace = true

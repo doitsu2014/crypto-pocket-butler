@@ -1,0 +1,29 @@
+{
+  "stage": "functional-design",
+  "unit": "u5-market-data",
+  "upstream_ids": ["AC3.3.1", "AC3.3.2", "AC3.3.3", "AC3.4.1", "AC3.4.2", "AC3.4.3"],
+  "coverage": [
+    { "id": "AC3.3.1", "status": "OK", "target": "BR2.2" },
+    { "id": "AC3.3.2", "status": "OK", "target": "BR2.1" },
+    { "id": "AC3.3.3", "status": "OK", "target": "BR1.2" },
+    { "id": "AC3.4.1", "status": "OK", "target": "BR1.3, BR2.3" },
+    { "id": "AC3.4.2", "status": "OK", "target": "BR2.3" },
+    { "id": "AC3.4.3", "status": "OK", "target": "BR2.4" }
+  ],
+  "reverse": [
+    { "id": "BR1.1", "status": "OK", "target": "FR3.2, NFR5 — selection order has no acceptance criterion of its own" },
+    { "id": "BR1.4", "status": "OK", "target": "FR3.2, C4 ownership of the source registry" },
+    { "id": "BR1.5", "status": "OK", "target": "FR3.2, FR3.3 — boundary validation" },
+    { "id": "BR3.1", "status": "OK", "target": "FR3.3, FR4.5 — FX conversion" },
+    { "id": "BR3.2", "status": "OK", "target": "FR3.3 — derived cross rate" },
+    { "id": "BR3.3", "status": "OK", "target": "FR3.3, NFR7 — decimal and positive rate" },
+    { "id": "BR4.1", "status": "OK", "target": "FR10.1, NFR1 — scheduled refresh single flight with a lease" },
+    { "id": "BR4.2", "status": "OK", "target": "NFR5 — bounded retry and failure classification" },
+    { "id": "BR4.3", "status": "OK", "target": "FR3.2, NFR5 — per-source rate limit" },
+    { "id": "BR4.4", "status": "OK", "target": "FR3.2 — rejected reading handling" },
+    { "id": "BR4.5", "status": "OK", "target": "FR10.1 — run accounting" },
+    { "id": "BR5.1", "status": "OK", "target": "NFR9, BRD-012 NFR-SEC-07 — internal service-token access" },
+    { "id": "BR5.2", "status": "OK", "target": "NFR19 — audit events" },
+    { "id": "BR5.3", "status": "OK", "target": "NFR14 — retention" }
+  ]
+}

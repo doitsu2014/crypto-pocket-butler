@@ -1,0 +1,32 @@
+# Account API image.
+#
+# Build from the repository root:
+#   docker build -f services/account/Dockerfile.api -t cpb/account-api .
+#
+# The container runs non-root. The read-only root filesystem is a Swarm setting
+# (`read_only: true` in infra/swarm-stack.yml); the API writes nothing to disk.
+# Both bases are digest-pinned (NFR12.1). Refresh a digest deliberately.
+FROM rust:1-slim-bookworm@sha256:f2c004e3d2d8b547e8cf7ffbc29205385f4e71d23e53e4e383065db5e9f822cd AS builder
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml Cargo.lock rustfmt.toml ./
+COPY services ./services
+RUN cargo build --release --locked -p account --bin account-api
+
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10004 --create-home --shell /usr/sbin/nologin app
+
+COPY --from=builder /app/target/release/account-api /usr/local/bin/account-api
+
+USER 10004
+EXPOSE 8091
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8091/healthz || exit 1
+ENTRYPOINT ["/usr/local/bin/account-api"]

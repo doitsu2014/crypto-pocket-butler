@@ -1,0 +1,3 @@
+manifest	c9f93ac4727e90ab934cb2457b21c6cb312d4fc3192e4f70684ac9c1aae3d043	-
+	services/portfolio/infrastructure/src/migrations.rs	100644	8c1ca7cd2cfcbedd22cf98cd4a2a0cee89b794e9b0a97a9d6e89505636f360bf
+	services/portfolio/infrastructure/tests/repositories.rs	100644	e133592dbc7addccd8595038eda66cb9a7b47c873ca9115dfedf283a788f41eb

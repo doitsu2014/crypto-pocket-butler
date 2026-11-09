@@ -1,0 +1,60 @@
+{
+  "stage": "code-generation",
+  "unit": "u13-support-console",
+  "upstream_ids": [
+    "US8.1", "US9.3",
+    "AC8.1.1", "AC8.1.2", "AC8.1.3",
+    "AC9.3.1", "AC9.3.2", "AC9.3.3",
+    "BR1.1", "BR1.2", "BR1.3", "BR1.4", "BR2.1", "BR2.2",
+    "BR3.1", "BR3.2", "BR3.3", "BR4.1",
+    "NFR1.1",
+    "NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR2.5",
+    "NFR9.1", "NFR9.2", "NFR9.3", "NFR9.4", "NFR9.5", "NFR9.6", "NFR9.7",
+    "NFR12.1",
+    "NFR15.1", "NFR15.2", "NFR15.3", "NFR15.4"
+  ],
+  "coverage": [
+    { "id": "US8.1", "status": "OK", "target": "joint with u2-web-app (public status page and help centre) and U1's support API (incident store, C10 audit, C9 notification); U13 supplies support-console/src/components/IncidentConsole.tsx and the read-only HelpPanel" },
+    { "id": "US9.3", "status": "OK", "target": "support-console/src/screens/SupportShell.tsx and src/components/SupportSignInGate.tsx" },
+
+    { "id": "AC8.1.1", "status": "N/A", "target": "the help centre and contact channel are u2-web-app's; BR4.1 covers the console's read-only reuse in support-console/src/components/HelpPanel.tsx" },
+    { "id": "AC8.1.2", "status": "OK", "target": "joint with U1's support API (incident store and active-status feed) and u2-web-app (public status page); U13 renders the admin console in support-console/src/components/IncidentForm.tsx and IncidentList.tsx and calls C2" },
+    { "id": "AC8.1.3", "status": "OK", "target": "joint with U1's support API and U9's notification service (C9); U13 shows the 15-minute SEV-1 rule and the C9 outcome (sent/pending/failed) in support-console/src/components/IncidentForm.tsx" },
+    { "id": "AC9.3.1", "status": "OK", "target": "support-console/src/domain/grants.ts grantStatusAt/canReadWithGrant, src/hooks/useGrantClock.ts, and the expiry effect in src/screens/SupportShell.tsx" },
+    { "id": "AC9.3.2", "status": "OK", "target": "support-console/src/domain/grants.ts validateGrantRequest and src/components/GrantRequestForm.tsx; src/components/GrantApprovalQueue.tsx disables self-approval" },
+    { "id": "AC9.3.3", "status": "N/A", "target": "the C10 support_metadata_read audit is written by U1's support API; the console has no audit write path and only calls C2. support-console/src/api/client.test.ts pins the absence of an audit export." },
+
+    { "id": "BR1.1", "status": "OK", "target": "support-console/src/auth/session.ts resolveSupportRole and src/components/SupportSignInGate.tsx; a customer or missing role loads no data" },
+    { "id": "BR1.2", "status": "OK", "target": "support-console/src/domain/grants.ts validateGrantRequest (reason >= 20, 1-480 minutes, approver differs) and src/components/GrantRequestForm.tsx" },
+    { "id": "BR1.3", "status": "OK", "target": "support-console/src/domain/grants.ts, the grantId guard in src/components/AccountSearch.tsx and TicketQueue.tsx, src/api/client.ts GrantScopeError, and the SupportShell expiry cache clearing" },
+    { "id": "BR1.4", "status": "OK", "target": "support-console/src/domain/metadata.ts whitelists account, ticket, grant, and incident fields; AccountMetadataPanel.tsx renders only kind, label, venue, status, and lastSyncedAt, and TicketQueue.tsx never renders a requester label or conversation" },
+    { "id": "BR2.1", "status": "N/A", "target": "the console has no C10 write path; U1's support API writes support_metadata_read before answering. The console only calls C2." },
+    { "id": "BR2.2", "status": "N/A", "target": "no audit record is written by the console, so the read reason (sent only in the X-Support-Reason header) cannot be copied into an audit context; U1 hashes it. support-console/src/api/client.test.ts pins the absence of an audit write path." },
+
+    { "id": "BR3.1", "status": "OK", "target": "support-console/src/components/IncidentConsole.tsx rejects role !== admin and src/screens/SupportShell.tsx hides the incidents nav from support" },
+    { "id": "BR3.2", "status": "OK", "target": "support-console/src/domain/incidents.ts requiresImmediateNotice/SEV1_NOTICE_WINDOW_MINUTES and src/components/IncidentForm.tsx surfaces the C9 outcome" },
+    { "id": "BR3.3", "status": "OK", "target": "support-console/src/components/IncidentList.tsx renders severity and status separately; the public active feed and U1 store are outside this unit" },
+    { "id": "BR4.1", "status": "OK", "target": "support-console/src/components/HelpPanel.tsx renders a fixed read-only article list and links to the customer help centre" },
+
+    { "id": "NFR1.1", "status": "OK", "target": "joint infrastructure surface: aidlc/spaces/default/intents/261105-brd-001-product/construction/u13-support-console/infrastructure-design/monitoring-design.md defines the /support availability SLI and alerts; web/nginx.conf and web/Dockerfile serve and build the bundle. The monitoring/alerting itself is owned jointly with the gateway/CDN." },
+    { "id": "NFR2.1", "status": "OK", "target": "support-console/vite.config.ts (base /support, vendor/supabase manual chunks, lazy IncidentConsole); the built initial shell is ~133 KB gzipped" },
+    { "id": "NFR2.2", "status": "OK", "target": "support-console/src/components/AccountSearch.tsx uses a 30 s staleTime keyed by grant and query; one C2 search call per uncached query" },
+    { "id": "NFR2.3", "status": "OK", "target": "support-console/src/components/AccountMetadataPanel.tsx uses a 10 s staleTime keyed by account and reason; one C2 metadata read per uncached read" },
+    { "id": "NFR2.4", "status": "OK", "target": "support-console/src/components/GrantRequestForm.tsx and GrantApprovalQueue.tsx make one C2 call per grant action" },
+    { "id": "NFR2.5", "status": "OK", "target": "support-console/src/components/IncidentForm.tsx makes one C2 declaration/update call and renders the C9 outcome from the response" },
+
+    { "id": "NFR9.1", "status": "OK", "target": "web/nginx.conf enforces the /support CSP and security headers; TLS is terminated at the edge. connect-src 'self' requires the gateway to be same-origin or its configured origin is added." },
+    { "id": "NFR9.2", "status": "OK", "target": "support-console/src/auth/supabase.ts persistSession:false with an in-memory storage adapter; src/auth/session.test.ts asserts localStorage/sessionStorage stay empty" },
+    { "id": "NFR9.3", "status": "OK", "target": "support-console/src/components/SupportSignInGate.tsx role gate is UI-only; every C2 call carries the JWT and the gateway enforces support/admin" },
+    { "id": "NFR9.4", "status": "OK", "target": "support-console/src/domain/metadata.ts field whitelists remove credentials, holdings, valuations, portfolios, requester labels, and ticket conversations before render; pickSupportGrant/pickIncident do the same for grants and incidents" },
+    { "id": "NFR9.5", "status": "OK", "target": "support-console/src/api/client.ts GrantScopeError and the grantId guards in AccountSearch/TicketQueue/AccountMetadataPanel; the support API independently binds the record owner to the grant target" },
+    { "id": "NFR9.6", "status": "N/A", "target": "the console has no audit write path; U1's support API records actor, action, target, timestamp, context, and outcome with a reason hash and identifiers only. No value from the console is written to C10." },
+    { "id": "NFR9.7", "status": "OK", "target": "support-console/src/api/queryClient.ts clearSupportCache, src/hooks/useClearSupportCacheOnErrors.ts, and the sign-out/expiry effects in src/screens/SupportShell.tsx" },
+    { "id": "NFR12.1", "status": "OK", "target": "support-console/yarn.lock and web/Dockerfile are the dependency and container-image scan surface; the scan itself is owned by the web pipeline (CI), not by this SPA" },
+
+    { "id": "NFR15.1", "status": "OK", "target": "support-console/src/components/* use landmark regions, labelled controls, table caption/scope, and aria-live regions; axe assertions run in every component and screen suite" },
+    { "id": "NFR15.2", "status": "OK", "target": "support-console/src/styles.css :focus-visible ring; SupportSignInGate.test.tsx and SupportShell.test.tsx assert keyboard order; every control has an accessible name. The manual screen-reader release sign-off remains pending." },
+    { "id": "NFR15.3", "status": "OK", "target": "support-console/src/styles.css reuses the Parchment Ledger tokens whose pairs clear AA on parchment and surface" },
+    { "id": "NFR15.4", "status": "OK", "target": "support-console/src/components/StatusBadge.tsx pairs every status colour with a label and a shape; src/domain/presentation.ts defines the shape per state" }
+  ]
+}

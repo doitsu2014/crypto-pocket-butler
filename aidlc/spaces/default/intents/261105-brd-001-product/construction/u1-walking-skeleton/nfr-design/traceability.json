@@ -1,0 +1,29 @@
+{
+  "stage": "nfr-design",
+  "unit": "u1-walking-skeleton",
+  "upstream_ids": ["NFR2.1", "NFR2.2", "NFR6.1", "NFR3.1", "NFR9.1", "NFR9.2", "NFR9.3", "NFR10.1", "NFR10.2", "NFR11.1", "NFR12.1", "NFR19.1", "NFR19.2", "NFR20.1", "NFR20.2", "NFR20.3", "NFR20.4", "NFR1.1", "NFR18.1", "NFR18.2", "NFR1.2", "NFR1.3"],
+  "coverage": [
+    { "id": "NFR2.1", "status": "OK", "target": "in-process cache with 10 s change-version poll and one indexed lookup" },
+    { "id": "NFR2.2", "status": "OK", "target": "JWT validation against cached JWKS with a <20 ms pass-through budget" },
+    { "id": "NFR6.1", "status": "OK", "target": "cache hit path around 1 ms, resolution inside the 2-minute first-value budget" },
+    { "id": "NFR3.1", "status": "OK", "target": "cache hit ratio metric with a >=90% target and LRU-bounded cache" },
+    { "id": "NFR9.1", "status": "OK", "target": "TLS on every endpoint plus HSTS at the edge" },
+    { "id": "NFR9.2", "status": "OK", "target": "Supabase Vault holds the registry database role and JWKS configuration" },
+    { "id": "NFR9.3", "status": "OK", "target": "structured-log redaction; registry audit targets use internal IDs" },
+    { "id": "NFR10.1", "status": "OK", "target": "JWKS validation with a 10-minute cached-key staleness window, then fail closed" },
+    { "id": "NFR10.2", "status": "OK", "target": "SPA shell keeps session tokens in memory only" },
+    { "id": "NFR11.1", "status": "OK", "target": "gateway rate limits per user, IP, and region; 429 with Retry-After" },
+    { "id": "NFR12.1", "status": "OK", "target": "CI dependency and container-image scan gate" },
+    { "id": "NFR19.1", "status": "OK", "target": "audit client with bounded retry and a local structured-log fallback plus error metric" },
+    { "id": "NFR19.2", "status": "OK", "target": "audit payload redaction; no tokens, credentials, or user wallet addresses" },
+    { "id": "NFR20.1", "status": "OK", "target": "stateless replicas behind the Swarm mesh, four of each at launch" },
+    { "id": "NFR20.2", "status": "OK", "target": "registry sized for 10x the launch set without schema change" },
+    { "id": "NFR20.3", "status": "OK", "target": "10 000-row quarantine cap per account with operator review" },
+    { "id": "NFR20.4", "status": "OK", "target": "cache bounded at 10 000 entries with LRU eviction" },
+    { "id": "NFR1.1", "status": "OK", "target": "at least two replicas each, health-gated rolling updates, 99.9% SLO" },
+    { "id": "NFR18.1", "status": "OK", "target": "RPO <=24 h, RTO <=4 h, PITR where configured, restore drill before launch" },
+    { "id": "NFR18.2", "status": "OK", "target": "versioned up/down migrations with a tested down path" },
+    { "id": "NFR1.2", "status": "OK", "target": "graceful degradation to last-known identity labelled stale" },
+    { "id": "NFR1.3", "status": "OK", "target": "readiness and liveness checks gate every deployment" }
+  ]
+}

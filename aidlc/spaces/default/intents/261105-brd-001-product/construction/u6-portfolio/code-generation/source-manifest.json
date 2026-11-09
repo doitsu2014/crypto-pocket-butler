@@ -1,0 +1,9 @@
+{
+  "stage": "code-generation",
+  "unit": "u6-portfolio",
+  "version": 1,
+  "writes": [
+    { "path": "services/portfolio/infrastructure/src/migrations.rs" },
+    { "path": "services/portfolio/infrastructure/tests/repositories.rs" }
+  ]
+}

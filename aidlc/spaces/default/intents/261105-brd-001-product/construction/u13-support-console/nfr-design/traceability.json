@@ -1,0 +1,25 @@
+{
+  "stage": "nfr-design",
+  "unit": "u13-support-console",
+  "upstream_ids": ["NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR2.5", "NFR2.6", "NFR15.1", "NFR15.2", "NFR15.3", "NFR15.4", "NFR9.1", "NFR9.2", "NFR9.3", "NFR9.4", "NFR9.5", "NFR9.6", "NFR9.7", "NFR12.1"],
+  "coverage": [
+    { "id": "NFR2.1", "status": "OK", "target": "performance-design.md static bundle" },
+    { "id": "NFR2.2", "status": "OK", "target": "performance-design.md search cache" },
+    { "id": "NFR2.3", "status": "OK", "target": "performance-design.md metadata read" },
+    { "id": "NFR2.4", "status": "OK", "target": "performance-design.md grant action" },
+    { "id": "NFR2.5", "status": "OK", "target": "performance-design.md incident submit" },
+    { "id": "NFR2.6", "status": "OK", "target": "performance-design.md SEV-1 row and logical-components Support API" },
+    { "id": "NFR15.1", "status": "OK", "target": "security-design.md Accessibility semantics" },
+    { "id": "NFR15.2", "status": "OK", "target": "security-design.md Accessibility keyboard and focus" },
+    { "id": "NFR15.3", "status": "OK", "target": "security-design.md Accessibility contrast" },
+    { "id": "NFR15.4", "status": "OK", "target": "security-design.md Accessibility status cues" },
+    { "id": "NFR9.1", "status": "OK", "target": "security-design.md Transport and CSP" },
+    { "id": "NFR9.2", "status": "OK", "target": "security-design.md Session" },
+    { "id": "NFR9.3", "status": "OK", "target": "security-design.md Authorization" },
+    { "id": "NFR9.4", "status": "OK", "target": "security-design.md Data minimisation" },
+    { "id": "NFR9.5", "status": "OK", "target": "security-design.md Grant binding" },
+    { "id": "NFR9.6", "status": "OK", "target": "security-design.md Audit" },
+    { "id": "NFR9.7", "status": "OK", "target": "security-design.md Session and cache clearing" },
+    { "id": "NFR12.1", "status": "N/A", "target": "dependency and bundle scanning are owned by the web pipeline; no separate design surface" }
+  ]
+}

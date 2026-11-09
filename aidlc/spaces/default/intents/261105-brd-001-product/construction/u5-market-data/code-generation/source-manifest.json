@@ -1,0 +1,8 @@
+{
+  "stage": "code-generation",
+  "unit": "u5-market-data",
+  "version": 1,
+  "writes": [
+    { "path": "services/market-data/infrastructure/tests/migrations.rs" }
+  ]
+}

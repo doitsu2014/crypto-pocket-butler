@@ -1,0 +1,34 @@
+# Audit retention worker image.
+#
+# Build from the repository root:
+#   docker build -f services/audit/Dockerfile.retention -t cpb/audit-retention .
+#
+# The container runs non-root and has no inbound listener: it is a scheduled
+# worker with only an outbound database credential. Its read-only root
+# filesystem is a Swarm setting; the only file it writes is the heartbeat on the
+# container's tmpfs, which the health check reads.
+FROM rust:1-slim-bookworm AS builder
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml Cargo.lock rustfmt.toml ./
+COPY services ./services
+RUN cargo build --release --locked -p audit --bin audit-retention
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home --shell /usr/sbin/nologin app
+
+COPY --from=builder /app/target/release/audit-retention /usr/local/bin/audit-retention
+
+USER 10001
+# The supervisor writes /tmp/audit-retention.heartbeat after every tick; the check
+# fails when the marker is missing or older than the sweep interval plus slack.
+HEALTHCHECK --interval=60s --timeout=5s --start-period=60s --retries=3 \
+    CMD /bin/sh -c 'test -f /tmp/audit-retention.heartbeat && test $(( $(date +%s) - $(stat -c %Y /tmp/audit-retention.heartbeat) )) -lt 4200' || exit 1
+ENTRYPOINT ["/usr/local/bin/audit-retention"]

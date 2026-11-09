@@ -1,0 +1,36 @@
+[package]
+name = "notification"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Notification service: binary wiring for notification-api and notification-worker"
+
+[lib]
+name = "notification"
+path = "src/lib.rs"
+
+[[bin]]
+name = "notification-api"
+path = "src/bin/api.rs"
+
+[[bin]]
+name = "notification-worker"
+path = "src/bin/worker.rs"
+
+[[bin]]
+name = "notification-migrate"
+path = "src/bin/migrate.rs"
+
+[dependencies]
+notification-domain = { path = "domain" }
+notification-application = { path = "application" }
+notification-infrastructure = { path = "infrastructure" }
+notification-http = { path = "http" }
+
+anyhow.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

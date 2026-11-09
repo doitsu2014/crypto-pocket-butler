@@ -1,0 +1,41 @@
+[package]
+name = "gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "API Gateway service: binary wiring and service-scoped tests"
+
+[lib]
+name = "gateway"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gateway"
+path = "src/main.rs"
+
+[dependencies]
+gateway-domain = { path = "domain" }
+gateway-application = { path = "application" }
+gateway-infrastructure = { path = "infrastructure" }
+gateway-http = { path = "http" }
+
+anyhow.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+axum.workspace = true
+base64.workspace = true
+http-body-util.workspace = true
+jsonwebtoken.workspace = true
+rand.workspace = true
+rsa.workspace = true
+tower.workspace = true

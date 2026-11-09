@@ -1,0 +1,28 @@
+# Ledger migration job image.
+#
+# Build from the repository root:
+#   docker build -f services/ledger/Dockerfile.migrate -t cpb/ledger-migrate .
+#
+# The job runs once with the DDL credential, applies the versioned up migrations,
+# and exits. The down migration is applied by the rollback path.
+FROM rust:1-slim-bookworm AS builder
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml Cargo.lock rustfmt.toml ./
+COPY services ./services
+RUN cargo build --release --locked -p ledger --bin ledger-migrate
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home --shell /usr/sbin/nologin app
+
+COPY --from=builder /app/target/release/ledger-migrate /usr/local/bin/ledger-migrate
+
+USER 10001
+ENTRYPOINT ["/usr/local/bin/ledger-migrate"]

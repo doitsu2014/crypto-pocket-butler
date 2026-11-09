@@ -1,0 +1,34 @@
+[package]
+name = "ledger-infrastructure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Ledger adapters: sqlx repositories, JWKS validation, service tokens, C4/C5/C10 clients"
+
+[dependencies]
+ledger-domain = { path = "../domain" }
+ledger-application = { path = "../application" }
+async-trait.workspace = true
+base64.workspace = true
+chrono.workspace = true
+hex.workspace = true
+jsonwebtoken.workspace = true
+reqwest.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[features]
+# Integration tests need TEST_DATABASE_URL and a disposable schema.
+integration = []

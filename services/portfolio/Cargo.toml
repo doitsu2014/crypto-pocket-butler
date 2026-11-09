@@ -1,0 +1,52 @@
+[package]
+name = "portfolio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Portfolio service: binary wiring for portfolio-api and portfolio-worker"
+
+[lib]
+name = "portfolio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "portfolio-api"
+path = "src/bin/api.rs"
+
+[[bin]]
+name = "portfolio-worker"
+path = "src/bin/worker.rs"
+
+[[bin]]
+name = "portfolio-migrate"
+path = "src/bin/migrate.rs"
+
+[dependencies]
+portfolio-domain = { path = "domain" }
+portfolio-application = { path = "application" }
+portfolio-infrastructure = { path = "infrastructure" }
+portfolio-http = { path = "http" }
+
+anyhow.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+axum.workspace = true
+base64.workspace = true
+http-body-util.workspace = true
+jsonwebtoken.workspace = true
+rand.workspace = true
+rsa.workspace = true
+rust_decimal.workspace = true
+sqlx.workspace = true
+tower.workspace = true
+uuid.workspace = true

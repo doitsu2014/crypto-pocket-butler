@@ -1,0 +1,27 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u13-support-console",
+  "upstream_ids": ["NFR1", "NFR2", "NFR3", "NFR4", "NFR5", "NFR6", "NFR7", "NFR8", "NFR9", "NFR10", "NFR11", "NFR12", "NFR13", "NFR14", "NFR15", "NFR16", "NFR17", "NFR18", "NFR19", "NFR20"],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.1" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.1, NFR2.2, NFR2.3, NFR2.4, NFR2.5, NFR2.6" },
+    { "id": "NFR3", "status": "N/A", "target": "snapshot history belongs to Portfolio" },
+    { "id": "NFR4", "status": "N/A", "target": "sync feedback belongs to Account" },
+    { "id": "NFR5", "status": "N/A", "target": "price freshness belongs to Market Data" },
+    { "id": "NFR6", "status": "N/A", "target": "time to first value belongs to the customer app" },
+    { "id": "NFR7", "status": "N/A", "target": "valuation accuracy belongs to Portfolio" },
+    { "id": "NFR8", "status": "N/A", "target": "snapshot integrity belongs to Portfolio and Ledger" },
+    { "id": "NFR9", "status": "OK", "target": "NFR9.1, NFR9.2, NFR9.3, NFR9.4, NFR9.5, NFR9.6, NFR9.7" },
+    { "id": "NFR10", "status": "OK", "target": "NFR9.2, NFR9.3 (MFA itself remains Identity's)" },
+    { "id": "NFR11", "status": "N/A", "target": "abuse limits are enforced at the gateway" },
+    { "id": "NFR12", "status": "OK", "target": "NFR12.1" },
+    { "id": "NFR13", "status": "OK", "target": "NFR9.4, NFR9.5, NFR9.6" },
+    { "id": "NFR14", "status": "N/A", "target": "retention is owned by the services the console reads" },
+    { "id": "NFR15", "status": "OK", "target": "NFR15.1, NFR15.2, NFR15.3, NFR15.4" },
+    { "id": "NFR16", "status": "N/A", "target": "localisation is deferred; the console is English-only for internal users" },
+    { "id": "NFR17", "status": "N/A", "target": "the console emits no service metrics; the support API owns them" },
+    { "id": "NFR18", "status": "N/A", "target": "recovery is owned by the platform" },
+    { "id": "NFR19", "status": "OK", "target": "NFR9.6" },
+    { "id": "NFR20", "status": "N/A", "target": "the console is a static bundle scaled by the CDN" }
+  ]
+}

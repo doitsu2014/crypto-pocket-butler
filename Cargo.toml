@@ -1,0 +1,130 @@
+# Root Cargo workspace for Crypto Pocket Butler.
+#
+# Every backend service lives under `services/<name>/` as four Clean Architecture
+# crates (domain, application, infrastructure, http) plus a thin service package
+# that owns the binary and the service-scoped integration test suite. Dependencies
+# point inward only; see `.claude/rules/development.md`.
+[workspace]
+resolver = "2"
+members = [
+    "services/account",
+    "services/account/domain",
+    "services/account/application",
+    "services/account/infrastructure",
+    "services/account/http",
+    "services/analytics",
+    "services/analytics/domain",
+    "services/analytics/application",
+    "services/analytics/infrastructure",
+    "services/analytics/http",
+    "services/asset-registry",
+    "services/asset-registry/domain",
+    "services/asset-registry/application",
+    "services/asset-registry/infrastructure",
+    "services/asset-registry/http",
+    "services/audit",
+    "services/audit/domain",
+    "services/audit/application",
+    "services/audit/infrastructure",
+    "services/audit/http",
+    "services/gateway",
+    "services/gateway/domain",
+    "services/gateway/application",
+    "services/gateway/infrastructure",
+    "services/gateway/http",
+    "services/identity",
+    "services/identity/domain",
+    "services/identity/application",
+    "services/identity/infrastructure",
+    "services/identity/http",
+    "services/market-data",
+    "services/market-data/domain",
+    "services/market-data/application",
+    "services/market-data/infrastructure",
+    "services/market-data/http",
+    "services/ledger",
+    "services/ledger/domain",
+    "services/ledger/application",
+    "services/ledger/infrastructure",
+    "services/ledger/http",
+    "services/notification",
+    "services/notification/domain",
+    "services/notification/application",
+    "services/notification/infrastructure",
+    "services/notification/http",
+    "services/portfolio",
+    "services/portfolio/domain",
+    "services/portfolio/application",
+    "services/portfolio/infrastructure",
+    "services/portfolio/http",
+    "services/reporting",
+    "services/reporting/domain",
+    "services/reporting/application",
+    "services/reporting/infrastructure",
+    "services/reporting/http",
+    "services/job-orchestration",
+    "services/job-orchestration/domain",
+    "services/job-orchestration/application",
+    "services/job-orchestration/infrastructure",
+    "services/job-orchestration/http",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+# Language and error handling
+async-trait = "0.1"
+thiserror = "2"
+anyhow = "1"
+futures = "0.3"
+
+# Serialization is confined to the `http` boundary and infrastructure adapters.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Runtime and observability
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Domain-safe value helpers
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Domain-safe hashing helpers (export content digests and idempotency payload hashes).
+sha2 = "0.10"
+hex = "0.4"
+
+# HTTP boundary
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "limit", "timeout"] }
+http-body-util = "0.1"
+bytes = "1"
+tokio-stream = "0.1"
+
+# Infrastructure adapters
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "chrono",
+    "rust_decimal",
+    "uuid",
+    "json",
+    "migrate",
+    "macros",
+] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+jsonwebtoken = "9"
+base64 = "0.22"
+
+# Test-only helpers (declared here so every service pins the same version).
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"

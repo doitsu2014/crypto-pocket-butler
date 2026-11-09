@@ -1,0 +1,26 @@
+## Review
+
+**Verdict:** READY
+
+**Reviewer:** aidlc-architecture-reviewer-agent
+
+**Iteration:** 2
+
+**Verdict Dictated:** no
+
+### Findings
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| R-01 | Minor | inception/contract-design/contract-summary.md > C1 — SPA-facing Portfolio routes | The valuation schema is fixed, but several added routes still have no request or response schema: the create-portfolio body, the account assign/move response, the order-intent preview response (a non-recorded projection, which cannot be the `OrderIntent` schema because that requires an id and status), the cancel response, the trade response, and the snapshot-history response. | Map each route to a named schema (or state that it reuses Portfolio, OrderIntent and Snapshot) so the SPA-facing contract is complete. | New |
+| R-02 | Minor | inception/contract-design/contract-summary.md > PortfolioValuation | `unpricedCount` and `excludedCount` both describe unpriced holdings kept as labelled lines; their difference is undefined and a client cannot tell which to use. | Define the distinction or keep one field. | New |
+| R-03 | Minor | aidlc/spaces/default/intents/261105-brd-001-product/construction/u6-portfolio/nfr-requirements/security-requirements.md > NFR9.4 | The requirement still calls for C10 events on target/guardrail changes and intent cancellation, but the READY functional design defines an audit only for the recorded trade, and no action names are given for the added events. | Add the events and action names to the functional design (and confirm C10 accepts them), or remove them from the requirement and record the change. | New |
+| R-04 | Minor | aidlc/spaces/default/intents/261105-brd-001-product/construction/u6-portfolio/nfr-requirements/traceability.json > NFR7 | The ≥99% spot-check accuracy target exists only inside the traceability target text; no numbered requirement carries it, so the requirement set itself has no measurable accuracy criterion. | Add the accuracy requirement (and its sample definition) to a requirements file and point the traceability at it. | New |
+| R-05 | Minor | aidlc/spaces/default/intents/261105-brd-001-product/construction/u6-portfolio/nfr-requirements/scalability-requirements.md > NFR20.3 | The requirement now states the row count and the compressed-JSONB storage strategy but still gives no estimated size (GB/TB) or platform limit, so the two-year retention's affordability is not shown. | Add the estimated snapshot storage size and confirm it fits the Supabase limits, or record that the infrastructure stage owns the estimate. | New |
+| R-06 | Minor | aidlc/spaces/default/intents/261105-brd-001-product/construction/u6-portfolio/nfr-requirements/security-requirements.md > NFR13.1 | The privacy requirement names `POST /v1/internal/privacy/export`, while the C8 contract and the sibling privacy rows use `GET /v1/internal/privacy/export`. | Align the method with the contract. | New |
+| R-07 | Minor | inception/contract-design/contract-summary.md > C5, C7, C8 — Privacy operations | The C8 rows still read only "Portfolios and snapshots for export" and "Anonymise personal portfolio fields"; the userId, idempotency key and export payload shape that NFR13.1 now names are not in the normative contract table. | Sync the C8 privacy rows with NFR13.1. | New |
+| R-08 | Minor | aidlc/spaces/default/intents/261105-brd-001-product/construction/u6-portfolio/nfr-requirements/reliability-requirements.md > NFR1.5 | The requirement asserts that the C10 write "never extends the read path's 900 ms budget" but does not state that the write and its 1/2/5 s retries run outside the request path, so an in-band implementation would violate the assertion. | State that the audit write and retries run asynchronously after the response, with the failure metric and page covering it. | New |
+
+### Summary
+
+The Critical and Major are fixed and verified. C1 `PortfolioValuation` now carries `status`, `holdingsUnavailable`, a nullable `totalValue`, `unpricedCount`, `excludedCount` and per-asset `ValuationLine` records with value, allocation, target, drift, price source/freshness/time, FX source/derivedFrom/time and dataStatus; `TargetSetRequest`, `TargetSetPreview` and `TradeRequest` are defined; `OrderIntent` is `pending|cancelled` with the projection and shortfall fields; and WF2 now contains the C5-unavailable partial state that the counter sits behind. The Minor items are also in place: the audit retry is quantified with a metric and page outside the read path, the snapshot read is defined as the latest snapshot ≤60 s old, NFR9.4 is aligned with the functional design's audit scope, NFR7 has a 99% spot-check target, the snapshot volume and JSONB storage strategy are stated, snapshot immutability is enforced by insert-only grants, dependency timeouts are set, the outbound service identity is named, the C8 privacy operations carry their request shapes, and the unpriced ticket threshold has a denominator and window. The remaining items are Minor: the last few C1 operation schemas, the unpriced/excluded count overlap, the NFR9.4 audit origin and action names, the accuracy target's placement, the snapshot byte estimate, the export method mismatch and the C8 privacy table sync, and stating the audit's asynchronous execution.

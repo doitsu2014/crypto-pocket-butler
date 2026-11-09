@@ -1,0 +1,18 @@
+{
+  "stage": "functional-design",
+  "unit": "u1-walking-skeleton",
+  "upstream_ids": ["AC1.2.1", "AC1.2.2", "AC1.2.3", "AC9.2.1", "AC9.2.2", "AC9.2.3"],
+  "coverage": [
+    { "id": "AC1.2.1", "status": "OK", "target": "BR1.1, BR2.1, BR2.2" },
+    { "id": "AC1.2.2", "status": "OK", "target": "BR1.1, BR1.3" },
+    { "id": "AC1.2.3", "status": "OK", "target": "BR1.1" },
+    { "id": "AC9.2.1", "status": "OK", "target": "BR1.1, BR1.2" },
+    { "id": "AC9.2.2", "status": "OK", "target": "BR3.1" },
+    { "id": "AC9.2.3", "status": "OK", "target": "BR1.1" }
+  ],
+  "reverse": [
+    { "id": "BR4.1", "status": "N/A", "target": "architectural gateway rule from FR13.1; the acceptance criteria assigned to this Unit cover asset resolution, not the gateway path" },
+    { "id": "BR4.2", "status": "N/A", "target": "architectural gateway rule from FR13.2; no story acceptance criterion is assigned to this Unit for routing" },
+    { "id": "BR4.3", "status": "N/A", "target": "cross-cutting correlation rule from FR13.2; tested at the gateway integration level" }
+  ]
+}

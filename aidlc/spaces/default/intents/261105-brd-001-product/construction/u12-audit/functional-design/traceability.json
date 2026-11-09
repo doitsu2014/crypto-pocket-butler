@@ -1,0 +1,127 @@
+{
+  "stage": "functional-design",
+  "unit": "u12-audit",
+  "upstream_ids": [
+    "AC7.3.1",
+    "AC7.3.2",
+    "AC7.3.3",
+    "AC7.4.1",
+    "AC7.4.2",
+    "AC7.4.3",
+    "AC9.2.1",
+    "AC9.2.2",
+    "AC9.2.3",
+    "AC9.3.1",
+    "AC9.3.2",
+    "AC9.3.3"
+  ],
+  "coverage": [
+    {
+      "id": "AC7.3.1",
+      "status": "N/A",
+      "target": "delivered by u3-identity: it assembles the user's own accounts, portfolios, transactions, and snapshots. u12-audit does not take part in that export; its AuditExport is an admin export of audit records, a different thing"
+    },
+    {
+      "id": "AC7.3.2",
+      "status": "N/A",
+      "target": "delivered by u3-identity for progress and by u2-web-app for delivery; the audit service only records the export request"
+    },
+    {
+      "id": "AC7.3.3",
+      "status": "N/A",
+      "target": "delivered by u3-identity: it assembles the export; the audit side guarantees only that audit records and audit exports carry no credential or token"
+    },
+    {
+      "id": "AC7.4.1",
+      "status": "N/A",
+      "target": "delivered by u3-identity: it orchestrates deletion and anonymisation; u12-audit supplies the retention decision per record under BR4.3"
+    },
+    {
+      "id": "AC7.4.2",
+      "status": "OK",
+      "target": "BR4.3"
+    },
+    {
+      "id": "AC7.4.3",
+      "status": "N/A",
+      "target": "delivered by u3-identity: it owns the deletion state shown at sign-in"
+    },
+    {
+      "id": "AC9.2.1",
+      "status": "N/A",
+      "target": "delivered by u1-walking-skeleton: contract-to-canonical-asset resolution lives in the Asset Registry"
+    },
+    {
+      "id": "AC9.2.2",
+      "status": "OK",
+      "target": "BR1.2"
+    },
+    {
+      "id": "AC9.2.3",
+      "status": "N/A",
+      "target": "delivered by u1-walking-skeleton: cross-chain contract identity and de-duplication live in the Asset Registry"
+    },
+    {
+      "id": "AC9.3.1",
+      "status": "OK",
+      "target": "BR3.2"
+    },
+    {
+      "id": "AC9.3.2",
+      "status": "OK",
+      "target": "BR3.1"
+    },
+    {
+      "id": "AC9.3.3",
+      "status": "OK",
+      "target": "BR3.3"
+    }
+  ],
+  "reverse": [
+    {
+      "id": "BR1.1",
+      "status": "N/A",
+      "target": "append-only integrity required by NFR-SEC-13 and the insert-only role; no acceptance criterion names it because it is a storage guarantee"
+    },
+    {
+      "id": "BR1.3",
+      "status": "N/A",
+      "target": "secret-free records required by NFR-SEC-03 and the project's audit-logging rule"
+    },
+    {
+      "id": "BR1.4",
+      "status": "N/A",
+      "target": "data-minimisation guard belonging to NFR13"
+    },
+    {
+      "id": "BR2.1",
+      "status": "N/A",
+      "target": "acceptance semantics of contract C10, not a user-visible criterion"
+    },
+    {
+      "id": "BR2.2",
+      "status": "N/A",
+      "target": "project rule: bounded retries with idempotency keys (.claude/rules/development.md)"
+    },
+    {
+      "id": "BR4.1",
+      "status": "N/A",
+      "target": "retention windows from NFR14; the acceptance criteria cover support access and registry audit, not retention itself"
+    },
+    {
+      "id": "BR4.2",
+      "status": "N/A",
+      "target": "retention under a separate audited privileged role, from the unit's own responsibility statement and FR11.3"
+    },
+    {
+      "id": "BR5.1",
+      "status": "N/A",
+      "target": "deny-by-default operator access from NFR-SEC-07; no story states it as an acceptance criterion"
+    },
+    {
+      "id": "BR5.2",
+      "status": "N/A",
+      "target": "admin exports named by the unit's responsibility statement; not FR8.1, which is the user's own-data export delivered by u3-identity"
+    }
+  ]
+}

@@ -4,6 +4,18 @@ docs/architecture/.structurizr/
 # macOS
 .DS_Store
 
+# Rust build output
+/target/
+**/target/
+
+# Node
+node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+support-console/dist/
+support-console/tsconfig.tsbuildinfo
+support-console/.yarn/install-state.gz
+
 # BEGIN AI-DLC:gitignore
 # AI-DLC: local working files
 aidlc/active-space

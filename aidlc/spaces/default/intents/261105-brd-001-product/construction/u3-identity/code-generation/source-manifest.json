@@ -1,0 +1,11 @@
+{
+  "stage": "code-generation",
+  "unit": "u3-identity",
+  "version": 1,
+  "writes": [
+    { "path": "services/identity/infrastructure/src/repositories/keys.rs" },
+    { "path": "services/identity/infrastructure/src/repositories/users.rs" },
+    { "path": "services/identity/tests/repositories.rs" },
+    { "path": "services/identity/migrations/0001_init.up.sql" }
+  ]
+}

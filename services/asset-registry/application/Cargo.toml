@@ -1,0 +1,16 @@
+[package]
+name = "asset-registry-application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Asset Registry use cases and inward-defined ports"
+
+[dependencies]
+asset-registry-domain = { path = "../domain" }
+async-trait.workspace = true
+chrono.workspace = true
+rust_decimal.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

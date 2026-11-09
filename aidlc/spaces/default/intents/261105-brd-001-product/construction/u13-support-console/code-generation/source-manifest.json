@@ -1,0 +1,8 @@
+{
+  "stage": "code-generation",
+  "unit": "u13-support-console",
+  "version": 1,
+  "writes": [
+    { "path": "support-console/src/domain/grants.test.ts" }
+  ]
+}

@@ -1,0 +1,36 @@
+# Portfolio migration job image.
+#
+# Build from the repository root:
+#   docker build -f services/reporting/Dockerfile.migrate -t cpb/reporting-migrate .
+#
+# The release job runs this image once with the migrator DSN mounted as a Docker
+# secret; it applies the versioned sqlx up migrations and exits. A release
+# rollback applies the matching down migration through the same DSN.
+#
+# Two-year snapshot retention (release gate): run the same image with
+#   --prune-snapshots
+# or PRUNE_SNAPSHOTS=true, monthly. The runtime role is insert-only on
+# valuation_snapshots, so only this migrator/operator path may delete. The
+# launch/release runbook schedules it; it is not part of the service update.
+# Both bases are digest-pinned (NFR12.1). Refresh a digest deliberately.
+FROM rust:1-slim-bookworm@sha256:f2c004e3d2d8b547e8cf7ffbc29205385f4e71d23e53e4e383065db5e9f822cd AS builder
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml Cargo.lock rustfmt.toml ./
+COPY services ./services
+RUN cargo build --release --locked -p reporting --bin reporting-migrate
+
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10006 --create-home --shell /usr/sbin/nologin app
+
+COPY --from=builder /app/target/release/reporting-migrate /usr/local/bin/reporting-migrate
+
+USER 10006
+ENTRYPOINT ["/usr/local/bin/reporting-migrate"]

@@ -1,0 +1,28 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u4-account",
+  "upstream_ids": ["NFR1", "NFR2", "NFR3", "NFR4", "NFR5", "NFR6", "NFR7", "NFR8", "NFR9", "NFR10", "NFR11", "NFR12", "NFR13", "NFR14", "NFR15", "NFR16", "NFR17", "NFR18", "NFR19", "NFR20"],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.1, NFR1.2" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.1, NFR2.2, NFR2.3" },
+    { "id": "NFR3", "status": "N/A", "target": "history read is u6-portfolio's; Account writes snapshots but serves no history endpoint" },
+    { "id": "NFR4", "status": "OK", "target": "NFR4.1, NFR4.2" },
+    { "id": "NFR5", "status": "N/A", "target": "price freshness belongs to u5-market-data" },
+    { "id": "NFR6", "status": "OK", "target": "NFR6.1" },
+    { "id": "NFR7", "status": "N/A", "target": "valuation accuracy belongs to u5-market-data and u6-portfolio; Account stores decimals" },
+    { "id": "NFR8", "status": "OK", "target": "NFR8.1" },
+    { "id": "NFR9", "status": "OK", "target": "NFR9.1, NFR9.2, NFR9.3, NFR9.4, NFR9.5" },
+    { "id": "NFR10", "status": "OK", "target": "NFR10.1, NFR10.2, NFR10.3, NFR10.4, NFR10.5, NFR10.6" },
+    { "id": "NFR11", "status": "N/A", "target": "rate limits are applied by the gateway; Account exposes no public endpoint" },
+    { "id": "NFR12", "status": "OK", "target": "NFR12.1" },
+    { "id": "NFR13", "status": "OK", "target": "NFR13.1, NFR13.2, NFR13.3" },
+    { "id": "NFR14", "status": "OK", "target": "NFR14.1" },
+    { "id": "NFR15", "status": "N/A", "target": "no UI in Account; accessibility is delivered by u2-web-app" },
+    { "id": "NFR16", "status": "OK", "target": "NFR16.1" },
+    { "id": "NFR17", "status": "OK", "target": "NFR17.1, NFR17.2, NFR17.3, NFR17.4, NFR17.5" },
+    { "id": "NFR18", "status": "OK", "target": "NFR18.1" },
+    { "id": "NFR19", "status": "OK", "target": "NFR19.1, NFR19.2, NFR19.3" },
+    { "id": "NFR20", "status": "OK", "target": "NFR20.1, NFR20.2, NFR20.3, NFR20.4" }
+  ],
+  "reverse": []
+}

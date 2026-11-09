@@ -1,0 +1,8 @@
+{
+  "stage": "code-generation",
+  "unit": "u10-analytics",
+  "version": 1,
+  "writes": [
+    { "path": "services/analytics/infrastructure/tests/repositories.rs" }
+  ]
+}

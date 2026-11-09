@@ -61,7 +61,7 @@ previous model remains in git history.
 | Ed25519 signed principal assertions, signing/verification keys, rotation windows | The gateway forwards the user's Supabase JWT unchanged; every service validates it |
 | Identity ensure-user handshake with the gateway | Identity upserts the internal user from a signed Supabase Auth webhook or lazily from the validated JWT on first lookup |
 | Hash-chained audit partitions with advisory-lock writer lease | Append-only audit table enforced by an insert-only Postgres role (no UPDATE/DELETE grants) |
-| Dead-man watchdog with lease epochs, fencing and heartbeats | Job service writes one heartbeat row; pg_cron checks it and alerts via pg_net |
+| Dead-man watchdog with lease epochs, fencing and heartbeats | Job service writes one heartbeat row from its leased tick loop; a Prometheus rule on its age (180 s, `absent()` included) pages within five minutes |
 | Ed25519 SSE stream tickets | The SSE progress stream authenticates with the session JWT |
 | JWKS and principal caches in Postgres, Postgres atomic-counter rate limits | In-memory caches and in-memory rate limits in the stateless gateway |
 | 318 components in hexagonal groups, 9 component views, 16 views total | Container-level model only; 10 views |
@@ -171,7 +171,7 @@ Exports are build artefacts, not part of the model of record.
 | Supabase Postgres | One schema + role per service, no cross-schema grants, Supavisor pooler |
 | Supabase Storage | Private buckets for audit exports, retention archives, user exports and PDF briefs |
 | Supabase Vault | pgsodium secrets: exchange credentials, provider keys, service token, merchant-of-record credentials, email/push keys, per-subject encryption keys |
-| Supabase Cron (pg_cron) | Ticks the scheduler via pg_net, runs retention SQL, hosts the dead-man check |
+| Prometheus/Alertmanager | Alert rules including the scheduler's dead-man check |
 
 Observability is **not** an external dependency: the Observability Stack (Prometheus, Loki,
 Tempo, Grafana) is an internal container deployed on the same Swarm cluster (section 5).
@@ -195,7 +195,7 @@ Tempo, Grafana) is an internal container deployed on the same Swarm cluster (sec
 | Notification Service | Alert catalogue, preferences, quiet hours, digests, dedupe, delivery log and retries; email and web push dispatch | `notification` |
 | Billing Service | Plans, subscriptions, entitlements, quotas, invoices, dunning, refunds and merchant-of-record integration | `billing` |
 | Analytics Service | Consent-aware event ingestion, activation/retention/conversion aggregates, feature flags and experiment exposure | `analytics` |
-| Job Orchestration Service | Schedules, run triggering, single-flight advisory locks, run records, missed-run detection, bounded retries/backfill, alerts ≤5 min, heartbeat | `job` |
+| Job Orchestration Service | Schedules, run triggering, a single OrchestratorLease, run records, missed-run detection, bounded retries/backfill, alerts ≤5 min, heartbeat | `job_orchestration` |
 | Audit Service | Append-only audit events (insert-only role), admin queries, support-access records, privacy exports, erasure by crypto-shredding, partition retention | `audit` |
 | Observability Stack | Logs, metrics, traces, dashboards and alert evaluation, self-hosted on Swarm: Loki, Prometheus, Tempo, Grafana | — |
 
@@ -252,11 +252,12 @@ TypeScript 5.
 
 ## 8. Jobs and scheduling
 
-pg_cron ticks the Job Orchestration Service every minute via pg_net. The scheduler takes a
-Postgres advisory lock per job (single-flight), calls the owning service's run endpoint, and
-records the outcome. Missed runs are detected from the durable schedules; retries and
-backfills are bounded; alerts fire within 5 minutes. A separate pg_cron dead-man check alerts
-through pg_net if the scheduler's heartbeat row goes stale.
+The Job Orchestration Service ticks itself from an in-process loop (30–90 s), elected by a
+single OrchestratorLease row (30 s TTL). It records one row per attempt, calls the owning
+service's run endpoint with a per-window idempotency key, and retries within a bound. Missed
+runs inside a 24-hour lookback are recovered oldest-first; backfills are bounded to seven days;
+a Prometheus rule on the heartbeat age (180 s, `absent()` included) pages within five minutes.
+Nightly run retention is an operator systemd timer running the migrate CLI.
 
 Scheduled work: account syncs, transaction sync, catalogue sync and reconciliation, price,
 FX and benchmark collection, valuation, rolling timezone-aware EOD snapshots, performance,
@@ -326,7 +327,7 @@ covers `Production` only; Supabase services are external systems, not deployment
 | BRD-008 Orders and trades | Portfolio Service + Ledger Service (order intents, trades, immediate allocation effect, reconciliation) |
 | BRD-009 Reporting | Reporting Service (in-app, email and PDF briefs; localization and timezone) |
 | BRD-010 Admin configuration | Registry, source, user, entitlement and flag admin through the gateway and owning services; audit |
-| BRD-011 Background jobs | Job Orchestration Service + Supabase Cron, section 8 |
+| BRD-011 Background jobs | Job Orchestration Service, section 8 |
 | BRD-012 Security, compliance and NFRs | Sections 6–8: JWT everywhere, Vault, MFA, append-only audit, privacy exports/erasure, retention, alerts, 99.9% target |
 | BRD-013 Transactions, cost basis and P&L | Ledger Service (imports, dedupe, cost basis, P&L, reconciliation) |
 | BRD-014 Onboarding, education and first-run | SPA + Account/Portfolio APIs + Analytics activation events |

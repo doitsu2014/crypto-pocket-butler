@@ -1,0 +1,5 @@
+# Everything under deployment/localhost is local-development material.
+# Generated keys, tokens and the generated Kong configuration stay out of git.
+.env
+secrets/
+supabase/kong.generated.yml

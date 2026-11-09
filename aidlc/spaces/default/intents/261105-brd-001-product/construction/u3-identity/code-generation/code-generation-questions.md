@@ -10,12 +10,13 @@ Approve the code plan for u3-identity?
 - Builds: the Identity service as a four-crate Cargo workspace plus a `bin` package producing `identity-api` and `identity-worker`, its `identity` Postgres schema and pgsodium protect/unprotect funct...
 - Touches: `services/identity/`, `infra/swarm-stack.yml` (two services, internal encrypted overlay, worker wake endpoint) and `infra/sql/identity-schema.sql`
 - Tests: TDD per layer, 5–8 per component, 80% line coverage per Rust crate
+- Already changed before you approved (2 files): support-console/.yarn/install-state.gz, support-console/tsconfig.tsbuildinfo.
 
 Full plan: aidlc/spaces/default/intents/261105-brd-001-product/construction/u3-identity/code-generation/code-generation-plan.md
 Test instructions: aidlc/spaces/default/intents/261105-brd-001-product/construction/u3-identity/code-generation/unit-test-instructions.md
 
-[Approval Fingerprint]: sha256:v3:c4050503b9007f0b5d5e3301101bac2391ff3623673901dbbd46caba930e6f38
-[Planned Source]: 8ff95945022a99f82845a140bf8cda15667abe7c7022a415b2ff3e95eb9d0146
+[Approval Fingerprint]: sha256:v3:f835fe9a8d33131de411510945fbdabeb6bebb4b973add2ff6bb8d80515959fe
+[Planned Source]: bb45880f1d8b158d060e31dd82201af634faa29d774fdede29559efbe5493153
 
 - A. Approve Plan
 - B. Request Changes

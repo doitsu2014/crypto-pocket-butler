@@ -180,3 +180,12 @@ still test-first by construction, and the final 56-test suite exercises every ru
 - `source-manifest.json` — every workspace-relative file this unit wrote.
 - `traceability.json` — AC3.3.1–AC3.4.3, US3.3/US3.4, and BR1.1–BR5.3, each to one existing
   workspace-relative implementation file.
+
+## Build and Test loop-back repair (2026-11-09)
+
+One adapter-test defect was repaired in
+`services/market-data/infrastructure/tests/migrations.rs`: the schema-shape assertion counted
+`_sqlx_migrations.checksum`, sqlx's own bytea bookkeeping column, as an application bytea column.
+It now counts only application tables (`table_name NOT LIKE '\_%' ESCAPE '\'`), keeping the
+assertion's intent and message. Integration suite: 17 passed. Unit suite: 140 passed / 17 ignored.
+Format and clippy clean.

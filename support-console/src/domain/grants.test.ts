@@ -40,7 +40,9 @@ describe("grant state", () => {
   it("leaves pending and revoked grants untouched", () => {
     expect(grantStatusAt(pendingGrant(), NOW)).toBe("pending_approval");
     expect(grantStatusAt(activeGrant({ status: "revoked" }), NOW)).toBe("revoked");
-    expect(grantStatusAt(expiredGrant(), NOW)).toBe("expired");
+    expect(grantStatusAt(expiredGrant({ expiresAt: "2026-11-08T09:59:00.000Z" }), NOW)).toBe(
+      "expired",
+    );
   });
 });
 

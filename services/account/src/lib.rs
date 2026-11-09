@@ -372,11 +372,10 @@ async fn supervisor_loop(
     verify_interval_seconds: u64,
 ) {
     let worker_id = format!("{WORKER_SERVICE_NAME}-{}", std::process::id());
-    let verify_every = if sync_interval_seconds == 0 {
-        1
-    } else {
-        (verify_interval_seconds / sync_interval_seconds).max(1)
-    };
+    let verify_every = verify_interval_seconds
+        .checked_div(sync_interval_seconds)
+        .unwrap_or(1)
+        .max(1);
     let mut ticks: u64 = 0;
     loop {
         let correlation = format!("{worker_id}-{ticks}");

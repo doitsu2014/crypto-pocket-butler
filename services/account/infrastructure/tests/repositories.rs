@@ -240,10 +240,7 @@ async fn renewal_and_the_sweep_both_track_the_lease() {
     let repository = PgSyncRunRepository::new(pool.clone());
     let run = stored_run(&pool, &account, at(10)).await;
 
-    assert!(repository
-        .renew(run.id(), at(10) + Duration::seconds(60), at(10))
-        .await
-        .unwrap());
+    assert!(repository.renew(run.id(), at(12), at(10)).await.unwrap());
     assert_eq!(repository.sweep_expired(at(11)).await.unwrap().len(), 0);
     assert_eq!(repository.sweep_expired(at(12)).await.unwrap().len(), 1);
     let stored = repository.find_by_id(run.id()).await.unwrap().unwrap();
@@ -258,7 +255,7 @@ async fn the_snapshot_write_is_fenced_on_a_live_lease() {
     let (pool, schema) = common::test_pool().await;
     let account = stored_account(&pool, AccountKind::Exchange, "binance", "Main").await;
     let repository = PgSyncRunRepository::new(pool.clone());
-    let run = stored_run(&pool, &account, at(10)).await;
+    let mut run = stored_run(&pool, &account, at(10)).await;
 
     repository
         .write_snapshot(
@@ -269,6 +266,10 @@ async fn the_snapshot_write_is_fenced_on_a_live_lease() {
         )
         .await
         .unwrap();
+
+    run.succeed(at(10)).unwrap();
+    repository.finish(&run).await.unwrap();
+
     let stored_holdings = PgHoldingRepository::new(pool.clone())
         .latest_for_account(account.id())
         .await

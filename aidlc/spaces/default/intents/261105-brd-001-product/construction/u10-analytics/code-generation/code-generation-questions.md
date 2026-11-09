@@ -12,13 +12,12 @@ Approve the code plan for u10-analytics?
 - erasure.
 - Touches: `services/analytics/` (four crates, two binaries, migrations, Dockerfiles) and
 - `infra/swarm-stack.yml`.
-- Already changed before you approved: Cargo.lock.
 
 Full plan: aidlc/spaces/default/intents/261105-brd-001-product/construction/u10-analytics/code-generation/code-generation-plan.md
 Test instructions: aidlc/spaces/default/intents/261105-brd-001-product/construction/u10-analytics/code-generation/unit-test-instructions.md
 
-[Approval Fingerprint]: sha256:v3:3fb3730cd4b56622e0caa7dc6428b3a341642e146522934bebecf2e53eedbc18
-[Planned Source]: 4dd9d7713c50ed52eef880cdcd424bd93b8742745688a89bf7c5ccb32c80d4df
+[Approval Fingerprint]: sha256:v3:fbb6468d1c22de1ed63bfcb446877fe23fa920bceb70635b09c634c4612dfeca
+[Planned Source]: 14748ebc85b5a699e916cc382569ec78bfea9a105599af8089b9d32ee7e5bb68
 
 - A. Approve Plan
 - B. Request Changes

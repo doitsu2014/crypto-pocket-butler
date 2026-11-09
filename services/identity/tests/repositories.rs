@@ -337,13 +337,13 @@ async fn protect_and_unprotect_are_security_definer_functions_the_app_may_execut
         .unwrap();
 
     let app = common::role_pool(&schema, "identity_app").await;
-    let protected: Vec<u8> = sqlx::query_scalar("SELECT identity.protect($1, $2)")
+    let protected: Vec<u8> = sqlx::query_scalar("SELECT protect($1, $2)")
         .bind("the-subject")
         .bind(key.key_id())
         .fetch_one(&app)
         .await
         .unwrap();
-    let revealed: String = sqlx::query_scalar("SELECT identity.unprotect($1, $2)")
+    let revealed: String = sqlx::query_scalar("SELECT unprotect($1, $2)")
         .bind(&protected)
         .bind(key.key_id())
         .fetch_one(&app)
@@ -353,7 +353,7 @@ async fn protect_and_unprotect_are_security_definer_functions_the_app_may_execut
 
     keys.destroy(key.id(), at(10)).await.unwrap();
     assert!(
-        sqlx::query_scalar::<_, String>("SELECT identity.unprotect($1, $2)")
+        sqlx::query_scalar::<_, String>("SELECT unprotect($1, $2)")
             .bind(&protected)
             .bind(key.key_id())
             .fetch_one(&app)

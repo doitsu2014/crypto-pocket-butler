@@ -12,13 +12,12 @@ Approve the code plan for u4-account?
 - Touches: `services/account/` (domain, application, infrastructure, http, bin, migrations,
 - Dockerfiles) and `infra/swarm-stack.yml`.
 - Tests: 120+ unit and integration tests across the four crates, TDD per layer, 80% line coverage
-- Already changed before you approved: Cargo.lock.
 
 Full plan: aidlc/spaces/default/intents/261105-brd-001-product/construction/u4-account/code-generation/code-generation-plan.md
 Test instructions: aidlc/spaces/default/intents/261105-brd-001-product/construction/u4-account/code-generation/unit-test-instructions.md
 
-[Approval Fingerprint]: sha256:v3:431b2af9564ca989c951dddb22754ddd32bc68cc8e5db14d9e721119ecb301c5
-[Planned Source]: 519f7a2391fbde3c76049689968158cde4fd29005aa2d7014b20cd2bc785682f
+[Approval Fingerprint]: sha256:v3:92c36030ee097caceaefbf2240b3e1445a13e942f40dd6fbaa0aa9f982d3e4e5
+[Planned Source]: 295469005cfc5d6b1d538871f26e023fa697137f133211c8850d2871b050b113
 
 - A. Approve Plan
 - B. Request Changes

@@ -161,3 +161,17 @@ available here. They compile, and the command is above.
     flag CRUD, aggregate upsert, consent retention, and token resolution.
 11. **No idempotency key on ingest.** The reliability design states events have no natural key and
     duplicates are accepted and counted, so the ingest path inserts every accepted call.
+
+## Build and Test loop-back repair (2026-11-09)
+
+Two adapter-test defects were repaired in
+`services/analytics/infrastructure/tests/repositories.rs`; no product code changed.
+
+1. The fixtures used `user_ref` values shorter than the schema's 32–128 character check
+   (`"user-ref"`, `"new"`, `"ref-a"`, `"ref-b"`), so four tests failed on the check constraints.
+   Every reference now goes through a `fixture_user_ref` helper that pads to 32 characters.
+2. `retention_deletes_only_rows_older_than_the_cutoff` built its "old" row at `at(10)` because
+   `AnalyticsEvent::store`'s fourth argument is `ingested_at`, while retention keys on
+   `occurred_at`; the event is now sanitised at `at(10) - 200 days`, outside the 180-day cutoff.
+
+Result: adapter suite 8/8 green; unit suite 113 passed / 8 ignored; format and clippy clean.

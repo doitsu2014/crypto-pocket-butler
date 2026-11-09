@@ -27,6 +27,9 @@ fn app_error(error: AppError, correlation: &str) -> Response {
     from_app_error(&error, correlation).into_response()
 }
 
+// Axum's `Response` is the idiomatic error type for handler helpers; boxing it
+// would only move the allocation into every refusal path, so allow the lint here.
+#[allow(clippy::result_large_err)]
 async fn caller_of(
     state: &AppState,
     claims: VerifiedClaims,

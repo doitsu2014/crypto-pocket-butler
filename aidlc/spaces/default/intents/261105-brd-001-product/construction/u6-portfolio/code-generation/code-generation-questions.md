@@ -12,13 +12,12 @@ Approve the code plan for u6-portfolio?
 - trades with a ledger overlay, and guardrail crossing alerts.
 - Touches: `services/portfolio/` (four crates, two binaries, migrations, Dockerfiles) and
 - `infra/swarm-stack.yml`.
-- Already changed before you approved: Cargo.lock.
 
 Full plan: aidlc/spaces/default/intents/261105-brd-001-product/construction/u6-portfolio/code-generation/code-generation-plan.md
 Test instructions: aidlc/spaces/default/intents/261105-brd-001-product/construction/u6-portfolio/code-generation/unit-test-instructions.md
 
-[Approval Fingerprint]: sha256:v3:95116e3d37b301c4db44787db53c59f95543e0a218bf0c9eed6e794f19b10361
-[Planned Source]: cc01b809e76ea40712b282053509b44b89c2cdef4d4cdf9aa1a27c96c0cf04f3
+[Approval Fingerprint]: sha256:v3:7d1689aeb603feb0c60a118eea77df443dad3649b42ebf07dad065c743f8daff
+[Planned Source]: d678e934a4ab43986cf66b727e15757f562394c4c8a939bc3cd2d86b1bf57cf1
 
 - A. Approve Plan
 - B. Request Changes

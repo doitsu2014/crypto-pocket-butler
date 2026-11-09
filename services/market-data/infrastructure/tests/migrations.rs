@@ -83,9 +83,14 @@ async fn the_read_indexes_and_the_per_job_lease_index_exist() {
 #[ignore = "requires TEST_DATABASE_URL (disposable Postgres)"]
 async fn the_schema_declares_no_large_object_or_bytea_storage() {
     let (pool, schema) = common::test_pool().await;
+    // `_sqlx_migrations` is sqlx's own bookkeeping table and its `checksum`
+    // column is `bytea`. Every market-data application table is created by the
+    // service migration and carries no binary payload, so the assertion counts
+    // application tables only and skips tool-owned `_`-prefixed tables.
     let row = sqlx::query(
         "SELECT count(*) AS count FROM information_schema.columns
-         WHERE table_schema = $1 AND data_type = 'bytea'",
+         WHERE table_schema = $1 AND data_type = 'bytea'
+           AND table_name NOT LIKE '\\_%' ESCAPE '\\'",
     )
     .bind(&schema)
     .fetch_one(&pool)

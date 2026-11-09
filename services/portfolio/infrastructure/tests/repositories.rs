@@ -176,9 +176,12 @@ async fn the_run_lease_is_single_flight() {
 
     let pool = pool().await;
     let runs = PgRunRepository::new(pool);
+    // Every test shares one schema, so the job name must be unique per run:
+    // the two claims below then contend only with each other.
+    let job = format!("portfolio-valuation-{}", Uuid::new_v4());
     let run = ValuationRun {
         id: Uuid::new_v4(),
-        job: "portfolio-valuation".to_string(),
+        job,
         owner: "test".to_string(),
         started_at: at(0),
         lease_until: at(0) + chrono::Duration::seconds(900),

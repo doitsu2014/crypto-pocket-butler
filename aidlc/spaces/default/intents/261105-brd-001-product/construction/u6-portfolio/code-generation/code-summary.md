@@ -144,3 +144,24 @@ Exact command: `cargo test -p portfolio-domain -p portfolio-application -p portf
   environment (the tool was not available), so the 80% per-crate target is unverified here. The
   198 executable tests cover every public use case, the pure valuation/intent/guardrail math, the
   adapter mappings, and the HTTP boundary.
+
+## Build and Test loop-back repair (2026-11-09)
+
+Two adapter-suite failures were repaired:
+
+1. `services/portfolio/infrastructure/src/migrations.rs > prune_snapshots` passed a `bigint` to
+   `make_interval(days => $1)`; PostgreSQL needs an `int`, so the prune failed with
+   `function make_interval(days => bigint) does not exist`. The argument is now `$1::int`.
+2. `the_run_lease_is_single_flight` hardcoded the job `portfolio-valuation` in a schema shared
+   with every other portfolio test, so a live row from a sibling test could make the first claim
+   fail. The test now uses a per-run job name (`portfolio-valuation-<uuid>`) while both claims in
+   the test still contend with each other.
+
+Result: the adapter suite is 6/6 green across three consecutive runs; the unit suite is 198 passed
+/ 6 ignored; format and clippy are clean.
+
+**Out-of-scope observation for the gate:** the same `make_interval(days => $1)` with an `i64` bind
+exists in `services/reporting/infrastructure/src/migrations.rs > prune_briefs` and
+`services/job-orchestration/infrastructure/src/lib.rs > prune_runs`. Those units ship no adapter
+test that runs the prune, so Build and Test did not catch them; they need the same `::int` cast
+under their own units.

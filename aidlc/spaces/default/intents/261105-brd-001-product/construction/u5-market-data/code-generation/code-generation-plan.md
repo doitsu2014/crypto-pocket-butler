@@ -96,65 +96,65 @@ through Portfolio.
 ## Steps
 
 ### Step 1: Project structure and production configuration skeleton
-- [x] Create `services/market-data` workspace with `domain`, `application`, `infrastructure`,
+- [ ] Create `services/market-data` workspace with `domain`, `application`, `infrastructure`,
       `http`, `src/bin/api.rs`, `src/bin/worker.rs`, `src/bin/migrate.rs`.
-- [x] Mirror the identity/account crate layout and inward-only dependencies; add the workspace
+- [ ] Mirror the identity/account crate layout and inward-only dependencies; add the workspace
       member to the root `Cargo.toml`.
-- [x] Add `.env.example` entries for the DSN, run token, and provider endpoints.
+- [ ] Add `.env.example` entries for the DSN, run token, and provider endpoints.
 
 ### Step 2: Bootstrap the test runner
-- [x] Confirm `cargo test -p market-data-domain -p market-data-application
+- [ ] Confirm `cargo test -p market-data-domain -p market-data-application
       -p market-data-infrastructure -p market-data-http` runs.
-- [x] Record the command in `unit-test-instructions.md`.
+- [ ] Record the command in `unit-test-instructions.md`.
 
 ### Step 3: Data model — Red
-- [x] Domain tests: `Freshness` transitions (delayed before live), decimal validation, rejection
+- [ ] Domain tests: `Freshness` transitions (delayed before live), decimal validation, rejection
       (non-positive, > 300 s clock skew), dedupe-free observation model, `RefreshJob` enum.
-- [x] Migration tests: six tables, `(asset_id, source_name, observed_at DESC)` and FX indexes,
+- [ ] Migration tests: six tables, `(asset_id, source_name, observed_at DESC)` and FX indexes,
       `(job, status, lease_until)` index, rate-bucket row, 10 MiB-free schema.
 
 ### Step 4: Data model — Green
-- [x] Implement domain types and `0001_init.up.sql`/`.down.sql` with the `market_data` schema and
+- [ ] Implement domain types and `0001_init.up.sql`/`.down.sql` with the `market_data` schema and
       `market_data_svc` role grants.
 
 ### Step 5: Data model — Refactor
 
 ### Step 6: Repositories — Red
-- [x] Tests for observation insert/select (`DISTINCT ON`), FX read, run claim/renew/sweep, tier
+- [ ] Tests for observation insert/select (`DISTINCT ON`), FX read, run claim/renew/sweep, tier
       upsert, rate bucket, service-token lookup, retention prune (keeps newest).
 
 ### Step 7: Repositories — Green
-- [x] Implement sqlx repositories behind ports; all decimal columns `NUMERIC`.
+- [ ] Implement sqlx repositories behind ports; all decimal columns `NUMERIC`.
 
 ### Step 8: Repositories — Refactor
 
 ### Step 9: Business logic — Red
-- [x] Application tests against fakes: priority selection, fallback, delayed/live/stale/unpriced,
+- [ ] Application tests against fakes: priority selection, fallback, delayed/live/stale/unpriced,
       provenance, degraded C4 read, FX direct and USD cross, run claim/409/202, per-job leases,
       retries and circuit breaker, rate-limit deferral, rejected reading, counts, audit events,
       token allow-lists including `smoke-reader`.
 
 ### Step 10: Business logic — Green
-- [x] Implement use cases, ports, and error types.
+- [ ] Implement use cases, ports, and error types.
 
 ### Step 11: Business logic — Refactor
 
 ### Step 12: API — Red
-- [x] HTTP tests: C6 `getPrices` (max 1,000, 422, 401/403, 503), `getFxRate` (404/422/401/403/503),
+- [ ] HTTP tests: C6 `getPrices` (max 1,000, 422, 401/403, 503), `getFxRate` (404/422/401/403/503),
       C11 `price-refresh-top100`/`price-refresh-tail` (200/202/409), `/healthz`, `/readyz`,
       `/metrics`.
 
 ### Step 13: API — Green
-- [x] Implement routers, DTOs, middleware, ports 8093 (API) and 8094 (worker).
+- [ ] Implement routers, DTOs, middleware, ports 8093 (API) and 8094 (worker).
 
 ### Step 14: API — Refactor
 
 ### Step 15–17: Frontend
-- [x] Not applicable.
+- [ ] Not applicable.
 
 ### Step 18: Environment/build configuration
-- [x] Add `Dockerfile.api`, `Dockerfile.worker`, `Dockerfile.migrate`; add both services to
+- [ ] Add `Dockerfile.api`, `Dockerfile.worker`, `Dockerfile.migrate`; add both services to
       `infra/swarm-stack.yml` with networks, limits, health checks and update config.
 
 ### Step 19: Documentation and traceability
-- [x] Write `code-summary.md`, `source-manifest.json`, `traceability.json`.
+- [ ] Write `code-summary.md`, `source-manifest.json`, `traceability.json`.

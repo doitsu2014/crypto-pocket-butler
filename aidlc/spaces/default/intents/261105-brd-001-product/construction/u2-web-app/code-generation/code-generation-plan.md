@@ -107,19 +107,19 @@ integration boundary.
 ## Steps
 
 ### Step 1: Project structure
-- [ ] `web/src/{app,auth,api,i18n,components,features,pwa,telemetry}`, router and providers; keep the existing styles.
+- [x] `web/src/{app,auth,api,i18n,components,features,pwa,telemetry}`, router and providers; keep the existing styles.
 
 ### Step 2: Test runner
-- [ ] Confirm `yarn --cwd web test`; add size-limit + `yarn size`.
+- [x] Confirm `yarn --cwd web test`; add size-limit + `yarn size`.
 
 ### Step 3–14: Backend layers
-- [ ] Not applicable (frontend-only unit).
+- [x] Not applicable (frontend-only unit).
 
 ### Step 15–17: Frontend behaviour
-- [ ] Red/Green/Refactor per journey: auth/verification, onboarding, connect (exchange, wallet, WalletConnect, CSV), portfolios and accounts, dashboard, targets, intents, trades, activity/P&L, snapshots, briefs, notifications, settings/MFA/sessions, privacy, help; shared Money/status/provenance components; axe and keyboard checks.
+- [x] Red/Green/Refactor per journey: auth/verification, onboarding, connect (exchange, wallet, WalletConnect, CSV), portfolios and accounts, dashboard, targets, intents, trades, activity/P&L, snapshots, briefs, notifications, settings/MFA/sessions, privacy, help; shared Money/status/provenance components; axe and keyboard checks.
 
 ### Step 18: Environment/build
-- [ ] nginx CSP (WalletConnect + fonts + report-to), cache locations, gzip, stub_status; Dockerfile `VITE_GATEWAY_URL` build arg; PWA injectManifest with `shouldBypass`; stack read-only + tmpfs; Lighthouse/Playwright/axe CI entries.
+- [x] nginx CSP (WalletConnect + fonts + report-to), cache locations, gzip, stub_status; Dockerfile `VITE_GATEWAY_URL` build arg; PWA injectManifest with `shouldBypass`; stack read-only + tmpfs; Lighthouse/Playwright/axe CI entries.
 
 ### Step 19: Documentation
-- [ ] `code-summary.md`, `source-manifest.json`, `traceability.json`.
+- [x] `code-summary.md`, `source-manifest.json`, `traceability.json`.

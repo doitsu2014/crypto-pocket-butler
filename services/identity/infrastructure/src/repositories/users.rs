@@ -103,7 +103,7 @@ impl UserRepository for PgUserRepository {
         auth_subject: &str,
         key: &ShreddingKey,
     ) -> Result<(), RepositoryError> {
-        let protected: Vec<u8> = sqlx::query_scalar("SELECT identity.protect($1, $2)")
+        let protected: Vec<u8> = sqlx::query_scalar("SELECT protect($1, $2)")
             .bind(auth_subject)
             .bind(key.key_id())
             .fetch_one(&self.pool)
@@ -190,7 +190,7 @@ impl UserRepository for PgUserRepository {
         user_id: UserId,
     ) -> Result<Option<String>, RepositoryError> {
         sqlx::query_scalar::<_, String>(
-            "SELECT identity.unprotect(personal.auth_subject_protected, keys.key_id)
+            "SELECT unprotect(personal.auth_subject_protected, keys.key_id)
              FROM user_personal AS personal
              JOIN shredding_keys AS keys ON keys.id = personal.shredding_key_id
              WHERE personal.user_id = $1",

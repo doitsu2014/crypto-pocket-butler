@@ -1,15 +1,32 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import { RouterProvider } from "react-router-dom";
+import { createQueryClient } from "./api/queryClient";
+import { ErrorBoundary } from "./app/ErrorBoundary";
+import { router } from "./app/router";
+import { signOut } from "./auth/session";
+import { LocaleProvider } from "./i18n/LocaleProvider";
 import "./styles.css";
 
-const queryClient = new QueryClient();
+const queryClient = createQueryClient({
+  onUnauthorized: () => {
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    queryClient.clear();
+    void signOut().finally(() => {
+      window.location.assign(`/?returnTo=${encodeURIComponent(returnTo)}`);
+    });
+  },
+});
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <LocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </LocaleProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

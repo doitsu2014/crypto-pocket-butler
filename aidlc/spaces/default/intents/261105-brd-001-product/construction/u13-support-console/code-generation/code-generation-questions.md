@@ -12,13 +12,12 @@ Approve the code plan for u13-support-console?
 - Touches: `support-console/` (React 18 + TS 5 + Vite + TanStack Query + Tailwind) and the web image
 - build that serves `/support`.
 - Tests: 45+ component and integration tests with Vitest + RTL and an axe check.
-- Already changed before you approved: Cargo.lock.
 
 Full plan: aidlc/spaces/default/intents/261105-brd-001-product/construction/u13-support-console/code-generation/code-generation-plan.md
 Test instructions: aidlc/spaces/default/intents/261105-brd-001-product/construction/u13-support-console/code-generation/unit-test-instructions.md
 
-[Approval Fingerprint]: sha256:v3:cba078d9316c7b3fbb0464c4e6db5229c43e2fba82e6c83b70cde335fb2423a9
-[Planned Source]: cb3923f5289c19b3680ad28c43d2312c6385a0e0843f2b5fd70b9afdc0f82b04
+[Approval Fingerprint]: sha256:v3:fb84085bf4e56c799a6656967b9c8652fddac3ff30e5d3f64baf01cab42f79c2
+[Planned Source]: 1e56c0a55eb90e45499e414cbafa06686170fc62f4d66839c35ac3c51f8e6d5e
 
 - A. Approve Plan
 - B. Request Changes

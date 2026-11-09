@@ -34,7 +34,7 @@ pub async fn revert(pool: &PgPool) -> Result<(), MigrateError> {
 pub async fn prune_snapshots(pool: &PgPool, older_than_days: i64) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
         "DELETE FROM valuation_snapshots
-         WHERE as_of < now() - make_interval(days => $1)",
+         WHERE as_of < now() - make_interval(days => $1::int)",
     )
     .bind(older_than_days)
     .execute(pool)

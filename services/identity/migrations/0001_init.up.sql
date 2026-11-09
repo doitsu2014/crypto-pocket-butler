@@ -282,21 +282,21 @@ AS $$
 DECLARE
     created_key_id bigint;
 BEGIN
-    SELECT id INTO created_key_id FROM pgsodium.create_key(name => owner);
+    SELECT key_id INTO created_key_id FROM pgsodium.create_key(name => owner);
     RETURN created_key_id;
 END;
 $$;
 
 -- Destroys one pgsodium key. This is the crypto-shredding step; it is the last
 -- destructive action a deletion performs.
-CREATE OR REPLACE FUNCTION destroy_shredding_key(key_id bigint)
+CREATE OR REPLACE FUNCTION destroy_shredding_key(target_key_id bigint)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pgsodium
 AS $$
 BEGIN
-    DELETE FROM pgsodium.key WHERE id = key_id;
+    DELETE FROM pgsodium.key WHERE key_id = target_key_id;
 END;
 $$;
 

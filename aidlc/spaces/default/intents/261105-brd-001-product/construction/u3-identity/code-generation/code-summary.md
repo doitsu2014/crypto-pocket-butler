@@ -145,3 +145,27 @@ without double execution. Expired ready exports have their archive deleted on th
    configuration and are recorded as `Deferred` in `traceability.json`.
 8. **No frontend behaviour.** The SPA screens for US1.1, US3.5, US7.x, and US9.3 belong to
    u2-web-app; this unit exposes the internal surface only.
+
+## Build and Test loop-back repair (2026-11-09)
+
+The adapter suite was run against a pgsodium-capable PostgreSQL 15 (Supabase image). Three
+defects were repaired in this unit:
+
+1. **Schema-qualified SQL** — `keys.rs` and `users.rs` called `identity.create_shredding_key`,
+   `identity.destroy_shredding_key`, `identity.protect` and `identity.unprotect`. The adapter
+   harness runs migrations into a disposable schema with `search_path` set to it, and the
+   migration creates unqualified objects on purpose, so the `identity.` prefix is removed in both
+   repositories and in the two test calls.
+2. **pgsodium key id column** — this pgsodium version's `pgsodium.key` has `id uuid` and
+   `key_id bigint`; `create_shredding_key` now selects `key_id`, and `destroy_shredding_key`
+   deletes `WHERE key_id = target_key_id` (the parameter was renamed to avoid the ambiguous
+   reference).
+3. **Test environment** — the adapter run needs a pgsodium-capable database and the test role to
+   be a member of `identity_app`, with EXECUTE on the bigint-keyed AEAD functions and
+   SELECT/DELETE on `pgsodium.key`.
+
+Result: 8 of the 9 adapter tests pass. The remaining assertion — "a destroyed key no longer
+decrypts the subject" — cannot pass in this pgsodium build: deleting the `pgsodium.key` row does
+not evict the key from pgsodium's in-memory key cache, so the same cluster still decrypts until
+it restarts. That is recorded as an environment/design finding for Build and Test, not a target
+that was lowered.

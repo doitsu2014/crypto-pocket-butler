@@ -64,7 +64,7 @@ impl ShreddingKeyRepository for PgShreddingKeyRepository {
     ) -> Result<ShreddingKey, RepositoryError> {
         let row_id = ShreddingKeyId::generate();
         let vault_reference = format!("identity/user/{user_id}");
-        let key_id: i64 = sqlx::query_scalar("SELECT identity.create_shredding_key($1)")
+        let key_id: i64 = sqlx::query_scalar("SELECT create_shredding_key($1)")
             .bind(&vault_reference)
             .fetch_one(&self.pool)
             .await
@@ -125,7 +125,7 @@ impl ShreddingKeyRepository for PgShreddingKeyRepository {
                 "shredding key '{key}' does not exist"
             )));
         };
-        sqlx::query("SELECT identity.destroy_shredding_key($1)")
+        sqlx::query("SELECT destroy_shredding_key($1)")
             .bind(key_id)
             .execute(&self.pool)
             .await

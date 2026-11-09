@@ -180,3 +180,13 @@ The final suite is green.
   U2; the console-side isolation is tested.
 - The manual keyboard and screen-reader release sign-off has not been run; axe and keyboard-order
   tests passed.
+
+## Build and Test loop-back repair (2026-11-09)
+
+One failing test was repaired in `support-console/src/domain/grants.test.ts`: the expired-grant
+assertion used `expiredGrant()`, whose fixture builds `expiresAt` from the real `Date.now()`, while
+the test's clock is fixed at `2026-11-08T10:00:00Z`; the grant therefore still read as active. The
+assertion now supplies an explicit `expiresAt` of `2026-11-08T09:59:00.000Z` relative to that
+fixed clock. The fixture and every other assertion are unchanged.
+
+Result: 180/180 tests pass, lint is clean, and the build succeeds.

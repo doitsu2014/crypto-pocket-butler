@@ -20,6 +20,16 @@ fn at(hour: u32) -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 6, hour, 0, 0).unwrap()
 }
 
+/// The pseudonymous user reference is constrained to 32–128 characters by the
+/// `events` and `consent_checks` schemas. Pad a readable prefix with zeros so
+/// every fixture satisfies the check while distinct prefixes stay distinct.
+fn fixture_user_ref(prefix: &str) -> String {
+    format!(
+        "{prefix}-{}",
+        "0".repeat(32usize.saturating_sub(prefix.len() + 1))
+    )
+}
+
 fn event(name: &str, user_ref: &str) -> analytics_domain::AnalyticsEvent {
     let sanitized = sanitize_event(name, at(10), BTreeMap::new()).expect("fixture is catalogued");
     analytics_domain::AnalyticsEvent::store(
@@ -62,10 +72,13 @@ async fn an_event_and_its_consent_row_are_inserted_together() {
         ConsentPurpose::Analytics,
         true,
         at(10),
-        Some("user-ref".to_string()),
+        Some(fixture_user_ref("user-ref")),
     );
     repository
-        .insert(&event("valuation_read", "user-ref"), Some(&check))
+        .insert(
+            &event("valuation_read", &fixture_user_ref("user-ref")),
+            Some(&check),
+        )
         .await
         .expect("insert");
 
@@ -92,8 +105,15 @@ async fn retention_deletes_only_rows_older_than_the_cutoff() {
         .insert(
             &analytics_domain::AnalyticsEvent::store(
                 AnalyticsEventId::generate(),
-                sanitize_event("valuation_read", at(10), BTreeMap::new()).unwrap(),
-                Some("old".to_string()),
+                // Retention keys on `occurred_at`, so the old row is backdated
+                // when it happened, not only when it was ingested.
+                sanitize_event(
+                    "valuation_read",
+                    at(10) - Duration::days(200),
+                    BTreeMap::new(),
+                )
+                .unwrap(),
+                Some(fixture_user_ref("old")),
                 at(10) - Duration::days(200),
             ),
             None,
@@ -101,7 +121,7 @@ async fn retention_deletes_only_rows_older_than_the_cutoff() {
         .await
         .unwrap();
     repository
-        .insert(&event("valuation_read", "new"), None)
+        .insert(&event("valuation_read", &fixture_user_ref("new")), None)
         .await
         .unwrap();
 
@@ -128,16 +148,16 @@ async fn erasure_deletes_every_supplied_user_ref() {
     let (pool, schema) = test_pool().await;
     let repository = analytics_infrastructure::PgEventRepository::new(pool.clone());
     repository
-        .insert(&event("valuation_read", "ref-a"), None)
+        .insert(&event("valuation_read", &fixture_user_ref("ref-a")), None)
         .await
         .unwrap();
     repository
-        .insert(&event("valuation_read", "ref-b"), None)
+        .insert(&event("valuation_read", &fixture_user_ref("ref-b")), None)
         .await
         .unwrap();
 
     let deleted = repository
-        .delete_by_user_refs(&["ref-a".to_string(), "ref-b".to_string()])
+        .delete_by_user_refs(&[fixture_user_ref("ref-a"), fixture_user_ref("ref-b")])
         .await
         .unwrap();
     assert_eq!(deleted, 2);
@@ -229,7 +249,7 @@ async fn a_consent_check_is_deleted_after_ninety_days() {
             ConsentPurpose::Analytics,
             true,
             at(10) - Duration::days(100),
-            Some("old".to_string()),
+            Some(fixture_user_ref("old")),
         ))
         .await
         .unwrap();
@@ -239,7 +259,7 @@ async fn a_consent_check_is_deleted_after_ninety_days() {
             ConsentPurpose::Analytics,
             true,
             at(10),
-            Some("new".to_string()),
+            Some(fixture_user_ref("new")),
         ))
         .await
         .unwrap();

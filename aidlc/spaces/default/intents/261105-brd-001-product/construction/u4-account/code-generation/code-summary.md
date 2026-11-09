@@ -119,3 +119,18 @@ application and HTTP suites and by the HMAC/retry unit tests.
   immediately, and a live lease returns 409.
 - The Audit C10 event context is identifier-only (`accountId`, `runId`,
   `category`, counts); no key, token, or full address is written.
+
+## Build and Test loop-back repair (2026-11-09)
+
+Two adapter-test expectation defects were repaired in
+`services/account/infrastructure/tests/repositories.rs`; no product code changed.
+
+1. `renewal_and_the_sweep_both_track_the_lease` renewed the lease to the same instant it already
+   held, then expected it to survive an hour. It now renews to `at(12)`, so the sweep at `at(11)`
+   finds nothing and the sweep at `at(12)` expires exactly one run.
+2. `the_snapshot_write_is_fenced_on_a_live_lease` read holdings through `latest_for_account`,
+   which only returns snapshots from a `succeeded` run, while the run was still `running`. It now
+   marks the run succeeded and calls `finish` before reading.
+
+Result: the adapter suite is 13/13 green; the unit suite is 161 passed / 13 ignored (the ignored
+tests are those adapter tests); `cargo fmt --check` and clippy are clean.

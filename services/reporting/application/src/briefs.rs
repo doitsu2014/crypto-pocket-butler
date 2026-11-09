@@ -211,7 +211,7 @@ mod tests {
                 .filter(|stored| stored.brief.user_id() == user_id)
                 .filter(|stored| stored.brief.status() == BriefStatus::Generated)
                 .collect();
-            owned.sort_by(|left, right| right.brief.period_start().cmp(&left.brief.period_start()));
+            owned.sort_by_key(|left| std::cmp::Reverse(left.brief.period_start()));
             Ok(owned.first().map(|stored| (*stored).clone()))
         }
 

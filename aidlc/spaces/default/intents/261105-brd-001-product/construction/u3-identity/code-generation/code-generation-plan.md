@@ -96,54 +96,54 @@
 
 ### Step 1 — Project structure and production configuration skeleton
 
-- [x] `services/identity/` Cargo workspace: `domain`, `application`, `infrastructure`, `http`, and a `bin` package producing `identity-api` and `identity-worker`
-- [x] Dependencies point inward only; `domain` imports no framework
-- [x] `.env.example` with non-secret names only; root `Cargo.toml` gains `services/identity`
+- [ ] `services/identity/` Cargo workspace: `domain`, `application`, `infrastructure`, `http`, and a `bin` package producing `identity-api` and `identity-worker`
+- [ ] Dependencies point inward only; `domain` imports no framework
+- [ ] `.env.example` with non-secret names only; root `Cargo.toml` gains `services/identity`
 
 ### Step 2 — Bootstrap the test runner
 
-- [x] `cargo test --manifest-path services/identity/Cargo.toml` exits 0 on the skeleton
-- [x] Record the exact unit-scoped commands in `unit-test-instructions.md`
+- [ ] `cargo test --manifest-path services/identity/Cargo.toml` exits 0 on the skeleton
+- [ ] Record the exact unit-scoped commands in `unit-test-instructions.md`
 
 ### Steps 3–5 — Data model (Red → Green → Refactor)
 
-- [x] Red: failing tests for the `User` lifecycle, consent append-only history, support grant constraints, export/deletion states, `JurisdictionRule` seed, `ShreddingKey`, `DeviceSession`
-- [x] Green: domain types plus `migrations/0001_init.up.sql` / `.down.sql`, the `identity.protect` / `identity.unprotect` SECURITY DEFINER functions, and the service role grants
-- [x] Refactor: typed ids, parse-don't-validate
+- [ ] Red: failing tests for the `User` lifecycle, consent append-only history, support grant constraints, export/deletion states, `JurisdictionRule` seed, `ShreddingKey`, `DeviceSession`
+- [ ] Green: domain types plus `migrations/0001_init.up.sql` / `.down.sql`, the `identity.protect` / `identity.unprotect` SECURITY DEFINER functions, and the service role grants
+- [ ] Refactor: typed ids, parse-don't-validate
 
 ### Steps 6–8 — Repository / data access (Red → Green → Refactor)
 
-- [x] Red: failing adapter tests for principal lookup, consent newest-per-purpose, session upsert, grant claim and expiry, export/deletion lease claim and re-claim, `protect`/`unprotect`, Audit client
-- [x] Green: sqlx repositories behind port traits
-- [x] Refactor: one prepared statement per shape; pool setting 12 per replica
+- [ ] Red: failing adapter tests for principal lookup, consent newest-per-purpose, session upsert, grant claim and expiry, export/deletion lease claim and re-claim, `protect`/`unprotect`, Audit client
+- [ ] Green: sqlx repositories behind port traits
+- [ ] Refactor: one prepared statement per shape; pool setting 12 per replica
 
 ### Steps 9–11 — Business logic (Red → Green → Refactor)
 
-- [x] Red: failing `application` tests against port fakes for JIT provisioning, verified → active, MFA gate, ownership, consent, preferences, session listing/revoke, support approval/expiry/audit, export orchestration, deletion (anonymise, Auth delete, key destroy), jurisdiction gate
-- [x] Green: use cases against the port traits
-- [x] Refactor: remove duplication; keep the audit write ahead of the answer
+- [ ] Red: failing `application` tests against port fakes for JIT provisioning, verified → active, MFA gate, ownership, consent, preferences, session listing/revoke, support approval/expiry/audit, export orchestration, deletion (anonymise, Auth delete, key destroy), jurisdiction gate
+- [ ] Green: use cases against the port traits
+- [ ] Refactor: remove duplication; keep the audit write ahead of the answer
 
 ### Steps 12–14 — API / endpoint (Red → Green / Refactor)
 
-- [x] Red: failing HTTP tests for every C3/C1 operation, JWT/JWKS rejection, RFC 7807, role and ownership denials, the pre-auth sign-up gate, the worker wake endpoint
-- [x] Green: Axum routes, middleware, DTO mapping at the `http` boundary
-- [x] Refactor: extract the auth, correlation, and error middleware
+- [ ] Red: failing HTTP tests for every C3/C1 operation, JWT/JWKS rejection, RFC 7807, role and ownership denials, the pre-auth sign-up gate, the worker wake endpoint
+- [ ] Green: Axum routes, middleware, DTO mapping at the `http` boundary
+- [ ] Refactor: extract the auth, correlation, and error middleware
 
 ### Steps 15–17 — Worker (Red → Green → Refactor)
 
-- [x] Red: failing tests for export assembly and progress, partial-failure marking, deletion steps, lease expiry and re-claim, wake vs sweep, archive deletion after expiry
-- [x] Green: the `identity-worker` binary, wake endpoint, and sweep
-- [x] Refactor: batch sizing and lease constants in one place
+- [ ] Red: failing tests for export assembly and progress, partial-failure marking, deletion steps, lease expiry and re-claim, wake vs sweep, archive deletion after expiry
+- [ ] Green: the `identity-worker` binary, wake endpoint, and sweep
+- [ ] Refactor: batch sizing and lease constants in one place
 
 ### Step 18 — Environment/build configuration
 
-- [x] Two Dockerfiles (multi-stage, non-root, read-only root filesystem, digest-pinned bases)
-- [x] `infra/sql/identity-schema.sql`; `infra/swarm-stack.yml` entries for both services, the internal encrypted overlay, health checks, `failure_action: rollback`, and Docker-secret references
-- [x] `scripts/check-boundaries.sh` covers the new packages
+- [ ] Two Dockerfiles (multi-stage, non-root, read-only root filesystem, digest-pinned bases)
+- [ ] `infra/sql/identity-schema.sql`; `infra/swarm-stack.yml` entries for both services, the internal encrypted overlay, health checks, `failure_action: rollback`, and Docker-secret references
+- [ ] `scripts/check-boundaries.sh` covers the new packages
 
 ### Step 19 — Documentation and traceability
 
-- [x] `code-summary.md`, `source-manifest.json`, `traceability.json`
+- [ ] `code-summary.md`, `source-manifest.json`, `traceability.json`
 
 ## Build order note
 

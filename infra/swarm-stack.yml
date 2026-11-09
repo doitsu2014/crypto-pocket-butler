@@ -210,6 +210,14 @@ services:
         mode: ingress
     networks:
       - public
+    # The static host has no writable state; nginx's pid, cache and temp
+    # paths live on tmpfs. Port 8081 (stub_status, internal only) is not
+    # published.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 30s

@@ -598,9 +598,12 @@ components:
   - name: JobOrchestration
     summary: Schedules, run records, single-flight, and missed-run detection.
     behaviour: >
-      Ticks from Supabase Cron, takes a single-flight lock per job, calls the owning component's
-      run endpoint with the shared service token, and records the outcome. Detects missed runs
-      and alerts within five minutes; retries and backfills are bounded.
+      Ticks from an in-process ticker guarded by a single OrchestratorLease row (no Supabase Cron
+      and no message queue), takes a single-flight lock per run, calls the owning component's run
+      endpoint with the shared service token and a per-window idempotency key, and records one row
+      per attempt. Detects missed runs and stale heartbeats within five minutes; retries and
+      backfills are bounded. The change from Supabase Cron is recorded in
+      construction/u11-job-orchestration/functional-design/entities.md.
     responsibilities:
       - Schedules and run triggering
       - Single-flight locks and run records
@@ -634,9 +637,9 @@ components:
       - component: ApiGateway
         interaction: Admin job triggers
     external_dependencies:
-      - name: Supabase Cron
+      - name: Heartbeat metric and alert rule
         kind: other
-        purpose: Scheduler tick and dead-man check
+        purpose: Dead-man check in the self-hosted Prometheus/Alertmanager stack
       - name: Supabase Vault
         kind: other
         purpose: Shared internal service token
@@ -777,7 +780,7 @@ Notification to deliver email; JobOrchestration calls every component's run endp
 | AssetRegistry | Canonical assets, chains, contracts, sources | Audit | ApiGateway, Account, MarketData, Portfolio, Ledger | Asset, Chain, TokenContract, PriceSource, UnmappedObservation |
 | MarketData | Prices, FX, freshness | AssetRegistry, Audit | ApiGateway, Portfolio, Reporting, JobOrchestration | PriceObservation, FxRate, RefreshRun, AssetPriceTier |
 | Portfolio | Portfolios, targets, valuation, drift, snapshots, orders | Account, MarketData, Ledger, AssetRegistry, Audit, Notification | ApiGateway, Reporting, JobOrchestration | Portfolio, PortfolioAccount, TargetAllocation, Guardrail, ValuationSnapshot, OrderIntent, RecordedTrade |
-| Ledger | Transactions, cost basis, P&L | AssetRegistry, Account, Audit | ApiGateway, Portfolio, Reporting, JobOrchestration | Transaction, CostBasisPosition, PnlSnapshot |
+| Ledger | Transactions, cost basis, P&L | AssetRegistry, Account, MarketData, Audit | ApiGateway, Portfolio, Reporting, JobOrchestration | Transaction, CostBasisPosition, PnlSnapshot |
 | Reporting | Briefs in-app and by email | Portfolio, Ledger, MarketData, Notification, Audit | ApiGateway, JobOrchestration | Brief, BriefDelivery |
 | Notification | Alert catalogue, preferences, delivery | Identity, Audit | ApiGateway, Account, Portfolio, Reporting, JobOrchestration | NotificationPreference, Alert, DeliveryAttempt |
 | Analytics | Consent-aware events, aggregates, flags | Identity, Audit | ApiGateway, JobOrchestration | AnalyticsEvent, MetricAggregate, FeatureFlag |
@@ -847,7 +850,7 @@ Notification to deliver email; JobOrchestration calls every component's run endp
 | Account | Supabase Vault | other | Encrypted exchange credentials |
 | MarketData | Market Data & FX Providers | third-party-api | Prices, candles, and FX |
 | Notification | Transactional Email Provider | third-party-api | Email delivery |
-| JobOrchestration | Supabase Cron | other | Scheduler tick and dead-man check |
+| JobOrchestration | Heartbeat alert rule | other | Dead-man check in Prometheus/Alertmanager |
 | JobOrchestration | Supabase Vault | other | Shared internal service token |
 | Audit | Supabase Postgres | database | Append-only audit schema |
 

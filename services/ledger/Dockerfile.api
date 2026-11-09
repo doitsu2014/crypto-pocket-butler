@@ -1,0 +1,32 @@
+# Ledger API image.
+#
+# Build from the repository root:
+#   docker build -f services/ledger/Dockerfile.api -t cpb/ledger-api .
+#
+# The container runs non-root with no published port; the gateway, Portfolio,
+# and Identity reach the API over `internal`. The read-only root filesystem is a
+# Swarm setting; the API writes nothing to disk.
+FROM rust:1-slim-bookworm AS builder
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml Cargo.lock rustfmt.toml ./
+COPY services ./services
+RUN cargo build --release --locked -p ledger --bin ledger-api
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home --shell /usr/sbin/nologin app
+
+COPY --from=builder /app/target/release/ledger-api /usr/local/bin/ledger-api
+
+USER 10001
+EXPOSE 8097
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8097/healthz || exit 1
+ENTRYPOINT ["/usr/local/bin/ledger-api"]

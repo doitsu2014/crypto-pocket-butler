@@ -1,6 +1,6 @@
 //! The Identity router. Every authenticated path names its identity: the
-//! forwarded Supabase JWT for the user surface, a service token for the internal
-//! Job Orchestration and support-check paths. A path with no rule is not served.
+//! forwarded Supabase JWT for the user surface, and a per-caller service token
+//! for each internal path. A path with no rule is not served.
 
 use axum::extract::DefaultBodyLimit;
 use axum::middleware;
@@ -8,13 +8,14 @@ use axum::routing::{delete, get, patch, post};
 use axum::Router;
 
 use crate::handlers::{
-    append_consent, approve_support_grant, check_support_grant, fallback, get_consent,
-    get_deletion, get_export, health, list_sessions, metrics, ready, request_deletion,
-    request_export, request_support_grant, resolve_principal, revoke_session, revoke_support_grant,
-    run_privacy_sweep, signup_gate, update_preferences,
+    append_consent, approve_support_grant, check_support_grant, fallback, get_consent, get_contact,
+    get_deletion, get_due_users, get_export, health, list_sessions, metrics, ready,
+    request_deletion, request_export, request_support_grant, resolve_principal, revoke_session,
+    revoke_support_grant, run_privacy_sweep, signup_gate, update_preferences,
 };
 use crate::middleware::{
-    correlation_id, record_metrics, require_jwt, require_service, security_headers,
+    correlation_id, record_metrics, require_contact, require_due_users, require_jwt, require_run,
+    require_support_check, security_headers,
 };
 use crate::state::AppState;
 
@@ -48,24 +49,45 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/support-grants/{grantId}", delete(revoke_support_grant))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_jwt));
 
-    let internal = Router::new()
+    // Each internal path names the one service that may call it.
+    let contact = Router::new()
+        .route("/v1/users/{userId}/contact", get(get_contact))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_contact,
+        ));
+
+    let due = Router::new()
+        .route("/v1/internal/users/due", get(get_due_users))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_due_users,
+        ));
+
+    let runs = Router::new()
         .route(
             "/v1/internal/run/audit-privacy-sweep",
             post(run_privacy_sweep),
         )
+        .route_layer(middleware::from_fn_with_state(state.clone(), require_run));
+
+    let support_check = Router::new()
         .route(
             "/v1/internal/support-grants/{grantId}/check",
             get(check_support_grant),
         )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
-            require_service,
+            require_support_check,
         ));
 
     Router::new()
         .merge(public)
         .merge(authenticated)
-        .merge(internal)
+        .merge(contact)
+        .merge(due)
+        .merge(runs)
+        .merge(support_check)
         .fallback(fallback)
         .layer(DefaultBodyLimit::max(1024 * 1024))
         .layer(middleware::from_fn(security_headers))

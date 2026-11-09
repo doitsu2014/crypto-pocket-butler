@@ -152,6 +152,29 @@ impl From<ConsentView> for ConsentResponse {
     }
 }
 
+/// `GET /v1/users/{userId}/contact` response (C3).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactResponse {
+    /// The user the answer concerns.
+    pub user_id: String,
+    /// The verified address, absent when there is none or it is unconfirmed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// Whether a confirmed address exists.
+    pub verified: bool,
+}
+
+impl From<identity_application::ContactView> for ContactResponse {
+    fn from(view: identity_application::ContactView) -> Self {
+        Self {
+            user_id: view.user_id.to_string(),
+            email: view.email,
+            verified: view.verified,
+        }
+    }
+}
+
 /// `PATCH /v1/users/{userId}/preferences` body. Omitted fields keep the stored
 /// value.
 #[derive(Debug, Clone, Deserialize)]

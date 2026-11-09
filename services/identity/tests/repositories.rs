@@ -38,6 +38,7 @@ fn claims() -> VerifiedClaims {
         subject: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".to_string(),
         role: Role::User,
         email_confirmed: true,
+        email: Some("user@example.com".to_string()),
         assurance: AssuranceLevel::Aal1,
         has_exchange_credentials: false,
         session_id: None,

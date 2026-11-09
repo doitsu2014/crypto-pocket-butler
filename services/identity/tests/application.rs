@@ -34,6 +34,48 @@ async fn provision(harness: &Harness) -> identity_domain::User {
 }
 
 #[tokio::test]
+async fn c3_contact_returns_the_verified_address() {
+    let harness = harness();
+    let view = harness.principal.resolve(claims(), "corr-1").await.unwrap();
+    let contact = harness.principal.contact(view.user_id()).await.unwrap();
+    assert!(contact.verified);
+    assert_eq!(contact.email.as_deref(), Some("user@example.com"));
+}
+
+#[tokio::test]
+async fn an_unconfirmed_contact_answers_not_verified() {
+    let harness = harness();
+    let mut unconfirmed = claims();
+    unconfirmed.email_confirmed = false;
+    let view = harness
+        .principal
+        .resolve(unconfirmed, "corr-1")
+        .await
+        .unwrap();
+    let contact = harness.principal.contact(view.user_id()).await.unwrap();
+    assert!(!contact.verified);
+    assert!(contact.email.is_none());
+}
+
+#[tokio::test]
+async fn a_deleted_users_contact_is_not_found() {
+    let harness = harness();
+    let mut user = identity_domain::User::provision(
+        identity_domain::UserId::generate(),
+        &claims(),
+        fixed_now(),
+    );
+    user.anonymise(fixed_now());
+    harness.users.seed(user.clone(), USER_SUBJECT);
+    let error = harness
+        .principal
+        .contact(user.id())
+        .await
+        .expect_err("a deleted user has no contact");
+    assert!(matches!(error, AppError::NotFound("user")));
+}
+
+#[tokio::test]
 async fn jit_provisioning_creates_a_user_a_key_and_an_audit_event() {
     let harness = harness();
     let mut unconfirmed = claims();

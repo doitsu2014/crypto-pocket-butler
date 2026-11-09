@@ -14,7 +14,7 @@ The gateway API is internal and documented for the SPA and Support Console only.
 | C3 | U3 Identity | U1 ApiGateway | HTTP/JSON, OpenAPI 3.1 | U3 |
 | C4 | U1 Asset Registry | U4, U6, U7 | HTTP/JSON, OpenAPI 3.1 | U1 |
 | C5 | U4 Account | U6, U7, U11 | HTTP/JSON, OpenAPI 3.1 | U4 |
-| C6 | U5 Market Data | U6, U8, U11 | HTTP/JSON, OpenAPI 3.1 | U5 |
+| C6 | U5 Market Data | U6, U7, U8, U11 | HTTP/JSON, OpenAPI 3.1 | U5 |
 | C7 | U7 Ledger | U6, U8 | HTTP/JSON, OpenAPI 3.1 | U7 |
 | C8 | U6 Portfolio | U8 | HTTP/JSON, OpenAPI 3.1 | U6 |
 | C9 | U9 Notification | U1, U4, U6, U8 | HTTP/JSON, OpenAPI 3.1 | U9 |
@@ -145,14 +145,39 @@ components:
         baseCurrency: { type: string, example: USD }
     PortfolioValuation:
       type: object
-      required: [portfolioId, asOf, totalValue, currency, pricedCoverage, unpricedCount]
+      required: [portfolioId, asOf, status, currency, pricedCoverage, unpricedCount, lines]
       properties:
         portfolioId: { type: string, format: uuid }
         asOf: { type: string, format: date-time }
-        totalValue: { type: string, description: decimal string }
+        status: { type: string, enum: [complete, partial, unavailable] }
+        holdingsUnavailable: { type: boolean }
+        totalValue: { type: [string, "null"], description: decimal string; null when unavailable }
         currency: { type: string }
         pricedCoverage: { type: number }
         unpricedCount: { type: integer }
+        excludedCount: { type: integer, description: unpriced holdings kept as labelled lines }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/ValuationLine" }
+    ValuationLine:
+      type: object
+      required: [assetId, quantity, dataStatus]
+      properties:
+        assetId: { type: string }
+        quantity: { type: string }
+        value: { type: [string, "null"] }
+        allocation: { type: [number, "null"] }
+        targetPercent: { type: [number, "null"] }
+        driftPoints: { type: [number, "null"] }
+        price: { type: [string, "null"] }
+        priceSource: { type: [string, "null"] }
+        priceFreshness: { type: string, enum: [live, delayed, stale, unpriced] }
+        priceObservedAt: { type: [string, "null"], format: date-time }
+        fxRate: { type: [string, "null"] }
+        fxSource: { type: [string, "null"] }
+        fxDerivedFrom: { type: array, items: { type: string } }
+        fxObservedAt: { type: [string, "null"], format: date-time }
+        dataStatus: { type: string, enum: [priced, unpriced, holdings_unavailable] }
     AddAccountRequest:
       type: object
       required: [kind, label]
@@ -185,7 +210,41 @@ components:
         assetId: { type: string }
         side: { type: string, enum: [buy, sell] }
         quantity: { type: string }
-        status: { type: string, enum: [pending, cancelled, executed] }
+        projectedAllocation: { type: number }
+        projectedDriftPoints: { type: number }
+        shortfall: { type: [string, "null"] }
+        status: { type: string, enum: [pending, cancelled] }
+        cancelledAt: { type: [string, "null"], format: date-time }
+    TargetSetRequest:
+      type: object
+      required: [targets]
+      properties:
+        targets:
+          type: array
+          items:
+            type: object
+            required: [assetId, targetPercent]
+            properties:
+              assetId: { type: string }
+              targetPercent: { type: number, minimum: 0, maximum: 100 }
+              guardrailPoints: { type: number, exclusiveMinimum: 0 }
+    TargetSetPreview:
+      type: object
+      required: [sum, difference]
+      properties:
+        sum: { type: number }
+        difference: { type: number }
+    TradeRequest:
+      type: object
+      required: [assetId, side, quantity, price, priceSource, executedAt, idempotencyKey]
+      properties:
+        assetId: { type: string }
+        side: { type: string, enum: [buy, sell] }
+        quantity: { type: string }
+        price: { type: string }
+        priceSource: { type: string, enum: [venue, user] }
+        executedAt: { type: string, format: date-time }
+        idempotencyKey: { type: string }
 ```
 
 ## C2 — Support API (U1 → U13)
@@ -281,7 +340,7 @@ components:
         status: { type: string, enum: [pending_approval, active, expired] }
 ```
 
-## C3 — Identity internal API (U3 → U1, U10)
+## C3 — Identity internal API (U3 → U1, U9, U10)
 
 ```yaml
 openapi: 3.1.0
@@ -527,7 +586,7 @@ components:
         executedAt: { type: string, format: date-time }
 ```
 
-## C6 — Market Data internal API (U5 → U6, U8, U11)
+## C6 — Market Data internal API (U5 → U6, U7, U8, U11)
 
 ```yaml
 openapi: 3.1.0
@@ -658,13 +717,19 @@ components:
   schemas:
     Pnl:
       type: object
-      required: [asOf, netInvested, realized, unrealized, coverage]
+      required: [asOf, netInvested, realized, unrealized, coverage, currency, fxAsOf, fxEstimated, marksUnavailable, holdingsUnavailable, fxUnavailable]
       properties:
         asOf: { type: string, format: date-time }
-        netInvested: { type: string }
-        realized: { type: string }
-        unrealized: { type: string }
+        netInvested: { type: [string, "null"] }
+        realized: { type: [string, "null"] }
+        unrealized: { type: [string, "null"] }
         coverage: { type: number }
+        currency: { type: string, description: The user's base currency; every figure is in it. }
+        fxAsOf: { type: [string, "null"], format: date-time, description: The FX observation time used for the conversion. }
+        fxEstimated: { type: boolean, description: True when any non-base amount was converted at the compute-time FX rate. }
+        marksUnavailable: { type: boolean, description: True when C6 marks were unavailable; affected holdings are unpriced and the figures are withheld. }
+        holdingsUnavailable: { type: boolean, description: True when C5 holdings were unavailable; coverage is named unavailable rather than guessed. }
+        fxUnavailable: { type: boolean, description: True when a non-base amount could not be converted; no mixed-currency total is returned. }
 ```
 
 ## C8 — Portfolio internal API (U6 → U8)
@@ -707,7 +772,7 @@ components:
         inputsDigest: { type: string }
 ```
 
-## C9 — Notification internal API (U9 → U4, U6, U8)
+## C9 — Notification internal API (U9 → U3, U4, U6, U8)
 
 ```yaml
 openapi: 3.1.0
@@ -1110,6 +1175,28 @@ Principal:
 | C8 Portfolio | `GET /v1/internal/privacy/export` | Portfolios and snapshots for export |
 | C8 Portfolio | `POST /v1/internal/privacy/anonymise` | Anonymise personal portfolio fields |
 
+### C7 — Ledger additions and market valuation
+
+- `GET /v1/users/{userId}/transactions` (extension) returns the append-only rows with `currency`
+  and `priceMissing`; a missing price is `null`, never zero.
+- `GET /v1/users/{userId}/pnl` computes every figure in the user's base currency. It returns
+  `currency`, `fxAsOf` (the FX observation time), and `fxEstimated` (true when a non-base amount
+  was converted at the compute-time rate).
+- `assets[]` carries `assetId`, `covered`, `markPrice` (nullable), `priceAsOf`, and
+  `priceFreshness` (`live`, `delayed`, `stale`, `unpriced`). An `unpriced` holding is named in
+  `coverageGap` and excluded from the figures; it is never valued at zero.
+- Coverage is computed from Account's C5 holdings and valued with C6 prices: every held asset
+  without acquisition history is named in the gap, `coverage` is covered value / total held value,
+  and P&L is unavailable when no holding has history.
+- A C5 or C6 outage is a degraded **200**, never a 503: affected holdings are labelled
+  `unpriced`, `coverageLabel` is `partial` with the gap naming them, the figures are withheld, and
+  `marksUnavailable`, `holdingsUnavailable`, or `fxUnavailable` is set. Only a Postgres failure
+  returns 503.
+- The C6 read-path call is one attempt bounded to 150 ms, assuming a C6 p95 of at most 120 ms, so
+  the 400 ms `getPnl` budget holds. A read that returns a labelled degraded answer (complete,
+  partial, or unpriced) counts as **good** in the P&L availability SLI; only a 5xx counts as bad.
+- Ledger is a C6 consumer (`GET /v1/prices`, `GET /v1/fx`), so C6's consumer list gains U7.
+
 ### C10 — Audit event required fields
 
 `actorId`, `occurredAt`, and `context` become required on `AuditEvent`, matching the NFR19
@@ -1169,6 +1256,9 @@ selectable on the next read with no Account redeploy.
   return `dust`.
 - `getAccountTransactions` returns venue and imported transactions; imported rows carry
   `externalId` and the ledger-relevant fields.
+- Ledger discovers a user's accounts through `getHoldings` and then reads each account's
+  transactions. An account with no holdings and no transactions is not visited; a user-level
+  accounts read would close that gap if it is added later.
 - `GET /v1/internal/privacy/export` returns the account rows, labels, wallet addresses, holdings,
   and imported transactions for the user; `POST /v1/internal/privacy/anonymise` removes the labels
   and wallet addresses, anonymises the personal fields, keeps the labelled financial-retention rows,
@@ -1188,11 +1278,97 @@ releases the guard.
 Account calls the Supabase Auth admin API to set `app_metadata.has_exchange_credentials` on store and
 to clear it on rejection, removal, or revocation with no remaining verified credential.
 
+### C1 — Reporting privacy (U3 → U8)
+
+`GET /v1/internal/privacy/export?userId=` returns the user's briefs and deliveries; `POST
+/v1/internal/privacy/anonymise` with userId and an idempotency key replaces the userId with an
+opaque reference while briefs remain financial records. Identity's service token authorizes both,
+and Reporting is added to Identity's deletion contributor set.
+
+### C3 — Reporting user selection (U8 → U3)
+
+`GET /v1/internal/users/due?period=daily|weekly&at=<rfc3339>` with Reporting's service token
+returns `[{userId, timezone}]` for users whose local period boundary has passed; Reporting then
+applies its own skip/retry rule. Identity is the source of user enumeration and timezone, and its
+registry must allow-list Reporting for this operation. U9 must honour the new `channel` field; a
+mandatory security/key_revoked email ignores an in-app-only channel. U6 must add the C8 reads and
+allow-list Reporting for the portfolios and valuation operations.
+
+### C9 — Alert channel (any emitter → U9)
+
+`AlertRequest` gains `channel` (`in_app|email|both`, default `both`). A brief uses `email` so it does
+not add a second in-app entry; Notification suppresses email per preference but keeps in-app for
+`both`.
+
+### C1 — SPA-facing Reporting routes (U1 → U2)
+
+- `GET /v1/users/{userId}/briefs?period=&cursor=` lists the caller's briefs (owner-only).
+- `GET /v1/users/{userId}/briefs/{briefId}` opens one brief with its figures, as-of, and data
+  status (owner-only).
+Brief schema: id, period (daily|weekly), periodStart/periodEnd, status (pending|generated|failed),
+failureReason, asOf, dataStatus (complete|partial|unavailable), sections (valuation lines with
+provenance, drift, P&L with coverage), generatedAt.
+
+### C8 — Reporting-facing valuation reads (U6 → U8)
+
+- `GET /v1/users/{userId}/portfolios` lists the user's portfolios (service-token Reporting).
+- `GET /v1/portfolios/{portfolioId}/valuation` returns `PortfolioValuation` including the per-asset
+  `lines` with price source/freshness/time, FX provenance, targets, and drift.
+- `GET /v1/portfolios/{portfolioId}/snapshots` items include their stored `lines`.
+
+### C1 — SPA-facing Portfolio routes (U1 → U2)
+
+- `POST /v1/portfolios` creates a portfolio; `GET /v1/portfolios` and `GET /v1/portfolios/{id}`
+  return the list and one portfolio with valuation, breakdown, and drift.
+- `PUT /v1/portfolios/{id}/accounts/{accountId}` assigns or moves an account.
+- `PUT /v1/portfolios/{id}/targets` saves targets and guardrails; with `?preview=true` it returns
+  the sum and difference from 100 without saving.
+- `POST /v1/portfolios/{id}/order-intents` creates an intent; with `?preview=true` it returns the
+  projected allocation, drift, and any shortfall without recording.
+- `POST /v1/portfolios/{id}/order-intents/{intentId}/cancel` cancels a pending intent.
+- `POST /v1/portfolios/{id}/trades` records an executed trade.
+- `GET /v1/portfolios/{id}/snapshots` returns snapshot history (distinct from the C8 internal route).
+
+### C7 — Ledger records a confirmed trade (U6 → U7)
+
+`POST /v1/users/{userId}/trades` records a user-confirmed executed trade on Ledger: asset, side,
+quantity, price, `priceSource` (venue|user), executedAt, and a client idempotency key. It returns
+201 with the ledger transaction id; a replay with the same key returns the existing entry.
+
+### C1 — SPA-facing Notification routes (U1 → U2)
+
+- `GET /v1/users/{userId}/notifications?cursor=&limit=` returns the caller's in-app alerts
+  (owner-only; the gateway forwards the JWT and enforces the owner).
+- `GET /v1/users/{userId}/notifications/preferences` and `PUT .../preferences` read and save
+  per-type, per-channel preferences (owner-only; a mandatory security/key_revoked email cannot be
+  disabled).
+Both are rate-limited per user at the gateway.
+
+### C9 — Notification erasure (U3 → U9)
+
+Identity's erasure orchestration calls `POST /v1/internal/privacy/anonymise` on Notification with its
+service token, the userId, and an idempotency key; Notification replaces the userId on that user's
+alerts and delivery attempts with a non-reversible reference, keeps the twelve-month operational
+rows, and returns 204. A repeat with the same key is idempotent.
+
+### C3 — Notification contact read (U9)
+
+`GET /v1/users/{userId}/contact` returns the user's verified email address and a `verified` flag
+from Identity; Notification calls it at delivery time with its service token. A missing or
+unverified address is an `address` delivery error and no email is sent. FR7.3 billing-type email is
+out of this release (no Billing unit); one-click unsubscribe applies to the brief email only and is
+exempt for mandatory security and credential email.
+
 ### C2 — Support console routes (U1 → U13)
 
 - `GET /v1/support/accounts?grantId=&query=` searches account metadata by id or label within the
   grant's target user only (support role; grantId required).
-- `GET /v1/support/tickets?status=` lists ticket metadata (support role).
+- `GET /v1/support/accounts/{accountId}/metadata?grantId=` reads account metadata. The free-text
+  read reason travels in the `X-Support-Reason` request header, never in the URL; the support API
+  hashes it for the C10 `support_metadata_read` event and never returns or logs it.
+- `GET /v1/support/tickets?grantId=&status=` lists ticket metadata within the grant's target user
+  only (support role; grantId required). It returns a pseudonymous `requesterRef`, never a
+  requester label or any ticket conversation content.
 - `POST /v1/support-grants` creates a pending grant (support role).
 - `POST /v1/support-grants/{grantId}/approve` (second approver; must differ from the requester) and
   `DELETE /v1/support-grants/{grantId}` (admin revoke) act on a grant.
@@ -1205,6 +1381,20 @@ The account metadata read validates that the account's owner is the grant's targ
 one user cannot read another user's account. The incident store, its C10 audit and the C9
 notification are owned by U1's support API, not by the console; the console is UI-only. Incident has
 `severity` (sev1/sev2/sev3) and `status` (declared/investigating/resolved) as separate fields.
+
+#### C2 amendment — reason header and grant-scoped tickets
+
+Recorded 2026-11-08 from the u13 code-generation review.
+
+- The metadata read's required `reason` moves from the query string to the `X-Support-Reason`
+  request header. A URL-carried reason lands in gateway and nginx access logs, browser history,
+  and referrers; the header keeps it out of all three. The gateway forwards the header unchanged
+  and must not log it. The support API hashes the reason for C10 (BR2.1/BR2.2) and never echoes it.
+- `GET /v1/support/tickets` requires `grantId` and returns only ticket metadata for accounts owned
+  by that grant's target user. `TicketMetadata.requesterLabel` is removed; a pseudonymous
+  `requesterRef` may be returned, and conversation content is never part of the DTO.
+- `SupportAccessGrant` carries the additive `requestedBy` field so the console can disable
+  self-approval; the support API remains the enforcement point.
 
 ### C1 — SPA-facing Analytics routes (U1 → U2)
 
@@ -1227,3 +1417,56 @@ the events and returns 204.
 `GET /v1/support-grants/{grantId}/check` returns `active`, `expired`, or `revoked` for the support
 user and target user. Account calls it on a support metadata read and refuses when it is not active.
 Identity is added to Account's dependencies for this check.
+
+## Amendment — Job Orchestration (U11) run call and catalogue
+
+Recorded 2026-11-08 from the u11-job-orchestration functional design review.
+
+### C11 — Run call shape
+
+Every provider's `POST /v1/internal/run/{jobName}` accepts an optional body `{"owner": "<instance>"}`
+and the header `idempotency-key: job:{job}:{scheduledFor}` (canonical whole-second UTC RFC 3339).
+The provider stores the outcome per key: a duplicate whose recorded outcome is `succeeded` or
+`skipped` returns that outcome without re-running; a duplicate whose recorded outcome is `failed`
+re-executes the window and replaces the outcome. The key is per window (not per attempt), so a
+retried call reaches the same row and a succeeded side effect is applied once (AC9.1.3).
+
+| Answer | Meaning |
+|---|---|
+| 200 with `{status: succeeded\|failed\|skipped, ...}` | the provider ran (or replayed a completed key); the status is recorded as-is |
+| 202 with `{runId}` | the provider already has a live run for the window; the orchestrator records `skipped` with the id |
+| 409 | a per-item lease is held (Account's per-account lease uses this); retried within the bound |
+| other 4xx | a misconfigured call; abandoned, not retried |
+
+This resolves the open C11 question for the run call's payload and dedupe key. The per-job payload
+stays the job name plus `owner`; no provider needs a richer body.
+
+### C11 — Job catalogue (U11 → providers)
+
+| Job | Provider |
+|---|---|
+| `account-sync` | Account |
+| `market-data-refresh`, `market-data-fx` | Market Data |
+| `portfolio-valuation`, `portfolio-snapshot` | Portfolio |
+| `ledger-reconcile`, `ledger-ingest` | Ledger |
+| `analytics-aggregate`, `analytics-flag-expiry` | Analytics |
+| `notification-delivery`, `notification-digest` | Notification |
+| `brief-generation` | Reporting |
+| `audit-privacy-sweep` | Identity |
+| `audit-retention` | Audit |
+
+Each provider's service-token registry must allow-list `job-orchestration` for its run endpoint and
+accept the job name. The orchestrator validates the forwarded Supabase JWT against JWKS itself and
+enforces the `admin`/`support` role on its operator paths; the gateway adds rate limits.
+
+
+## Amendment — Web App (U2) C1 routes and PKCE storage
+
+Recorded 2026-11-08 from the u2-web-app NFR design review.
+
+- `GET /v1/users/me` returns `mfaRequired` and `mfaEnrolled`; `POST /v1/mfa/enrol` and
+  `POST /v1/mfa/recovery` (U3) enrol MFA and return recovery codes once.
+- `POST /v1/telemetry/client-errors` is a public, rate-limited C1 route (no JWT) accepting
+  `{route, errorCode, correlationId}` with no payload; it is the SPA's only pre-sign-in ingress.
+- The SPA's PKCE code verifier may live in `sessionStorage` for the duration of a callback; access
+  and refresh tokens never leave memory. This is the single stated exception to BR3.1.

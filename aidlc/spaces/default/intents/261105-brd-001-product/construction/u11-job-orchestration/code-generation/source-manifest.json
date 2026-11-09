@@ -1,0 +1,40 @@
+{
+  "stage": "code-generation",
+  "unit": "u11-job-orchestration",
+  "version": 1,
+  "writes": [
+    { "path": "Cargo.toml" },
+    { "path": "Cargo.lock" },
+    { "path": "infra/sql/job-orchestration-service-tokens.sql" },
+    { "path": "infra/prometheus/job-orchestration-rules.yml" },
+    { "path": "infra/swarm-stack.yml" },
+    { "path": "docs/architecture/README.md" },
+    { "path": "docs/architecture/workspace.dsl" },
+
+    { "path": "services/job-orchestration/Cargo.toml" },
+    { "path": "services/job-orchestration/Dockerfile.api" },
+    { "path": "services/job-orchestration/Dockerfile.migrate" },
+    { "path": "services/job-orchestration/src/lib.rs" },
+    { "path": "services/job-orchestration/src/bin/api.rs" },
+    { "path": "services/job-orchestration/src/bin/migrate.rs" },
+    { "path": "services/job-orchestration/migrations/0001_init.up.sql" },
+    { "path": "services/job-orchestration/migrations/0001_init.down.sql" },
+
+    { "path": "services/job-orchestration/domain/Cargo.toml" },
+    { "path": "services/job-orchestration/domain/src/lib.rs" },
+
+    { "path": "services/job-orchestration/application/Cargo.toml" },
+    { "path": "services/job-orchestration/application/src/lib.rs" },
+    { "path": "services/job-orchestration/application/src/common.rs" },
+    { "path": "services/job-orchestration/application/src/ports.rs" },
+    { "path": "services/job-orchestration/application/src/scheduler.rs" },
+    { "path": "services/job-orchestration/application/src/operator.rs" },
+    { "path": "services/job-orchestration/application/tests/behaviour.rs" },
+
+    { "path": "services/job-orchestration/infrastructure/Cargo.toml" },
+    { "path": "services/job-orchestration/infrastructure/src/lib.rs" },
+
+    { "path": "services/job-orchestration/http/Cargo.toml" },
+    { "path": "services/job-orchestration/http/src/lib.rs" }
+  ]
+}

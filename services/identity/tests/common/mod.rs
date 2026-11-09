@@ -58,6 +58,7 @@ pub fn claims() -> VerifiedClaims {
         subject: USER_SUBJECT.to_string(),
         role: Role::User,
         email_confirmed: true,
+        email: Some("user@example.com".to_string()),
         assurance: AssuranceLevel::Aal1,
         has_exchange_credentials: false,
         session_id: Some("auth-session-1".to_string()),
@@ -265,6 +266,10 @@ pub fn harness() -> Harness {
     let service_tokens: Arc<dyn ServiceTokenRegistry> = Arc::new(FakeServiceTokens::with(&[
         ("service-token", "identity"),
         ("api-token", "identity-api"),
+        ("notification-token", "notification"),
+        ("gateway-token", "gateway"),
+        ("run-token", "job-orchestration"),
+        ("reporting-token", "reporting"),
     ]));
     let state = AppState {
         service_name: "identity-api",
@@ -276,6 +281,9 @@ pub fn harness() -> Harness {
         signup_gate: signup_gate.clone(),
         exports: export_service.clone(),
         deletions: deletion_service.clone(),
+        due_users: Arc::new(identity_application::due_users::DueUsersService::new(
+            users.clone(),
+        )),
         token_validator,
         service_tokens,
         wake: wake.clone(),

@@ -22,8 +22,8 @@ Stories implemented: US8.1 (jointly with u2-web-app), US9.3
 | Operation | Contract | Purpose |
 |---|---|---|
 | `GET /v1/support/accounts?grantId=&query=` | C2 | Search **within the grant's target user** only |
-| `GET /v1/support/tickets?status=` | C2 | List ticket metadata |
-| `GET /v1/support/accounts/{accountId}/metadata?reason=` | C2 | Metadata read under an active grant |
+| `GET /v1/support/tickets?grantId=&status=` | C2 | List ticket metadata within the grant's target user only |
+| `GET /v1/support/accounts/{accountId}/metadata` with `X-Support-Reason` | C2 | Metadata read under an active grant; the reason is a header, never a URL parameter |
 | `POST /v1/support-grants` | C2 | Request a time-bound grant |
 | `POST /v1/support-grants/{grantId}/approve`, `DELETE /v1/support-grants/{grantId}` | C2 | Second approver accepts; admin revokes |
 | `POST /v1/support/incidents`, `PATCH /v1/support/incidents/{id}` | C2 | Admin declares/updates an incident (backend owned by U1) |
@@ -41,7 +41,8 @@ Stories implemented: US8.1 (jointly with u2-web-app), US9.3
 ## WF2 — Read account metadata
 
 1. The support user opens an account and supplies the reason again; the console sends it in the
-   query.
+   `X-Support-Reason` request header, never in the URL, so it cannot reach access logs, browser
+   history, or referrers.
 2. The gateway checks the role; Identity checks the grant is active, unexpired, and its target user
    **is the account's owner**. A grant for one user cannot read another user's account.
 3. The console shows only metadata fields; credentials and portfolio contents are absent from the
@@ -71,7 +72,8 @@ The incident store, its C10 audit event, the C9 notification, and the public sta
 
 1. The customer app renders the searchable help articles and the contact channel (U2).
 2. The support console shows the same articles in read-only mode and the ticket queue summary.
-3. A ticket read shows only its metadata; conversation content stays in the ticket system.
+3. A ticket read is grant-scoped and shows only its metadata; the requester is a pseudonymous
+   `requesterRef`, and conversation content stays in the ticket system.
 
 ## State machines
 
@@ -104,6 +106,8 @@ erDiagram
 - Access: role `support`/`admin`, reason ≥ 20 chars, ≤ 8 h, second approver, expiry ends access
   (AC9.3.1–9.3.2).
 - Every read audited; no credential or portfolio content ever shown (AC9.3.3).
+- The read reason travels only in `X-Support-Reason`, never in a URL; ticket reads are grant-scoped
+  and expose a pseudonymous `requesterRef`, never a requester label or conversation.
 - Incident declaration reaches the public status page and C9 within 15 minutes for SEV-1
   (AC8.1.2–8.1.3).
 - Help articles and contact channel are U2's; the console reuses them read-only (AC8.1.1).

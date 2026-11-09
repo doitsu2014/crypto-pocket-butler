@@ -1,0 +1,27 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u8-reporting",
+  "upstream_ids": ["NFR1", "NFR2", "NFR3", "NFR4", "NFR5", "NFR6", "NFR7", "NFR8", "NFR9", "NFR10", "NFR11", "NFR12", "NFR13", "NFR14", "NFR15", "NFR16", "NFR17", "NFR18", "NFR19", "NFR20"],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.1, NFR1.2, NFR1.3, NFR1.4, NFR1.5, NFR1.6, NFR1.7" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.1, NFR2.2, NFR2.3, NFR2.4, NFR2.5" },
+    { "id": "NFR3", "status": "N/A", "target": "snapshot history belongs to Portfolio" },
+    { "id": "NFR4", "status": "N/A", "target": "sync feedback belongs to Account" },
+    { "id": "NFR5", "status": "OK", "target": "NFR1.2 (a degraded source is labelled in the brief)" },
+    { "id": "NFR6", "status": "N/A", "target": "time to first value belongs to Account and Portfolio" },
+    { "id": "NFR7", "status": "OK", "target": "NFR9.3, NFR1.2 (figures come from Ledger/Portfolio, not recomputed)" },
+    { "id": "NFR8", "status": "OK", "target": "NFR1.2, NFR1.3 (immutable exactly-once briefs)" },
+    { "id": "NFR9", "status": "OK", "target": "NFR9.1, NFR9.2, NFR9.3, NFR9.4, NFR9.5, NFR9.6" },
+    { "id": "NFR10", "status": "N/A", "target": "MFA is Identity's requirement" },
+    { "id": "NFR11", "status": "N/A", "target": "abuse limits are enforced at the gateway" },
+    { "id": "NFR12", "status": "OK", "target": "NFR12.1" },
+    { "id": "NFR13", "status": "OK", "target": "NFR9.5" },
+    { "id": "NFR14", "status": "OK", "target": "NFR20.3, NFR20.6" },
+    { "id": "NFR15", "status": "N/A", "target": "accessibility belongs to the Web App" },
+    { "id": "NFR16", "status": "N/A", "target": "localisation belongs to the Web App" },
+    { "id": "NFR17", "status": "OK", "target": "NFR17.1, NFR17.2, NFR17.3, NFR17.4, NFR17.5, NFR17.6, NFR17.7, NFR17.8" },
+    { "id": "NFR18", "status": "OK", "target": "NFR1.6" },
+    { "id": "NFR19", "status": "OK", "target": "NFR9.4" },
+    { "id": "NFR20", "status": "OK", "target": "NFR20.1, NFR20.2, NFR20.3, NFR20.4, NFR20.5, NFR20.6" }
+  ]
+}

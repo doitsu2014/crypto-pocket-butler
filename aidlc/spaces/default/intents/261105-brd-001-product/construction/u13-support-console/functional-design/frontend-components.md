@@ -28,8 +28,9 @@ SupportApp
 |---|---|---|
 | `SupportSignInGate` | `onReady(role)` | session, role, error |
 | `GrantBanner` | `grant: {expiresAt, reason, approver, status}` | time-to-expiry |
-| `AccountSearch` | `onSelect(accountId)` | query, results |
-| `AccountMetadataPanel` | `accountId`, `reason` | query result, 403 reason |
+| `AccountSearch` | `grantId`, `onSelect(accountId)` | query, results |
+| `AccountMetadataPanel` | `accountId`, `grantId`, `reason` | query result, 403 reason |
+| `TicketQueue` | `grantId` | status filter, ticket metadata |
 | `IncidentForm` | `onDeclared(id)` | severity, summary, components, validation |
 
 ## Interaction flows
@@ -51,9 +52,14 @@ SupportApp
 
 - One module owns all calls: `src/api/client.ts` (C2 base path, bearer from the in-memory session,
   RFC 7807 error mapping).
+- The metadata read sends the free-text reason in `X-Support-Reason`, never in the URL. Search,
+  metadata, and the ticket list require `grantId`; the ticket list exposes a pseudonymous
+  `requesterRef`, never a requester label or conversation.
 - No business math; no credential field exists anywhere in the DTOs or UI.
 
 ## Accessibility
 
 - WCAG 2.2 AA, keyboard-first, visible focus, status colours paired with label and shape, financial
   values use tabular mono and never render a missing value as zero.
+- A root-scoped customer service worker must not control `/support` or `/v1`; the console
+  unregisters any registration whose scope covers `/support` at startup.

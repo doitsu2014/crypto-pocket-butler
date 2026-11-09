@@ -14,10 +14,10 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::dto::{
-    ConsentAppendRequest, ConsentAppendResponse, ConsentResponse, DeletionResponse, ExportResponse,
-    PreferencesRequest, PreferencesResponse, PrincipalResponse, SessionView, SessionsResponse,
-    SignupGateRequest, SignupGateResponse, SupportCheckResponse, SupportGrantRequest,
-    SupportGrantResponse,
+    ConsentAppendRequest, ConsentAppendResponse, ConsentResponse, ContactResponse,
+    DeletionResponse, ExportResponse, PreferencesRequest, PreferencesResponse, PrincipalResponse,
+    SessionView, SessionsResponse, SignupGateRequest, SignupGateResponse, SupportCheckResponse,
+    SupportGrantRequest, SupportGrantResponse,
 };
 use crate::middleware::{CorrelationId, ServicePrincipal, ValidatedClaims};
 use crate::problem::{from_app_error, validation, ProblemDetails};
@@ -90,6 +90,23 @@ pub async fn resolve_principal(
     }
     match state.principal.resolve(claims, &correlation.0).await {
         Ok(view) => Json(PrincipalResponse::from(view)).into_response(),
+        Err(error) => app_error(error, &correlation.0),
+    }
+}
+
+/// C3: a service caller reads the user's verified contact at delivery time.
+pub async fn get_contact(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ServicePrincipal(_service)): Extension<ServicePrincipal>,
+    Path(user_id): Path<String>,
+) -> Response {
+    let user_id = match parse_user_id(&user_id) {
+        Ok(id) => id,
+        Err(error) => return validation(&correlation.0, vec![error]).into_response(),
+    };
+    match state.principal.contact(user_id).await {
+        Ok(view) => Json(ContactResponse::from(view)).into_response(),
         Err(error) => app_error(error, &correlation.0),
     }
 }
@@ -585,4 +602,62 @@ pub async fn run_privacy_sweep(
 /// Any unregistered path is a problem document.
 pub async fn fallback(Extension(correlation): Extension<CorrelationId>) -> Response {
     ProblemDetails::not_found(&correlation.0, "the route does not exist").into_response()
+}
+
+/// `GET /v1/internal/users/due` query string (C3).
+#[derive(Debug, Deserialize)]
+pub struct DueQuery {
+    /// `daily` or `weekly`.
+    #[serde(default)]
+    pub period: Option<String>,
+    /// The instant the read is measured at; defaults to now.
+    #[serde(rename = "at", default)]
+    pub at: Option<String>,
+}
+
+/// C3: the users Reporting should consider for a period.
+pub async fn get_due_users(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ServicePrincipal(_service)): Extension<ServicePrincipal>,
+    Query(query): Query<DueQuery>,
+) -> Response {
+    let period = match query.period.as_deref() {
+        Some(period) if !period.trim().is_empty() => period.to_string(),
+        _ => {
+            return validation(
+                &correlation.0,
+                vec![FieldError::new("period", "must be daily or weekly")],
+            )
+            .into_response()
+        }
+    };
+    let at = match query.at.as_deref() {
+        None => chrono::Utc::now(),
+        Some(raw) => match chrono::DateTime::parse_from_rfc3339(raw) {
+            Ok(value) => value.with_timezone(&chrono::Utc),
+            Err(_) => {
+                return validation(
+                    &correlation.0,
+                    vec![FieldError::new("at", "is not an RFC 3339 timestamp")],
+                )
+                .into_response()
+            }
+        },
+    };
+    match state.due_users.due(&period, at).await {
+        Ok(due) => {
+            let body: Vec<serde_json::Value> = due
+                .into_iter()
+                .map(|user| {
+                    json!({
+                        "userId": user.user_id.to_string(),
+                        "timezone": user.timezone,
+                    })
+                })
+                .collect();
+            Json(body).into_response()
+        }
+        Err(error) => app_error(error, &correlation.0),
+    }
 }

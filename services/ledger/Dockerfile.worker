@@ -1,0 +1,32 @@
+# Ledger worker image: the C11 reconcile and ingest run paths plus probes.
+#
+# Build from the repository root:
+#   docker build -f services/ledger/Dockerfile.worker -t cpb/ledger-worker .
+#
+# The container runs non-root with no published port; Job Orchestration reaches
+# the worker over `internal`. One replica, stop-first, so reconcile never
+# overlaps.
+FROM rust:1-slim-bookworm AS builder
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml Cargo.lock rustfmt.toml ./
+COPY services ./services
+RUN cargo build --release --locked -p ledger --bin ledger-worker
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --create-home --shell /usr/sbin/nologin app
+
+COPY --from=builder /app/target/release/ledger-worker /usr/local/bin/ledger-worker
+
+USER 10001
+EXPOSE 8098
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8098/healthz || exit 1
+ENTRYPOINT ["/usr/local/bin/ledger-worker"]

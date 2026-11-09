@@ -95,31 +95,31 @@ data-model and server layers are not applicable.
 ## Steps
 
 ### Step 1: Project structure
-- [ ] `support-console/` Vite app with `src/{api,components,screens,hooks}`; package.json with Yarn.
+- [x] `support-console/` Vite app with `src/{api,components,screens,hooks}`; package.json with Yarn.
 
 ### Step 2: Test runner
-- [ ] Vitest + RTL + axe; record `yarn --cwd support-console test`.
+- [x] Vitest + RTL + axe; record `yarn --cwd support-console test`.
 
 ### Step 3–5: Client model
-- [ ] Failing tests then implementation for grant status/expiry, metadata shape, incident shape.
+- [x] Failing tests then implementation for grant status/expiry, metadata shape, incident shape.
 
 ### Step 6–8: API client
-- [ ] Red/Green/Refactor for `src/api/client.ts`: C2 calls, bearer, RFC 7807 mapping, 401/403).
+- [x] Red/Green/Refactor for `src/api/client.ts`: C2 calls, bearer, RFC 7807 mapping, 401/403).
 
 ### Step 9–11: Business logic
-- [ ] Red/Green/Refactor: role gate, grant validation (reason ≥20, 1–480 min, approver differs),
+- [x] Red/Green/Refactor: role gate, grant validation (reason ≥20, 1–480 min, approver differs),
       grant-scoped search, expiry handling, incident severity/validation.
 
 ### Step 12–14: API/endpoint layer
-- [ ] Red/Green/Refactor: query hooks, cache clearing on sign-out/403/expiry, in-memory session.
+- [x] Red/Green/Refactor: query hooks, cache clearing on sign-out/403/expiry, in-memory session.
 
 ### Step 15–17: Frontend behaviour
-- [ ] Red/Green/Refactor: every screen in `frontend-components.md`, keyboard flow, ARIA live
+- [x] Red/Green/Refactor: every screen in `frontend-components.md`, keyboard flow, ARIA live
       regions, axe assertions, status label+shape.
 
 ### Step 18: Environment/build
-- [ ] Build output to `web/dist/support`; exclude from the PWA service-worker scope; CSP applied by
+- [x] Build output to `web/dist/support`; exclude from the PWA service-worker scope; CSP applied by
       the gateway.
 
 ### Step 19: Documentation
-- [ ] `code-summary.md`, `source-manifest.json`, `traceability.json`.
+- [x] `code-summary.md`, `source-manifest.json`, `traceability.json`.

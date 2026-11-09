@@ -42,6 +42,31 @@ members = [
     "services/market-data/application",
     "services/market-data/infrastructure",
     "services/market-data/http",
+    "services/ledger",
+    "services/ledger/domain",
+    "services/ledger/application",
+    "services/ledger/infrastructure",
+    "services/ledger/http",
+    "services/notification",
+    "services/notification/domain",
+    "services/notification/application",
+    "services/notification/infrastructure",
+    "services/notification/http",
+    "services/portfolio",
+    "services/portfolio/domain",
+    "services/portfolio/application",
+    "services/portfolio/infrastructure",
+    "services/portfolio/http",
+    "services/reporting",
+    "services/reporting/domain",
+    "services/reporting/application",
+    "services/reporting/infrastructure",
+    "services/reporting/http",
+    "services/job-orchestration",
+    "services/job-orchestration/domain",
+    "services/job-orchestration/application",
+    "services/job-orchestration/infrastructure",
+    "services/job-orchestration/http",
 ]
 
 [workspace.package]
@@ -69,6 +94,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Domain-safe value helpers
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
 rust_decimal = { version = "1", features = ["serde-with-str"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 

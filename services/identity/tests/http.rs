@@ -506,12 +506,156 @@ async fn the_c11_sweep_endpoint_requires_a_service_token_and_wakes_the_worker() 
         &harness.state,
         Method::POST,
         "/v1/internal/run/audit-privacy-sweep",
-        &[("authorization", "Bearer service-token")],
+        &[("authorization", "Bearer run-token")],
         None,
     )
     .await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(*harness.wake.calls.lock().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn the_c11_sweep_endpoint_refuses_another_services_token() {
+    let harness = harness();
+    let (status, _, _) = send(
+        &harness.state,
+        Method::POST,
+        "/v1/internal/run/audit-privacy-sweep",
+        &[("authorization", "Bearer notification-token")],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(*harness.wake.calls.lock().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn the_support_grant_check_is_gateway_only() {
+    let harness = harness();
+    let uri = format!(
+        "/v1/internal/support-grants/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/check?userId={USER_SUBJECT}"
+    );
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        &uri,
+        Some("notification-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        &uri,
+        Some("gateway-token"),
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "the gateway passes authorization; the grant itself is unknown"
+    );
+}
+
+#[tokio::test]
+async fn the_contact_endpoint_returns_the_verified_address_to_a_service_caller() {
+    let harness = harness();
+    let view = principal(&harness.state, "user-token", USER_SUBJECT).await;
+    let user_id = view["userId"].as_str().unwrap().to_string();
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/users/{user_id}/contact"),
+        Some("notification-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body = json_body(&body);
+    assert_eq!(body["email"], "user@example.com");
+    assert_eq!(body["verified"], true);
+    assert_eq!(body["userId"], user_id);
+}
+
+#[tokio::test]
+async fn the_contact_endpoint_requires_a_service_token() {
+    let harness = harness();
+    let view = principal(&harness.state, "user-token", USER_SUBJECT).await;
+    let user_id = view["userId"].as_str().unwrap().to_string();
+    let (status, _, _) = send(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/users/{user_id}/contact"),
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn an_unconfirmed_contact_answers_without_an_address() {
+    let harness = harness();
+    let view = principal(&harness.state, "unconfirmed-token", USER_SUBJECT).await;
+    let user_id = view["userId"].as_str().unwrap().to_string();
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/users/{user_id}/contact"),
+        Some("notification-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body = json_body(&body);
+    assert_eq!(body["verified"], false);
+    assert!(body["email"].is_null());
+}
+
+#[tokio::test]
+async fn the_contact_endpoint_refuses_another_services_token() {
+    let harness = harness();
+    let view = principal(&harness.state, "user-token", USER_SUBJECT).await;
+    let user_id = view["userId"].as_str().unwrap().to_string();
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/users/{user_id}/contact"),
+        Some("service-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(json_body(&body)["status"], 403);
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/users/{user_id}/contact"),
+        Some("api-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_contact_for_an_unknown_user_is_404() {
+    let harness = harness();
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/users/99999999-9999-4999-8999-999999999999/contact",
+        Some("notification-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -562,4 +706,67 @@ async fn an_unknown_route_is_a_404_problem_with_a_correlation_id() {
         "application/problem+json"
     );
     assert_eq!(json_body(&body)["correlationId"], "corr-404");
+}
+
+#[tokio::test]
+async fn the_due_user_endpoint_returns_active_users_to_reporting() {
+    let harness = harness();
+    let view = principal(&harness.state, "user-token", USER_SUBJECT).await;
+    let user_id = view["userId"].as_str().unwrap().to_string();
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/internal/users/due?period=daily&at=2026-11-08T08:00:00Z",
+        Some("reporting-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body = json_body(&body);
+    let rows = body.as_array().expect("an array");
+    assert!(rows.iter().any(|row| row["userId"] == user_id.as_str()));
+    assert!(rows.iter().all(|row| row["timezone"].is_string()));
+}
+
+#[tokio::test]
+async fn the_due_user_endpoint_refuses_another_services_token() {
+    let harness = harness();
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/internal/users/due?period=daily",
+        Some("notification-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn the_due_user_endpoint_refuses_an_unknown_period() {
+    let harness = harness();
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/internal/users/due?period=yearly",
+        Some("reporting-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn the_due_user_endpoint_requires_a_service_token() {
+    let harness = harness();
+    let (status, _, _) = send(
+        &harness.state,
+        Method::GET,
+        "/v1/internal/users/due?period=daily",
+        &[],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }

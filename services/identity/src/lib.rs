@@ -12,6 +12,7 @@ use std::time::Duration;
 use anyhow::Context;
 use identity_application::consent::ConsentService;
 use identity_application::deletion::{DeletionService, DeletionWorker};
+use identity_application::due_users::DueUsersService;
 use identity_application::export::{ExportService, ExportWorker};
 use identity_application::ports::{
     AuditClient, AuthAdmin, Clock, ContributorGateway, ExportStore, GateTokenIssuer,
@@ -129,6 +130,7 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<AppState> {
         trail.clone(),
         clock.clone(),
     ));
+    let due_users_service = Arc::new(DueUsersService::new(users.clone()));
     let sessions_service = Arc::new(SessionService::new(
         sessions,
         users.clone(),
@@ -168,6 +170,7 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<AppState> {
         signup_gate,
         exports: export_service,
         deletions: deletion_service,
+        due_users: due_users_service,
         token_validator,
         service_tokens,
         wake,

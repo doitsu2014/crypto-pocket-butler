@@ -3,7 +3,9 @@
 Inputs: `nfr-requirements/security-requirements.md`, `functional-design/rules.md`.
 
 - **Transport**: HTTPS only; the console is served under `/support` behind the CDN/WAF; CSP with
-  `connect-src` limited to the gateway and Supabase Auth.
+  `connect-src` limited to the same-origin gateway and Supabase Auth. The gateway must be served
+  from the same origin as `/support` (through the CDN host); if deploy configures a different
+  gateway origin, that origin is added to `connect-src` or the C2 calls are blocked.
 - **Session**: Supabase Auth JWT kept in memory; never localStorage or sessionStorage; sign-out
   clears the TanStack Query cache; a tab close ends the session.
 - **Authorization**: the console reads `app_metadata.role` to show the shell, but the gateway
@@ -11,13 +13,21 @@ Inputs: `nfr-requirements/security-requirements.md`, `functional-design/rules.md
 - **Grant binding**: server-side in the support API (active, unexpired, account owner equals grant
   target); the UI mirrors the same check and shows the reason for a refusal.
 - **Data minimisation**: DTOs contain only kind, label, venue, status, lastSyncedAt, and ticket
-  metadata; no credential, holding, valuation, portfolio content, or ticket conversation content.
+  metadata (including a pseudonymous `requesterRef`); no credential, holding, valuation, portfolio
+  content, requester label, or ticket conversation content.
 - **Audit**: reads and incident actions are audited by the support API with a reason hash and grant
-  id; the console holds no audit write path.
-- **Grant-scoped search**: account search requires the grant id and returns only accounts whose
-  owner is that grant's target user; a support user cannot enumerate other users' accounts.
+  id; the console holds no audit write path. The free-text read reason travels only in the
+  `X-Support-Reason` request header, never in a URL, so access logs, browser history, and
+  referrers never carry it. The gateway and nginx access logs must not log that header.
+- **Grant-scoped search and tickets**: account search, account metadata, and the ticket list all
+  require the grant id and return only records owned by that grant's target user; a support user
+  cannot enumerate other users' accounts or tickets.
 - **Cache clearing**: the metadata cache is cleared on sign-out, on grant expiry or revocation, and
   on any 403.
+- **Service worker separation**: a root-scoped customer service worker would control `/support`
+  and the same-origin `/v1` calls. U2's worker must bypass `/support` and `/v1`; the console also
+  unregisters any registration whose scope covers `/support` at startup (`src/pwa/isolate.ts`) as
+  defence in depth.
 
 ## Accessibility
 

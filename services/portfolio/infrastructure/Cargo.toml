@@ -1,0 +1,32 @@
+[package]
+name = "portfolio-infrastructure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Portfolio adapters: sqlx repositories, C5-C10 clients, JWT validation"
+
+[features]
+# The repository integration tests run against a real Postgres schema. Enable
+# this feature and pass --ignored together with TEST_DATABASE_URL.
+integration = []
+
+[dependencies]
+portfolio-domain = { path = "../domain" }
+portfolio-application = { path = "../application" }
+async-trait.workspace = true
+base64.workspace = true
+chrono.workspace = true
+hex.workspace = true
+jsonwebtoken.workspace = true
+reqwest.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true

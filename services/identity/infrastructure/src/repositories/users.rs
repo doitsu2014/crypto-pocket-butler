@@ -16,7 +16,8 @@ use uuid::Uuid;
 use super::{invalid_data, map_sqlx_error, sha256_hex};
 
 const USER_COLUMNS: &str =
-    "id, role, status, locale, base_currency, timezone, created_at, updated_at, anonymised_at";
+    "id, role, status, email, email_verified, locale, base_currency, timezone, \
+     created_at, updated_at, anonymised_at";
 
 /// sqlx-backed user records.
 #[derive(Debug, Clone)]
@@ -37,6 +38,8 @@ struct UserRow {
     id: Uuid,
     role: String,
     status: String,
+    email: Option<String>,
+    email_verified: bool,
     locale: String,
     base_currency: String,
     timezone: String,
@@ -51,6 +54,8 @@ impl UserRow {
             UserId::new(self.id),
             Role::parse(&self.role).map_err(|error| invalid_data("read user", error))?,
             UserStatus::parse(&self.status).map_err(|error| invalid_data("read user", error))?,
+            self.email,
+            self.email_verified,
             Locale::parse(&self.locale).map_err(|error| invalid_data("read user", error))?,
             BaseCurrency::parse(&self.base_currency)
                 .map_err(|error| invalid_data("read user", error))?,
@@ -112,13 +117,15 @@ impl UserRepository for PgUserRepository {
             .map_err(|error| map_sqlx_error("begin user insert", error))?;
         sqlx::query(
             "INSERT INTO users
-                 (id, role, status, locale, base_currency, timezone, created_at, updated_at,
-                  anonymised_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                 (id, role, status, email, email_verified, locale, base_currency, timezone,
+                  created_at, updated_at, anonymised_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
         .bind(user.id().as_uuid())
         .bind(user.role().as_str())
         .bind(user.status().as_str())
+        .bind(user.email())
+        .bind(user.email_verified())
         .bind(user.locale().as_str())
         .bind(user.base_currency().as_str())
         .bind(user.timezone().as_str())
@@ -151,13 +158,15 @@ impl UserRepository for PgUserRepository {
     async fn update(&self, user: &User) -> Result<(), RepositoryError> {
         let affected = sqlx::query(
             "UPDATE users
-             SET role = $2, status = $3, locale = $4, base_currency = $5, timezone = $6,
-                 updated_at = $7, anonymised_at = $8
+             SET role = $2, status = $3, email = $4, email_verified = $5, locale = $6,
+                 base_currency = $7, timezone = $8, updated_at = $9, anonymised_at = $10
              WHERE id = $1",
         )
         .bind(user.id().as_uuid())
         .bind(user.role().as_str())
         .bind(user.status().as_str())
+        .bind(user.email())
+        .bind(user.email_verified())
         .bind(user.locale().as_str())
         .bind(user.base_currency().as_str())
         .bind(user.timezone().as_str())
@@ -205,13 +214,15 @@ impl UserRepository for PgUserRepository {
             .map_err(|error| map_sqlx_error("remove user subject", error))?;
         sqlx::query(
             "UPDATE users
-             SET role = $2, status = $3, locale = $4, base_currency = $5, timezone = $6,
-                 updated_at = $7, anonymised_at = $8
+             SET role = $2, status = $3, email = $4, email_verified = $5, locale = $6,
+                 base_currency = $7, timezone = $8, updated_at = $9, anonymised_at = $10
              WHERE id = $1",
         )
         .bind(user.id().as_uuid())
         .bind(user.role().as_str())
         .bind(user.status().as_str())
+        .bind(user.email())
+        .bind(user.email_verified())
         .bind(user.locale().as_str())
         .bind(user.base_currency().as_str())
         .bind(user.timezone().as_str())
@@ -224,5 +235,41 @@ impl UserRepository for PgUserRepository {
             .commit()
             .await
             .map_err(|error| map_sqlx_error("commit user anonymise", error))
+    }
+}
+
+#[async_trait]
+impl identity_application::ports::DueUserRepository for PgUserRepository {
+    async fn list_active(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<
+        Vec<identity_application::ports::DueCandidate>,
+        identity_application::ports::RepositoryError,
+    > {
+        #[derive(sqlx::FromRow)]
+        struct DueRow {
+            id: Uuid,
+            timezone: String,
+        }
+        let rows = sqlx::query_as::<_, DueRow>(
+            "SELECT id, timezone FROM users
+             WHERE status = 'active' AND anonymised_at IS NULL
+             ORDER BY id
+             LIMIT $1 OFFSET $2",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| map_sqlx_error("list active users", error))?;
+        Ok(rows
+            .into_iter()
+            .map(|row| identity_application::ports::DueCandidate {
+                user_id: UserId::new(row.id),
+                timezone: row.timezone,
+            })
+            .collect())
     }
 }

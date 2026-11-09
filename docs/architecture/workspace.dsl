@@ -24,7 +24,7 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
             supabasePostgres = softwareSystem "Supabase Postgres" "Managed Postgres with logical database-per-service isolation: one schema and one role per service (identity, account, registry, market, portfolio, ledger, reporting, notification, billing, analytics, job, audit), no cross-schema grants, and the Supavisor connection pooler." "External,Supabase"
             supabaseStorage = softwareSystem "Supabase Storage" "Private buckets for audit exports, retention archives, user data exports and generated PDF briefs, accessed only through signed, access-controlled URLs." "External,Supabase"
             supabaseVault = softwareSystem "Supabase Vault" "pgsodium-backed secrets store for exchange credentials, provider keys, the internal service token, merchant-of-record credentials, email and push provider keys, and per-subject encryption keys, with versioned encryption and no plaintext exposure to logs." "External,Supabase"
-            supabaseCron = softwareSystem "Supabase Cron (pg_cron)" "Scheduled SQL that ticks the Job Orchestration Service through pg_net, runs retention SQL, and hosts the dead-man check that alerts when scheduler heartbeats stop." "External,Supabase"
+            prometheusAlerting = softwareSystem "Prometheus Alertmanager" "Evaluates the alert rules, including the Job Orchestration dead-man check on the heartbeat age (180 s, absent series included) and the job failure and abandonment counters." "External,Observability"
         }
 
         cpb = softwareSystem "Crypto Pocket Butler" "Global retail platform that aggregates read-only holdings across exchanges, chains and wallets, values portfolios in the user's base currency, computes P&L, drift and performance, records user-initiated order intents and trades, and delivers briefs, alerts, billing and support with privacy and regional controls." {
@@ -55,7 +55,7 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
 
             analyticsService = container "Analytics Service" "Consent-aware product event ingestion, activation, retention and conversion aggregation, feature flags and experiment exposure. No PII or secrets." "Rust, Axum, sqlx" "Container"
 
-            jobOrchestrationService = container "Job Orchestration Service (Scheduler / Job Runner)" "Scheduler for non-interactive work: pg_cron ticks it every minute, it triggers each service's run endpoint single-flight under advisory locks, records outcomes and alerts on missed runs within 5 minutes." "Rust, Axum, sqlx, tokio" "Container"
+            jobOrchestrationService = container "Job Orchestration Service (Scheduler / Job Runner)" "Self-ticking scheduler elected by a single OrchestratorLease row: runs the fixed C11 catalogue once per window with a per-window idempotency key, records one row per attempt, retries within a bound, recovers missed windows and operator backfills, and exports heartbeat and failure metrics." "Rust, Axum, sqlx, tokio" "Container"
 
             auditService = container "Audit Service" "Append-only audit store via an insert-only Postgres role. Admin queries, support-access records, privacy exports to Storage, erasure by crypto-shredding and partition retention." "Rust, Axum, sqlx" "Container"
 
@@ -199,9 +199,7 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
 
         }
 
-        supabaseCron -> jobOrchestrationService "Ticks the scheduler every minute" "HTTPS via pg_net"
-        supabaseCron -> supabasePostgres "Runs scheduled retention SQL" "SQL"
-        supabaseCron -> alertingChannel "Raises dead-man alerts when scheduler heartbeats stop, via pg_net" "HTTPS via pg_net"
+        jobOrchestrationService -> alertingChannel "Exports heartbeat age and failure counters for alerting" "HTTPS via /metrics scrape"
 
         deploymentEnvironment "Production" {
 
@@ -239,7 +237,7 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
 
         container cpb "Containers" "Containers" {
             include *
-            exclude exchangeApis evmRpcProviders solanaRpc bitcoinTronRpc walletConnect priceFxProviders benchmarkProvider emailProvider pushProvider merchantOfRecord helpDesk alertingChannel supabaseAuth supabasePostgres supabaseStorage supabaseVault supabaseCron
+            exclude exchangeApis evmRpcProviders solanaRpc bitcoinTronRpc walletConnect priceFxProviders benchmarkProvider emailProvider pushProvider merchantOfRecord helpDesk alertingChannel supabaseAuth supabasePostgres supabaseStorage supabaseVault
             autolayout
         }
 

@@ -50,12 +50,17 @@ impl UserStatus {
     }
 }
 
+/// The longest email address the record stores.
+pub const MAX_EMAIL_LEN: usize = 320;
+
 /// One internal user record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct User {
     id: UserId,
     role: Role,
     status: UserStatus,
+    email: Option<String>,
+    email_verified: bool,
     locale: Locale,
     base_currency: BaseCurrency,
     timezone: TimeZone,
@@ -69,10 +74,13 @@ impl User {
     #[must_use]
     pub fn provision(id: UserId, claims: &VerifiedClaims, now: DateTime<Utc>) -> Self {
         let preferences = Preferences::default();
+        let email = normalized_email(claims.email.as_deref());
         Self {
             id,
             role: claims.role,
             status: UserStatus::Pending,
+            email_verified: claims.email_confirmed && email.is_some(),
+            email,
             locale: preferences.locale,
             base_currency: preferences.base_currency,
             timezone: preferences.timezone,
@@ -89,6 +97,8 @@ impl User {
         id: UserId,
         role: Role,
         status: UserStatus,
+        email: Option<String>,
+        email_verified: bool,
         locale: Locale,
         base_currency: BaseCurrency,
         timezone: TimeZone,
@@ -100,6 +110,8 @@ impl User {
             id,
             role,
             status,
+            email,
+            email_verified,
             locale,
             base_currency,
             timezone,
@@ -129,6 +141,17 @@ impl User {
             self.role = claims.role;
             changed = true;
         }
+        if let Some(email) = normalized_email(claims.email.as_deref()) {
+            if self.email.as_deref() != Some(email.as_str()) {
+                self.email = Some(email);
+                changed = true;
+            }
+        }
+        let verified = claims.email_confirmed && self.email.is_some();
+        if self.email_verified != verified {
+            self.email_verified = verified;
+            changed = true;
+        }
         if self.status == UserStatus::Pending && claims.can_activate() {
             self.status = UserStatus::Active;
             changed = true;
@@ -155,8 +178,32 @@ impl User {
         self.timezone = preferences.timezone;
         self.role = Role::User;
         self.status = UserStatus::Deleted;
+        self.email = None;
+        self.email_verified = false;
         self.anonymised_at = Some(now);
         self.updated_at = now;
+    }
+
+    /// The stored email address, whatever its verification state.
+    #[must_use]
+    pub fn email(&self) -> Option<&str> {
+        self.email.as_deref()
+    }
+
+    /// Whether the stored address is confirmed.
+    #[must_use]
+    pub fn email_verified(&self) -> bool {
+        self.email_verified
+    }
+
+    /// The address C3 may hand to a service caller: only a confirmed one.
+    #[must_use]
+    pub fn verified_email(&self) -> Option<&str> {
+        if self.email_verified {
+            self.email.as_deref()
+        } else {
+            None
+        }
     }
 
     /// The internal identifier.
@@ -224,4 +271,11 @@ impl User {
     pub fn anonymised_at(&self) -> Option<DateTime<Utc>> {
         self.anonymised_at
     }
+}
+
+/// Trims a claim-supplied address and drops an empty or over-long one.
+fn normalized_email(raw: Option<&str>) -> Option<String> {
+    raw.map(str::trim)
+        .filter(|value| !value.is_empty() && value.chars().count() <= MAX_EMAIL_LEN)
+        .map(ToString::to_string)
 }

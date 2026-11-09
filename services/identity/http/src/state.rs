@@ -38,6 +38,8 @@ pub struct AppState {
     pub exports: Arc<ExportService>,
     /// Deletion request and status.
     pub deletions: Arc<DeletionService>,
+    /// C3: the reporting due-user read.
+    pub due_users: Arc<identity_application::due_users::DueUsersService>,
     /// Supabase JWT validator.
     pub token_validator: Arc<dyn TokenValidator>,
     /// Internal service-token registry.

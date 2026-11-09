@@ -1,0 +1,25 @@
+{
+  "stage": "infrastructure-design",
+  "unit": "u2-web-app",
+  "upstream_ids": ["NFR2.1","NFR2.2","NFR2.3","NFR2.4","NFR2.5","NFR2.6","NFR2.7","NFR6.1","NFR9.1","NFR9.2","NFR9.3","NFR9.3a","NFR9.4","NFR9.5","NFR10.1","NFR10.2","NFR12.1","NFR17.1"],
+  "coverage": [
+    {"id":"NFR2.1","status":"OK","target":"monitoring-design.md Lighthouse performance"},
+    {"id":"NFR2.2","status":"OK","target":"infrastructure-specification.md Cache"},
+    {"id":"NFR2.3","status":"OK","target":"cicd-pipeline.md Bundle budget"},
+    {"id":"NFR2.4","status":"OK","target":"infrastructure-specification.md Build-time config"},
+    {"id":"NFR2.5","status":"OK","target":"cicd-pipeline.md Unit/component tests"},
+    {"id":"NFR2.6","status":"OK","target":"cicd-pipeline.md Browser matrix"},
+    {"id":"NFR2.7","status":"OK","target":"infrastructure-specification.md PWA"},
+    {"id":"NFR6.1","status":"OK","target":"cicd-pipeline.md Browser matrix covers onboarding"},
+    {"id":"NFR9.1","status":"OK","target":"infrastructure-specification.md Security headers and build"},
+    {"id":"NFR9.2","status":"OK","target":"infrastructure-specification.md Routing"},
+    {"id":"NFR9.3","status":"OK","target":"cicd-pipeline.md Unit/component tests"},
+    {"id":"NFR9.3a","status":"OK","target":"cicd-pipeline.md Unit/component tests"},
+    {"id":"NFR9.4","status":"OK","target":"monitoring-design.md Logs and traces"},
+    {"id":"NFR9.5","status":"OK","target":"infrastructure-specification.md PWA"},
+    {"id":"NFR10.1","status":"OK","target":"infrastructure-specification.md Gateway"},
+    {"id":"NFR10.2","status":"OK","target":"infrastructure-specification.md Routing"},
+    {"id":"NFR12.1","status":"OK","target":"cicd-pipeline.md Audit and Scan"},
+    {"id":"NFR17.1","status":"OK","target":"monitoring-design.md Metrics and alerts"}
+  ]
+}

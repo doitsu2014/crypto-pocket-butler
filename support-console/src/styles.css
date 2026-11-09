@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+/*
+ * Parchment Ledger tokens (design-system/DESIGN.md). The support console reuses
+ * the same token set as the customer SPA; components use the generated
+ * utilities only — no raw colour, spacing, or type values.
+ */
+@theme {
+  --color-parchment: #f5f4ed;
+  --color-surface: #faf9f5;
+  --color-surface-warm: #e8e6dc;
+  --color-ink: #141413;
+  --color-ink-2: #3d3d3a;
+  --color-muted: #5e5d59;
+  --color-meta: #6f6e67;
+  --color-border: #f0eee6;
+  --color-border-soft: #e8e6dc;
+  --color-accent: #c96442;
+  --color-accent-hover: #b85738;
+  --color-accent-on: #faf9f5;
+  --color-focus: #3898ec;
+  --color-success: #15803d;
+  --color-warn: #a16207;
+  --color-danger: #b53333;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Instrument Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-overline: 10px;
+  --text-small: 14px;
+  --text-body: 16px;
+  --text-section: 25px;
+  --text-kpi: 32px;
+  --text-display: 52px;
+
+  --tracking-overline: 0.5px;
+  --leading-display: 1.1;
+  --leading-body: 1.6;
+
+  --shadow-focus: 0 0 0 3px rgba(56, 152, 236, 0.3);
+  --shadow-raised: rgba(0, 0, 0, 0.05) 0 4px 24px;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-parchment);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  line-height: var(--leading-body);
+}
+
+/*
+ * Status is always a label plus a shape (never colour alone). The shape is
+ * drawn here, next to the token definitions, so components stay token-only.
+ */
+.status-shape {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  background: currentColor;
+}
+
+.status-shape-dot {
+  border-radius: 9999px;
+}
+
+.status-shape-square {
+  border-radius: 2px;
+}
+
+.status-shape-diamond {
+  transform: rotate(45deg);
+}
+
+.status-shape-ring {
+  border: 2px solid currentColor;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+/* Visible keyboard focus on every interactive element. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}

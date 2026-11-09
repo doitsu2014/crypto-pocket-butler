@@ -11,10 +11,10 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use identity_application::ports::{
     AuditClient, AuthAdmin, AuthError, Clock, ConsentRepository, ContributorGateway,
-    DeletionRepository, DeviceSessionRepository, ExportRepository, ExportStore, ExternalError,
-    GateGrant, GateTokenIssuer, JurisdictionRepository, ReadinessProbe, RepositoryError,
-    ServiceTokenRegistry, ShreddingKeyRepository, SupportGrantRepository, TokenValidator,
-    UserRepository, WakeTransport,
+    DeletionRepository, DeviceSessionRepository, DueCandidate, DueUserRepository, ExportRepository,
+    ExportStore, ExternalError, GateGrant, GateTokenIssuer, JurisdictionRepository, ReadinessProbe,
+    RepositoryError, ServiceTokenRegistry, ShreddingKeyRepository, SupportGrantRepository,
+    TokenValidator, UserRepository, WakeTransport,
 };
 use identity_domain::{
     AuditRecord, ConsentPurpose, ConsentRecord, Contributor, DeletionProgress, DeletionRequest,
@@ -991,4 +991,32 @@ pub fn progress_with_all_anonymised() -> DeletionProgress {
         progress.record_anonymised(contributor);
     }
     progress
+}
+
+#[async_trait]
+impl DueUserRepository for FakeUsers {
+    async fn list_active(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<DueCandidate>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        let mut rows: Vec<DueCandidate> = self
+            .users
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|user| user.status() == identity_domain::UserStatus::Active)
+            .map(|user| DueCandidate {
+                user_id: user.id(),
+                timezone: user.timezone().as_str().to_string(),
+            })
+            .collect();
+        rows.sort_by_key(|row| row.user_id.as_uuid());
+        Ok(rows
+            .into_iter()
+            .skip(usize::try_from(offset).unwrap_or(usize::MAX))
+            .take(usize::try_from(limit).unwrap_or(usize::MAX))
+            .collect())
+    }
 }

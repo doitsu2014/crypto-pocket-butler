@@ -139,6 +139,17 @@ fn unauthorized(correlation: &str, detail: &str) -> Response {
     .into_response()
 }
 
+fn forbidden(correlation: &str, detail: &str) -> Response {
+    ProblemDetails::new(
+        403,
+        "forbidden",
+        "Forbidden",
+        Some(detail.to_string()),
+        correlation,
+    )
+    .into_response()
+}
+
 /// Validates the forwarded Supabase JWT and attaches the claims. A missing,
 /// invalid, expired, or wrongly-signed token is refused with 401; an unavailable
 /// identity provider is refused with 503.
@@ -190,20 +201,86 @@ pub async fn require_jwt(
 }
 
 /// Validates the internal service token and attaches the issuing service.
-pub async fn require_service(
-    State(state): State<AppState>,
+///
+/// Authorization is per caller: each internal route names the one service that
+/// may invoke it, so a valid token issued to any other service is refused (403).
+async fn require_caller(
+    state: AppState,
     mut request: Request,
     next: Next,
+    allowed: &'static [&'static str],
+    refusal: &'static str,
 ) -> Response {
     let correlation = correlation_of(&request);
     let Some(token) = bearer_token(&request).map(ToString::to_string) else {
         return unauthorized(&correlation, "missing service token");
     };
     match state.service_tokens.service_for(&token) {
-        Some(service) => {
+        Some(service) if allowed.contains(&service.as_str()) => {
             request.extensions_mut().insert(ServicePrincipal(service));
             next.run(request).await
         }
+        Some(_) => forbidden(&correlation, refusal),
         None => unauthorized(&correlation, "unknown service token"),
     }
+}
+
+/// C3: only Notification may read a user's verified contact at delivery time.
+pub async fn require_contact(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_caller(
+        state,
+        request,
+        next,
+        &["notification"],
+        "only Notification may read a user's verified contact",
+    )
+    .await
+}
+
+/// C3: only Reporting may ask which users are due for a period report.
+pub async fn require_due_users(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_caller(
+        state,
+        request,
+        next,
+        &["reporting"],
+        "only Reporting may read the due-user list",
+    )
+    .await
+}
+
+/// C11: only Job Orchestration may invoke a run endpoint.
+pub async fn require_run(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    require_caller(
+        state,
+        request,
+        next,
+        &["job-orchestration"],
+        "only Job Orchestration may invoke a run endpoint",
+    )
+    .await
+}
+
+/// C2/C3: only the API Gateway may check a support grant on the metadata path.
+pub async fn require_support_check(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_caller(
+        state,
+        request,
+        next,
+        &["gateway"],
+        "only the API Gateway may check a support grant",
+    )
+    .await
 }

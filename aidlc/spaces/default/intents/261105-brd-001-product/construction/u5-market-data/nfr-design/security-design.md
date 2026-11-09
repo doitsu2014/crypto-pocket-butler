@@ -6,8 +6,8 @@ Inputs: `nfr-requirements/security-requirements.md`, `functional-design/rules.md
 
 - **C6**: per-caller service tokens in `Authorization: Bearer`. A SHA-256 hash lookup in
   `market_data.service_token_registry` yields the caller; the operation allow-list is
-  Portfolio/Reporting/Job Orchestration for reads, plus the read-only `smoke-reader` caller used by
-  the release smoke. A token that resolves to no caller gets 401; an
+  Portfolio/Reporting/Job Orchestration and Ledger for reads, plus the read-only `smoke-reader`
+  caller used by the release smoke. A token that resolves to no caller gets 401; an
   operation outside its allow-list gets 403.
 - **C11**: the shared internal run token from Vault; the job name is in the path
   (`price-refresh-top100`, `price-refresh-tail`).

@@ -1,0 +1,17 @@
+{
+  "stage": "functional-design",
+  "unit": "u8-reporting",
+  "upstream_ids": ["AC6.1.1", "AC6.1.2", "AC6.1.3", "AC6.2.1", "AC6.2.2", "AC6.2.3"],
+  "coverage": [
+    { "id": "AC6.1.1", "status": "OK", "target": "BR1.1" },
+    { "id": "AC6.1.2", "status": "OK", "target": "BR2.1" },
+    { "id": "AC6.1.3", "status": "OK", "target": "BR1.2" },
+    { "id": "AC6.2.1", "status": "OK", "target": "BR2.3 (joint with u9-notification, which sends to the verified address)" },
+    { "id": "AC6.2.2", "status": "OK", "target": "BR2.3" },
+    { "id": "AC6.2.3", "status": "OK", "target": "BR2.2" }
+  ],
+  "reverse": [
+    { "id": "BR1.3", "status": "OK", "target": "design-system — a missing figure is an em dash, not zero" },
+    { "id": "BR3.1", "status": "OK", "target": "FR1.6 — owner-scoped reads" }
+  ]
+}

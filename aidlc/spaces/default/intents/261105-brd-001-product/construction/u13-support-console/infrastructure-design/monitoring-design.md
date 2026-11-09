@@ -28,5 +28,6 @@ Inputs: `nfr-design/`, `infrastructure-specification.md`.
 
 ## Logs and dashboards
 
-- Gateway logs only; no console PII. Dashboard: `/support` availability, C2 error mix, incident
+- Gateway logs only; no console PII. The free-text read reason is a request header and is never
+  logged by the gateway or nginx. Dashboard: `/support` availability, C2 error mix, incident
   activity.

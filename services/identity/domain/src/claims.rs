@@ -119,6 +119,11 @@ pub struct VerifiedClaims {
     pub role: Role,
     /// Whether the email is confirmed (BR1.5).
     pub email_confirmed: bool,
+    /// The email address carried by the token, when Supabase includes it.
+    ///
+    /// Identity stores it on the user record so C3 can answer a service caller
+    /// with the verified address; Notification never stores it (NFR9.3).
+    pub email: Option<String>,
     /// The `aal` claim.
     pub assurance: AssuranceLevel,
     /// `app_metadata.has_exchange_credentials` (BR2.1).

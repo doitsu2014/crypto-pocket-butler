@@ -3,6 +3,11 @@ web/node_modules/
 web/dist/
 web/.yarn/cache/
 web/.yarn/install-state.gz
+support-console/node_modules/
+support-console/dist/
+support-console/.yarn/cache/
+support-console/.yarn/install-state.gz
+support-console/tsconfig.tsbuildinfo
 .git/
 .github/
 aidlc/

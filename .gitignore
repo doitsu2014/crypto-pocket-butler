@@ -12,6 +12,9 @@ docs/architecture/.structurizr/
 node_modules/
 web/dist/
 web/tsconfig.tsbuildinfo
+support-console/dist/
+support-console/tsconfig.tsbuildinfo
+support-console/.yarn/install-state.gz
 
 # BEGIN AI-DLC:gitignore
 # AI-DLC: local working files

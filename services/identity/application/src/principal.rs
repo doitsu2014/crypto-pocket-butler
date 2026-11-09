@@ -13,6 +13,17 @@ use crate::ports::{
 };
 use crate::trail::{context, Trail};
 
+/// The C3 contact answer: the address only when Identity has verified it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContactView {
+    /// The user the answer concerns.
+    pub user_id: UserId,
+    /// The verified address, or `None` when there is none or it is unconfirmed.
+    pub email: Option<String>,
+    /// Whether a confirmed address exists.
+    pub verified: bool,
+}
+
 /// Resolves a validated JWT to an internal principal, provisioning on first use.
 pub struct PrincipalService {
     users: Arc<dyn UserRepository>,
@@ -72,6 +83,31 @@ impl PrincipalService {
             user.status(),
             next_step,
         ))
+    }
+
+    /// C3: the verified contact for one user, read from the stored record.
+    ///
+    /// Notification calls this at delivery time and keeps the address only in
+    /// memory (NFR9.3). A deleted or unknown user is `NotFound`; an unconfirmed
+    /// address answers `verified: false` with no address.
+    ///
+    /// # Errors
+    /// Returns [`AppError::NotFound`] for a deleted or unknown user and
+    /// [`AppError::Unavailable`] when the store cannot answer.
+    pub async fn contact(&self, user_id: UserId) -> Result<ContactView, AppError> {
+        let user = self
+            .users
+            .find_by_id(user_id)
+            .await
+            .map_err(AppError::from_repository)?
+            .filter(|user| !user.is_deleted())
+            .ok_or(AppError::NotFound("user"))?;
+        let email = user.verified_email().map(ToString::to_string);
+        Ok(ContactView {
+            user_id,
+            verified: email.is_some(),
+            email,
+        })
     }
 
     /// Resolves the principal and loads the stored user for a use case.

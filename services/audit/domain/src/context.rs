@@ -14,14 +14,17 @@ pub const MAX_CONTEXT_BYTES: usize = 2 * 1024;
 pub const MAX_CONTEXT_KEYS: usize = 5;
 
 /// The keys an event context may carry: correlation id, request id, source
-/// service, rule id, and a session or run identifier.
-pub const ALLOWED_CONTEXT_KEYS: [&str; 6] = [
+/// service, rule id, a session or run identifier, the notification channel, and
+/// the names of fields a content guard removed (BR5.1 / NFR9.5 in U9).
+pub const ALLOWED_CONTEXT_KEYS: [&str; 8] = [
     "correlationId",
     "requestId",
     "sourceService",
     "ruleId",
     "sessionId",
     "runId",
+    "channel",
+    "sanitisedFields",
 ];
 
 /// Validated event metadata.

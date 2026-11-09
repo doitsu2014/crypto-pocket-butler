@@ -11,12 +11,23 @@
 #   docker build -f services/account/Dockerfile.api -t <registry>/account-api:<tag> .
 #   docker build -f services/account/Dockerfile.worker -t <registry>/account-worker:<tag> .
 #   docker build -f services/account/Dockerfile.migrate -t <registry>/account-migrate:<tag> .
+#   docker build -f services/portfolio/Dockerfile.api -t <registry>/portfolio-api:<tag> .
+#   docker build -f services/portfolio/Dockerfile.worker -t <registry>/portfolio-worker:<tag> .
+#   docker build -f services/portfolio/Dockerfile.migrate -t <registry>/portfolio-migrate:<tag> .
 #   docker build -f services/market-data/Dockerfile.api -t <registry>/market-data-api:<tag> .
 #   docker build -f services/market-data/Dockerfile.worker -t <registry>/market-data-worker:<tag> .
 #   docker build -f services/market-data/Dockerfile.migrate -t <registry>/market-data-migrate:<tag> .
 #   docker build -f services/analytics/Dockerfile.api -t <registry>/analytics-api:<tag> .
 #   docker build -f services/analytics/Dockerfile.worker -t <registry>/analytics-worker:<tag> .
 #   docker build -f services/analytics/Dockerfile.migrate -t <registry>/analytics-migrate:<tag> .
+#   docker build -f services/ledger/Dockerfile.api -t <registry>/ledger-api:<tag> .
+#   docker build -f services/ledger/Dockerfile.worker -t <registry>/ledger-worker:<tag> .
+#   docker build -f services/ledger/Dockerfile.migrate -t <registry>/ledger-migrate:<tag> .
+#   docker build -f services/reporting/Dockerfile.api -t <registry>/reporting-api:<tag> .
+#   docker build -f services/reporting/Dockerfile.worker -t <registry>/reporting-worker:<tag> .
+#   docker build -f services/reporting/Dockerfile.migrate -t <registry>/reporting-migrate:<tag> .
+#   docker build -f services/job-orchestration/Dockerfile.api -t <registry>/job-orchestration:<tag> .
+#   docker build -f services/job-orchestration/Dockerfile.migrate -t <registry>/job-orchestration-migrate:<tag> .
 #
 # The registry database credential is a Docker secret, never a stack variable:
 #   docker secret create registry_database_url -
@@ -25,10 +36,18 @@
 #   docker secret create audit_app_dsn -
 #   docker secret create audit_retention_dsn -
 #   docker secret create audit_service_tokens -
+#     The JSON token map must carry a "reporting" entry whose token is
+#     reporting_outbound_token: Reporting presents it on C10 POST /v1/events.
 # Identity credentials and signing keys are Docker secrets created from Supabase
 # Vault by the pipeline, never stack variables:
 #   docker secret create identity_database_url -
 #   docker secret create identity_service_tokens -
+#     The JSON token map must carry a "notification" entry whose token is the
+#     same value as notification_outbound_token: Notification presents it on C3
+#     GET /v1/users/{userId}/contact, and any other caller is refused (403).
+#     It must also carry a "reporting" entry whose token is
+#     reporting_outbound_token: Reporting presents it on C3
+#     GET /v1/internal/users/due, and any other caller is refused (403).
 #   docker secret create identity_supabase_service_role -
 #   docker secret create identity_gate_token_key -
 #
@@ -39,6 +58,32 @@
 #   docker secret create account_migrate_database_url -
 #   docker secret create account_service_tokens -
 #   docker secret create account_supabase_service_role -
+#
+# Portfolio credentials are Docker secrets created from Supabase Vault by the
+# pipeline. The migrator DSN carries DDL rights; the runtime DSN does not. The
+# outbound token file holds the raw token Portfolio presents to C5–C10; the
+# smoke token is held by the release job and is never mounted in the service:
+#   docker secret create portfolio_database_url -
+#   docker secret create portfolio_migrate_database_url -
+#   docker secret create portfolio_outbound_token -
+#   docker secret create portfolio_smoke_token -
+#
+# Reporting credentials are Docker secrets created from Supabase Vault by the
+# pipeline. The migrator DSN carries DDL rights and the retention prune; the
+# runtime DSN does not. The outbound token is the raw token Reporting presents to
+# C3 and C7–C10; the smoke token is held by the release job only:
+#   docker secret create reporting_database_url -
+#   docker secret create reporting_migrate_database_url -
+#   docker secret create reporting_outbound_token -
+#   docker secret create reporting_smoke_token -
+#
+# Job Orchestration credentials are Docker secrets created from Supabase Vault by
+# the pipeline. The migrate DSN mounts only in the migrate/prune job; the smoke
+# token is held by the release job only:
+#   docker secret create job_orchestration_database_url -
+#   docker secret create job_orchestration_migrate_database_url -
+#   docker secret create job_orchestration_outbound_token -
+#   docker secret create job_orchestration_smoke_token -
 #
 # Market Data credentials are Docker secrets created from Supabase Vault by the
 # pipeline. The C11 run token, the outbound service token, and provider keys are
@@ -53,6 +98,16 @@
 #   docker secret create analytics_migrate_database_url -
 #   docker secret create analytics_outbound_token -
 #   docker secret create analytics_smoke_token -
+#
+# Ledger credentials are Docker secrets created from Supabase Vault by the
+# pipeline. The runtime DSN carries no DDL rights; the migrator DSN does; the
+# anonymiser DSN holds UPDATE on ledger_subjects only and is opened for the one
+# C7 anonymise request:
+#   docker secret create ledger_database_url -
+#   docker secret create ledger_migrate_database_url -
+#   docker secret create ledger_anonymiser_database_url -
+#   docker secret create ledger_outbound_token -
+#   docker secret create ledger_smoke_token -
 #
 # Non-secret configuration (JWT_JWKS_URL, JWT_ISSUER, JWT_AUDIENCE,
 # REGISTRY/TAG) is supplied by the deployer's environment.
@@ -283,6 +338,7 @@ services:
       RUST_LOG: info
       IDENTITY_PORT: "8083"
       DATABASE_URL_FILE: /run/secrets/identity_database_url
+      # Must map "notification" to the same token as notification_outbound_token.
       SERVICE_TOKENS_FILE: /run/secrets/identity_service_tokens
       SUPABASE_SERVICE_ROLE_KEY_FILE: /run/secrets/identity_supabase_service_role
       GATE_TOKEN_KEY_FILE: /run/secrets/identity_gate_token_key
@@ -298,7 +354,7 @@ services:
       AUDIT_URL: http://audit-api:8084
       ACCOUNT_URL: ${ACCOUNT_URL:-http://account:8091}
       LEDGER_URL: ${LEDGER_URL:-http://ledger:8092}
-      PORTFOLIO_URL: ${PORTFOLIO_URL:-http://portfolio:8093}
+      PORTFOLIO_URL: ${PORTFOLIO_URL:-http://portfolio:8101}
     secrets:
       - identity_database_url
       - identity_service_tokens
@@ -343,6 +399,7 @@ services:
       RUST_LOG: info
       IDENTITY_WORKER_PORT: "8085"
       DATABASE_URL_FILE: /run/secrets/identity_database_url
+      # Must map "notification" to the same token as notification_outbound_token.
       SERVICE_TOKENS_FILE: /run/secrets/identity_service_tokens
       SUPABASE_SERVICE_ROLE_KEY_FILE: /run/secrets/identity_supabase_service_role
       SUPABASE_AUTH_URL: ${SUPABASE_AUTH_URL}
@@ -354,7 +411,7 @@ services:
       AUDIT_URL: http://audit-api:8084
       ACCOUNT_URL: ${ACCOUNT_URL:-http://account:8091}
       LEDGER_URL: ${LEDGER_URL:-http://ledger:8092}
-      PORTFOLIO_URL: ${PORTFOLIO_URL:-http://portfolio:8093}
+      PORTFOLIO_URL: ${PORTFOLIO_URL:-http://portfolio:8101}
     secrets:
       - identity_database_url
       - identity_service_tokens
@@ -408,7 +465,7 @@ services:
       ACCOUNT_TOKEN_SERVICE: account
       ACCOUNT_API_POOL: "12"
       AUDIT_URL: http://audit-api:8084
-      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8094}
+      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8099}
       ASSET_REGISTRY_URL: http://asset-registry:8081
       EVM_RPC_URL: ${EVM_RPC_URL}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL}
@@ -464,7 +521,7 @@ services:
       ACCOUNT_SYNC_INTERVAL_SECONDS: "${ACCOUNT_SYNC_INTERVAL_SECONDS:-60}"
       ACCOUNT_VERIFY_INTERVAL_SECONDS: "${ACCOUNT_VERIFY_INTERVAL_SECONDS:-21600}"
       AUDIT_URL: http://audit-api:8084
-      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8094}
+      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8099}
       ASSET_REGISTRY_URL: http://asset-registry:8081
       EVM_RPC_URL: ${EVM_RPC_URL}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL}
@@ -513,6 +570,351 @@ services:
       DATABASE_URL_FILE: /run/secrets/account_migrate_database_url
     secrets:
       - account_migrate_database_url
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  portfolio:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/portfolio-api:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      PORTFOLIO_PORT: "8101"
+      DATABASE_URL_FILE: /run/secrets/portfolio_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/portfolio_outbound_token
+      JWT_JWKS_URL: ${JWT_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      ACCOUNT_URL: http://account-api:8091
+      MARKET_DATA_URL: http://market-data-api:8093
+      LEDGER_URL: http://ledger-api:8097
+      IDENTITY_URL: http://identity-api:8089
+      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8099}
+      AUDIT_URL: http://audit-api:8084
+      PORTFOLIO_WORKER_URL: http://portfolio-worker:8102
+      PORTFOLIO_TOKEN_SERVICE: portfolio
+      PORTFOLIO_API_POOL: "12"
+    secrets:
+      - portfolio_database_url
+      - portfolio_outbound_token
+    networks:
+      - internal
+      - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8101/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  portfolio-worker:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/portfolio-worker:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      PORTFOLIO_WORKER_PORT: "8102"
+      DATABASE_URL_FILE: /run/secrets/portfolio_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/portfolio_outbound_token
+      ACCOUNT_URL: http://account-api:8091
+      MARKET_DATA_URL: http://market-data-api:8093
+      LEDGER_URL: http://ledger-api:8097
+      IDENTITY_URL: http://identity-api:8089
+      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8099}
+      AUDIT_URL: http://audit-api:8084
+      PORTFOLIO_TOKEN_SERVICE: portfolio
+      PORTFOLIO_RUN_INTERVAL_SECONDS: "${PORTFOLIO_RUN_INTERVAL_SECONDS:-3600}"
+      PORTFOLIO_WORKER_POOL: "8"
+    secrets:
+      - portfolio_database_url
+      - portfolio_outbound_token
+    networks:
+      - internal
+      - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8102/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  portfolio-migrate:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/portfolio-migrate:${TAG:-latest}
+    # Release gate: the same image with --prune-snapshots (or PRUNE_SNAPSHOTS=true)
+    # enforces the two-year valuation-snapshot retention. It runs from the
+    # operator/release job with the migrator DSN; the runtime role cannot delete
+    # snapshots.
+    environment:
+      RUST_LOG: info
+      DATABASE_URL_FILE: /run/secrets/portfolio_migrate_database_url
+    secrets:
+      - portfolio_migrate_database_url
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  job-orchestration:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/job-orchestration:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      JOB_ORCHESTRATION_PORT: "8105"
+      DATABASE_URL_FILE: /run/secrets/job_orchestration_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/job_orchestration_outbound_token
+      JWT_JWKS_URL: ${JWT_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      ACCOUNT_URL: http://account-api:8091
+      MARKET_DATA_URL: http://market-data-api:8093
+      PORTFOLIO_URL: http://portfolio-api:8101
+      LEDGER_URL: http://ledger-api:8097
+      ANALYTICS_URL: http://analytics-api:8095
+      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8099}
+      REPORTING_URL: http://reporting-api:8103
+      IDENTITY_URL: http://identity-api:8089
+      AUDIT_URL: http://audit-api:8084
+      JOB_ORCHESTRATION_TICK_SECONDS: "60"
+      JOB_ORCHESTRATION_POOL: "10"
+    secrets:
+      - job_orchestration_database_url
+      - job_orchestration_outbound_token
+    networks:
+      - internal
+      - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8105/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  job-orchestration-migrate:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/job-orchestration-migrate:${TAG:-latest}
+    # Release gate: the same image with --prune-runs (or PRUNE_RUNS=true) is the
+    # nightly retention step, run by the operator systemd timer at 02:00 UTC.
+    environment:
+      RUST_LOG: info
+      DATABASE_URL_FILE: /run/secrets/job_orchestration_migrate_database_url
+    secrets:
+      - job_orchestration_migrate_database_url
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  reporting-api:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/reporting-api:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      REPORTING_PORT: "8103"
+      DATABASE_URL_FILE: /run/secrets/reporting_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/reporting_outbound_token
+      JWT_JWKS_URL: ${JWT_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      IDENTITY_URL: http://identity-api:8089
+      PORTFOLIO_URL: http://portfolio-api:8101
+      LEDGER_URL: http://ledger-api:8097
+      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8099}
+      AUDIT_URL: http://audit-api:8084
+      REPORTING_TOKEN_SERVICE: reporting
+      REPORTING_API_POOL: "10"
+    secrets:
+      - reporting_database_url
+      - reporting_outbound_token
+    networks:
+      - internal
+      - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8103/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 192M
+
+  reporting-worker:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/reporting-worker:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      REPORTING_WORKER_PORT: "8104"
+      DATABASE_URL_FILE: /run/secrets/reporting_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/reporting_outbound_token
+      IDENTITY_URL: http://identity-api:8089
+      PORTFOLIO_URL: http://portfolio-api:8101
+      LEDGER_URL: http://ledger-api:8097
+      NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8099}
+      AUDIT_URL: http://audit-api:8084
+      REPORTING_TOKEN_SERVICE: reporting
+      REPORTING_RUN_INTERVAL_SECONDS: "${REPORTING_RUN_INTERVAL_SECONDS:-3600}"
+      REPORTING_WORKER_POOL: "8"
+    secrets:
+      - reporting_database_url
+      - reporting_outbound_token
+    networks:
+      - internal
+      - public
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8104/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  reporting-migrate:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/reporting-migrate:${TAG:-latest}
+    # Release gate: the same image with --prune-briefs (or PRUNE_BRIEFS=true)
+    # enforces the two-year brief retention. It runs from the operator/release
+    # job with the migrator DSN; the runtime role cannot delete briefs.
+    environment:
+      RUST_LOG: info
+      DATABASE_URL_FILE: /run/secrets/reporting_migrate_database_url
+    secrets:
+      - reporting_migrate_database_url
     networks:
       - internal
     read_only: true
@@ -765,6 +1167,265 @@ services:
           cpus: "0.25"
           memory: 256M
 
+  ledger-api:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/ledger-api:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      LEDGER_PORT: "8097"
+      DATABASE_URL_FILE: /run/secrets/ledger_database_url
+      ANONYMISER_DATABASE_URL_FILE: /run/secrets/ledger_anonymiser_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/ledger_outbound_token
+      SMOKE_TOKEN_FILE: /run/secrets/ledger_smoke_token
+      ACCOUNT_URL: http://account-api:8091
+      ASSET_REGISTRY_URL: http://asset-registry:8081
+      AUDIT_URL: http://audit-api:8084
+      JWT_JWKS_URL: ${JWT_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      MARKET_DATA_URL: http://market-data-api:8093
+      LEDGER_BASE_CURRENCY: ${LEDGER_BASE_CURRENCY:-USD}
+      LEDGER_API_POOL: "12"
+    secrets:
+      - ledger_database_url
+      - ledger_anonymiser_database_url
+      - ledger_outbound_token
+      - ledger_smoke_token
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8097/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  ledger-worker:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/ledger-worker:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      LEDGER_WORKER_PORT: "8098"
+      DATABASE_URL_FILE: /run/secrets/ledger_database_url
+      ANONYMISER_DATABASE_URL_FILE: /run/secrets/ledger_anonymiser_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/ledger_outbound_token
+      SMOKE_TOKEN_FILE: /run/secrets/ledger_smoke_token
+      ACCOUNT_URL: http://account-api:8091
+      ASSET_REGISTRY_URL: http://asset-registry:8081
+      AUDIT_URL: http://audit-api:8084
+      MARKET_DATA_URL: http://market-data-api:8093
+      LEDGER_BASE_CURRENCY: ${LEDGER_BASE_CURRENCY:-USD}
+      LEDGER_WORKER_POOL: "8"
+    secrets:
+      - ledger_database_url
+      - ledger_anonymiser_database_url
+      - ledger_outbound_token
+      - ledger_smoke_token
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8098/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  ledger-migrate:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/ledger-migrate:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      DATABASE_URL_FILE: /run/secrets/ledger_migrate_database_url
+    secrets:
+      - ledger_migrate_database_url
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  notification-api:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/notification-api:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      NOTIFICATION_PORT: "8099"
+      DATABASE_URL_FILE: /run/secrets/notification_database_url
+      # Must be the "notification" entry of identity_service_tokens (C3 contact).
+      OUTBOUND_TOKEN_FILE: /run/secrets/notification_outbound_token
+      EMAIL_KEY_FILE: /run/secrets/notification_email_key
+      SMOKE_TOKEN_FILE: /run/secrets/notification_smoke_token
+      IDENTITY_URL: http://identity-api:8083
+      AUDIT_URL: http://audit-api:8084
+      EMAIL_PROVIDER_URL: ${EMAIL_PROVIDER_URL}
+      EMAIL_FROM: ${EMAIL_FROM:-notifications@cryptopocketbutler.example}
+      JWT_JWKS_URL: ${JWT_JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      NOTIFICATION_API_POOL: "10"
+    secrets:
+      - notification_database_url
+      - notification_outbound_token
+      - notification_email_key
+      - notification_smoke_token
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8099/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: start-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 192M
+
+  notification-worker:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/notification-worker:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      NOTIFICATION_WORKER_PORT: "8100"
+      DATABASE_URL_FILE: /run/secrets/notification_database_url
+      OUTBOUND_TOKEN_FILE: /run/secrets/notification_outbound_token
+      EMAIL_KEY_FILE: /run/secrets/notification_email_key
+      SMOKE_TOKEN_FILE: /run/secrets/notification_smoke_token
+      IDENTITY_URL: http://identity-api:8083
+      AUDIT_URL: http://audit-api:8084
+      EMAIL_PROVIDER_URL: ${EMAIL_PROVIDER_URL}
+      EMAIL_FROM: ${EMAIL_FROM:-notifications@cryptopocketbutler.example}
+      NOTIFICATION_WORKER_POOL: "8"
+    secrets:
+      - notification_database_url
+      - notification_outbound_token
+      - notification_email_key
+      - notification_smoke_token
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8100/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        monitor: 30s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: pause
+        monitor: 30s
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  notification-migrate:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/notification-migrate:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      DATABASE_URL_FILE: /run/secrets/notification_migrate_database_url
+    secrets:
+      - notification_migrate_database_url
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
 networks:
   public:
     driver: overlay
@@ -799,6 +1460,14 @@ secrets:
     external: true
   account_supabase_service_role:
     external: true
+  portfolio_database_url:
+    external: true
+  portfolio_migrate_database_url:
+    external: true
+  portfolio_outbound_token:
+    external: true
+  portfolio_smoke_token:
+    external: true
   market_data_database_url:
     external: true
   market_data_smoke_token:
@@ -810,4 +1479,40 @@ secrets:
   analytics_outbound_token:
     external: true
   analytics_smoke_token:
+    external: true
+  ledger_database_url:
+    external: true
+  ledger_migrate_database_url:
+    external: true
+  ledger_anonymiser_database_url:
+    external: true
+  ledger_outbound_token:
+    external: true
+  ledger_smoke_token:
+    external: true
+  notification_database_url:
+    external: true
+  notification_migrate_database_url:
+    external: true
+  notification_outbound_token:
+    external: true
+  notification_smoke_token:
+    external: true
+  notification_email_key:
+    external: true
+  reporting_database_url:
+    external: true
+  reporting_migrate_database_url:
+    external: true
+  reporting_outbound_token:
+    external: true
+  reporting_smoke_token:
+    external: true
+  job_orchestration_database_url:
+    external: true
+  job_orchestration_migrate_database_url:
+    external: true
+  job_orchestration_outbound_token:
+    external: true
+  job_orchestration_smoke_token:
     external: true

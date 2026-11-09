@@ -1,0 +1,20 @@
+{
+  "stage": "functional-design",
+  "unit": "u9-notification",
+  "upstream_ids": ["AC5.6.1", "AC5.6.2", "AC5.6.3", "AC6.2.1", "AC6.2.2", "AC6.2.3", "AC6.3.1", "AC6.3.2", "AC6.3.3", "AC6.4.1", "AC6.4.2", "AC6.4.3"],
+  "coverage": [
+    { "id": "AC5.6.1", "status": "OK", "target": "BR1.2 (joint with u6-portfolio, which evaluates drift)" },
+    { "id": "AC5.6.2", "status": "OK", "target": "BR1.1" },
+    { "id": "AC5.6.3", "status": "OK", "target": "BR1.2" },
+    { "id": "AC6.2.1", "status": "OK", "target": "BR4.2 (joint with u8-reporting, which generates the brief)" },
+    { "id": "AC6.2.2", "status": "OK", "target": "BR4.1" },
+    { "id": "AC6.2.3", "status": "OK", "target": "BR4.3" },
+    { "id": "AC6.3.1", "status": "OK", "target": "BR2.1" },
+    { "id": "AC6.3.2", "status": "OK", "target": "BR2.2" },
+    { "id": "AC6.3.3", "status": "OK", "target": "BR2.3" },
+    { "id": "AC6.4.1", "status": "OK", "target": "BR3.1" },
+    { "id": "AC6.4.2", "status": "OK", "target": "BR3.1" },
+    { "id": "AC6.4.3", "status": "OK", "target": "BR5.1" }
+  ],
+  "reverse": []
+}

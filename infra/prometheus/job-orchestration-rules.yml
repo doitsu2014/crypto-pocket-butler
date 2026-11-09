@@ -1,0 +1,27 @@
+groups:
+  - name: job-orchestration
+    rules:
+      - alert: JobOrchestrationHeartbeatStale
+        expr: absent(job_orchestration_heartbeat_age_seconds) or job_orchestration_heartbeat_age_seconds > 180
+        for: 90s
+        labels:
+          severity: P2
+          service: job-orchestration
+        annotations:
+          summary: "The job orchestrator heartbeat is stale or absent"
+          runbook: "Check the orchestrator replicas, its Postgres and the lease row."
+      - alert: JobOrchestrationRunAbandoned
+        expr: increase(job_orchestration_runs_total{outcome="abandoned"}[10m]) > 0
+        labels:
+          severity: P2
+          service: job-orchestration
+        annotations:
+          summary: "A job run was abandoned after its attempts"
+      - alert: JobOrchestrationStillFailing
+        expr: increase(job_orchestration_job_failures_total[5m]) > 0 unless increase(job_orchestration_runs_total{outcome="succeeded"}[5m]) > 0
+        for: 300s
+        labels:
+          severity: P3
+          service: job-orchestration
+        annotations:
+          summary: "Jobs are failing with no succeeding run in the same five minutes"

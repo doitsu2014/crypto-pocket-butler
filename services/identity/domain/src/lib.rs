@@ -42,4 +42,4 @@ pub use shredding::{ShreddingKey, ShreddingKeyStatus};
 pub use support::{
     SupportAccessGrant, SupportGrantStatus, DEFAULT_GRANT_MINUTES, MAX_GRANT_MINUTES,
 };
-pub use user::{User, UserStatus};
+pub use user::{User, UserStatus, MAX_EMAIL_LEN};

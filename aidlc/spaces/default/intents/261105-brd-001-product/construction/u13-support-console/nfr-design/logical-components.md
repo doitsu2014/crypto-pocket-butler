@@ -7,7 +7,7 @@ Inputs: `nfr-requirements/*`, `functional-design/frontend-components.md`.
 | SupportApp shell | Route-split static bundle, CSP | CDN | One bundle |
 | RoleGate | Reads `app_metadata.role`; hides the shell | In-browser | No data loaded |
 | GrantClient | Request/approve/revoke/status through C2 | In-browser | Pending state shown |
-| MetadataClient | Search and metadata reads through C2 | In-browser | 403 reason shown |
+| MetadataClient | Grant-scoped search, metadata reads, and ticket metadata through C2 | In-browser | 403 reason shown; grant-required callout when no active grant |
 | IncidentClient | Create/update incidents through C2 (U1 backend) | In-browser | Submit error shown |
 | Support API (U1) | Grant/incident store, C10 audit, C9 notify | Backend | Owned by U1, not this unit |
 | Gateway | JWT validation, role enforcement, `/support` serving | Existing | 401/403 |

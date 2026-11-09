@@ -1,0 +1,14 @@
+[package]
+name = "portfolio-domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Portfolio domain: portfolios, targets, guardrails, valuation math, snapshots"
+
+[dependencies]
+chrono.workspace = true
+rust_decimal.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

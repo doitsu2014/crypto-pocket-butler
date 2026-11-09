@@ -21,7 +21,7 @@ pub const MAX_LEGAL_BASIS_LEN: usize = 120;
 /// The actions Audit's own paths may attribute to the system. The entity
 /// model's `system` default is a schema convenience, not a permission: the
 /// service sets it only for these actions.
-pub const SYSTEM_ACTION_ALLOW_LIST: [&str; 9] = [
+pub const SYSTEM_ACTION_ALLOW_LIST: [&str; 14] = [
     "system.job.run",
     "system.retention.run",
     "system.retention.reported",
@@ -31,6 +31,14 @@ pub const SYSTEM_ACTION_ALLOW_LIST: [&str; 9] = [
     "system.export.recovery",
     "system.support.expiry",
     "system.support.check_denied",
+    // Service-attributed brief and privacy events (u8-reporting). A reporting
+    // run acts without a user actor, so its events are system-attributed.
+    "reporting.brief.failed",
+    "reporting.brief.email_submitted",
+    "reporting.privacy.export",
+    "reporting.privacy.anonymise",
+    // The documented fallback action when a finer event is refused.
+    "system.reporting.brief",
 ];
 
 /// Who the actor is.

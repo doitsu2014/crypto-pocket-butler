@@ -57,6 +57,9 @@ impl UpstreamClient for ReqwestUpstreamClient {
         let url = format!("{}{}", self.base_url, request.path_and_query);
         let mut builder = self.client.request(method, url);
 
+        // Forward the support console's X-Support-Reason header unchanged. It
+        // must never be logged: the gateway records ids, outcomes, and the
+        // correlation id, never request headers.
         for (name, value) in &request.headers {
             if is_hop_by_hop(name) {
                 continue;

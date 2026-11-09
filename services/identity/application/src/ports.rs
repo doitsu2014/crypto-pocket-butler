@@ -45,6 +45,26 @@ pub enum ExternalError {
     Refused(String),
 }
 
+/// One active user and the timezone its reporting period is measured in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DueCandidate {
+    /// The user identifier.
+    pub user_id: UserId,
+    /// The stored IANA timezone name.
+    pub timezone: String,
+}
+
+/// Enumerates active users for the C3 reporting read.
+#[async_trait]
+pub trait DueUserRepository: Send + Sync {
+    /// Lists one page of active, non-anonymised users ordered by id.
+    async fn list_active(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<DueCandidate>, RepositoryError>;
+}
+
 /// Reads and writes the internal user records.
 #[async_trait]
 pub trait UserRepository: Send + Sync {

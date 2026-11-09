@@ -34,6 +34,7 @@ fn claims() -> VerifiedClaims {
         subject: "11111111-1111-4111-8111-111111111111".to_string(),
         role: Role::User,
         email_confirmed: true,
+        email: Some("user@example.com".to_string()),
         assurance: AssuranceLevel::Aal1,
         has_exchange_credentials: false,
         session_id: Some("session-1".to_string()),
@@ -56,6 +57,39 @@ fn provision_creates_a_pending_user_with_the_documented_defaults() {
     assert_eq!(user.timezone(), IanaTimeZone::parse("UTC").unwrap());
     assert_eq!(user.created_at(), at(9));
     assert_eq!(user.anonymised_at(), None);
+}
+
+#[test]
+fn provision_records_the_verified_address_and_anonymise_clears_it() {
+    let mut user = provisioned();
+    assert_eq!(user.email(), Some("user@example.com"));
+    assert!(user.email_verified());
+    assert_eq!(user.verified_email(), Some("user@example.com"));
+
+    user.anonymise(at(10));
+    assert_eq!(user.email(), None);
+    assert!(!user.email_verified());
+    assert_eq!(user.verified_email(), None);
+}
+
+#[test]
+fn an_unconfirmed_email_is_never_a_verified_contact() {
+    let mut unconfirmed = claims();
+    unconfirmed.email_confirmed = false;
+    let user = User::provision(UserId::generate(), &unconfirmed, at(9));
+    assert_eq!(user.email(), Some("user@example.com"));
+    assert!(!user.email_verified());
+    assert_eq!(user.verified_email(), None);
+}
+
+#[test]
+fn a_refresh_learns_the_address_from_the_token() {
+    let mut user = provisioned();
+    let mut claims = claims();
+    claims.email = Some("new@example.com".to_string());
+    user.apply_claims(&claims, at(10)).unwrap();
+    assert_eq!(user.email(), Some("new@example.com"));
+    assert_eq!(user.verified_email(), Some("new@example.com"));
 }
 
 #[test]

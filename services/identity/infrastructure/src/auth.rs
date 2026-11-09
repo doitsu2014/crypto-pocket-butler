@@ -257,6 +257,8 @@ struct RawClaims {
     #[serde(default)]
     email_confirmed_at: Option<DateTime<Utc>>,
     #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
     aal: Option<String>,
     #[serde(default)]
     session_id: Option<String>,
@@ -307,6 +309,10 @@ impl JwksValidator {
                 email_confirmed: claims
                     .email_confirmed
                     .unwrap_or(claims.email_confirmed_at.is_some()),
+                email: claims
+                    .email
+                    .map(|email| email.trim().to_string())
+                    .filter(|email| !email.is_empty()),
                 assurance: AssuranceLevel::parse(claims.aal.as_deref()),
                 has_exchange_credentials: metadata.has_exchange_credentials.unwrap_or(false),
                 session_id: claims.session_id,

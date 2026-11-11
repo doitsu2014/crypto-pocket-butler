@@ -2,12 +2,18 @@
 //! from domain and application types here; no DTO type reaches inward.
 
 use chrono::{DateTime, Utc};
+use identity_application::account_lifecycle::AccountStatusView;
 use identity_application::common::{FieldError, PrincipalView};
+use identity_application::jurisdiction::{
+    CheckResult, PublishEntry, PublishRequest, PublishedList,
+};
 use identity_application::ports::GateGrant;
+use identity_application::user_registry::UserRecordView;
 use identity_domain::{
-    BaseCurrency, ConsentPurpose, ConsentRecord, ConsentSource, ConsentView, DeletionRequest,
-    DeviceSession, DomainError, ExportRequest, Locale, Preferences, SupportAccessGrant, TimeZone,
-    User,
+    parse_iana_timezone, AssuranceLevel, BaseCurrency, BaseCurrencyCode, ConsentPurpose,
+    ConsentRecord, ConsentSource, ConsentView, DeletionRequest, DeviceSession, DomainError,
+    EffectivePreferences, ExportRequest, Locale, PreferenceUpdate, Preferences, Role,
+    SupportAccessGrant, TimeZone, User, VerifiedClaims,
 };
 use serde::{Deserialize, Serialize};
 
@@ -68,6 +74,119 @@ impl From<PrincipalView> for PrincipalResponse {
             status: view.status().as_str().to_string(),
             next_step: view.next_step().as_str().to_string(),
         }
+    }
+}
+
+/// The C3 metadata boundary for one user record. It never carries the provider
+/// subject, a credential, a token, or any portfolio content.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserResponse {
+    /// The internal user identifier.
+    pub id: String,
+    /// The display name, when one is stored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    /// The stored address, when one is stored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// Whether the stored address is confirmed.
+    pub email_verified: bool,
+    /// The lifecycle state.
+    pub status: String,
+    /// When the record was created.
+    pub created_at: DateTime<Utc>,
+    /// When the record last changed.
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<UserRecordView> for UserResponse {
+    fn from(view: UserRecordView) -> Self {
+        Self {
+            id: view.user_id().to_string(),
+            display_name: view.display_name().map(ToString::to_string),
+            email: view.email().map(ToString::to_string),
+            email_verified: view.email_verified(),
+            status: view.status().as_str().to_string(),
+            created_at: view.created_at(),
+            updated_at: view.updated_at(),
+        }
+    }
+}
+
+/// `PUT /v1/internal/users/by-subject/{subjectHash}` body (C3).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InternalProvisionRequest {
+    /// The plaintext provider subject the caller validated. It is never logged
+    /// and never returned; the registry stores only its hash and ciphertext.
+    pub subject: String,
+    /// `user`, `admin`, or `support`; defaults to `user`.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// The address the provider carries, when it carries one.
+    #[serde(default)]
+    pub email: Option<String>,
+    /// Whether the provider confirms the address.
+    #[serde(default)]
+    pub email_confirmed: bool,
+    /// The display name the provider supplies.
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// `aal1` or `aal2`.
+    #[serde(default)]
+    pub assurance: Option<String>,
+    /// Whether the caller holds exchange credentials.
+    #[serde(default)]
+    pub has_exchange_credentials: bool,
+    /// The self-declared ISO 3166-1 alpha-2 country, when the caller carries it.
+    #[serde(default)]
+    pub country_code: Option<String>,
+    /// The observed client address, when the caller carries it.
+    #[serde(default)]
+    pub client_ip: Option<String>,
+}
+
+impl InternalProvisionRequest {
+    /// Builds the validated-claims view the registry acts on. The trusted
+    /// caller's headers take precedence over the body for the declaration.
+    ///
+    /// # Errors
+    /// Returns [`DomainError::Invalid`] for an unknown role.
+    pub fn into_claims(
+        self,
+        country_header: Option<&str>,
+        ip_header: Option<&str>,
+    ) -> Result<VerifiedClaims, DomainError> {
+        if self.subject.trim().is_empty() {
+            return Err(DomainError::Required { field: "subject" });
+        }
+        if self.subject.chars().count() > 200 {
+            return Err(DomainError::TooLarge {
+                field: "subject",
+                limit: "200 characters",
+            });
+        }
+        let role = match self.role.as_deref() {
+            Some(raw) => Role::parse(raw)?,
+            None => Role::User,
+        };
+        Ok(VerifiedClaims {
+            subject: self.subject,
+            role,
+            email_confirmed: self.email_confirmed,
+            email: self.email.map(|email| email.trim().to_string()),
+            display_name: self.display_name,
+            assurance: AssuranceLevel::parse(self.assurance.as_deref()),
+            has_exchange_credentials: self.has_exchange_credentials,
+            session_id: None,
+            user_agent: None,
+            location: None,
+            country_code: country_header
+                .map(ToString::to_string)
+                .or(self.country_code),
+            client_ip: ip_header.map(ToString::to_string).or(self.client_ip),
+        })
     }
 }
 
@@ -192,6 +311,57 @@ pub struct PreferencesRequest {
 }
 
 impl PreferencesRequest {
+    /// Validates the supplied fields against the U4 closed sets and builds a
+    /// partial update against `user_preferences`. Omitted fields are untouched,
+    /// so a write through the legacy path can never be read back as a default.
+    ///
+    /// # Errors
+    /// Returns every field problem at once.
+    pub fn into_update(self) -> Result<PreferenceUpdate, Vec<FieldError>> {
+        let mut errors = Vec::new();
+        let locale = match self.locale {
+            Some(raw) => match Locale::parse(&raw) {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    errors.push(field(error));
+                    None
+                }
+            },
+            None => None,
+        };
+        let base_currency = match self.base_currency {
+            Some(raw) => match BaseCurrencyCode::parse(&raw) {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    errors.push(field(error));
+                    None
+                }
+            },
+            None => None,
+        };
+        let timezone = match self.timezone {
+            Some(raw) => match parse_iana_timezone(&raw) {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    errors.push(field(error));
+                    None
+                }
+            },
+            None => None,
+        };
+        if errors.is_empty() {
+            Ok(PreferenceUpdate {
+                locale,
+                base_currency,
+                timezone,
+                notification_email: None,
+                notification_push: None,
+            })
+        } else {
+            Err(errors)
+        }
+    }
+
     /// Validates the supplied fields and fills the omitted ones from `current`.
     ///
     /// # Errors
@@ -265,6 +435,21 @@ impl From<&User> for PreferencesResponse {
             locale: user.locale().as_str().to_string(),
             base_currency: user.base_currency().as_str().to_string(),
             timezone: user.timezone().as_str().to_string(),
+        }
+    }
+}
+
+impl PreferencesResponse {
+    /// Builds the legacy flat response from the effective `user_preferences`
+    /// values, so the retired-owner route returns the same shape without reading
+    /// u1's provider-derived columns.
+    #[must_use]
+    pub fn from_effective(effective: &EffectivePreferences) -> Self {
+        Self {
+            user_id: effective.user_id().to_string(),
+            locale: effective.locale().value().as_str().to_string(),
+            base_currency: effective.base_currency().value().as_str().to_string(),
+            timezone: effective.timezone().value().as_str().to_string(),
         }
     }
 }
@@ -374,6 +559,16 @@ pub struct DeletionResponse {
     pub failure_reason: Option<String>,
     /// The labelled retention categories.
     pub retained_categories: Vec<RetainedCategoryView>,
+    /// The end of the recovery window (`recoveryEndsAt`, C7/W2).
+    pub recovery_ends_at: DateTime<Utc>,
+    /// When the owner restored, if they did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancelled_at: Option<DateTime<Utc>>,
+    /// When the erasure completed, if it did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub erased_at: Option<DateTime<Utc>>,
+    /// Failed erasure attempts so far.
+    pub attempt_count: u32,
 }
 
 /// One retained category.
@@ -402,6 +597,44 @@ impl From<&DeletionRequest> for DeletionResponse {
                     basis: category.basis().to_string(),
                 })
                 .collect(),
+            recovery_ends_at: deletion.recoverable_until(),
+            cancelled_at: deletion.cancelled_at(),
+            erased_at: deletion.erased_at(),
+            attempt_count: deletion.attempt_count(),
+        }
+    }
+}
+
+/// `POST /internal/users/{userId}/disable` and `/restore` body.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminStatusRequest {
+    /// The recorded reason (1–500 characters, BR5.2).
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// The answer to a disable or restore (C7).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountStatusResponse {
+    /// The account the change concerns.
+    pub user_id: String,
+    /// The status after the change.
+    pub status: String,
+    /// The recorded transition.
+    pub transition_id: String,
+    /// When the change was recorded.
+    pub occurred_at: DateTime<Utc>,
+}
+
+impl From<&AccountStatusView> for AccountStatusResponse {
+    fn from(view: &AccountStatusView) -> Self {
+        Self {
+            user_id: view.user_id().to_string(),
+            status: view.status().as_str().to_string(),
+            transition_id: view.transition().id().to_string(),
+            occurred_at: view.transition().occurred_at(),
         }
     }
 }
@@ -501,6 +734,116 @@ impl From<GateGrant> for VerifiedGate {
         Self {
             jurisdiction: grant.jurisdiction,
             expires_at: grant.expires_at,
+        }
+    }
+}
+
+/// `POST /v1/internal/jurisdiction/check` body (C8).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JurisdictionCheckRequest {
+    /// The self-declared ISO 3166-1 alpha-2 code.
+    pub country_code: String,
+    /// The address the trusted caller observed, never a client-supplied header.
+    pub ip: String,
+}
+
+/// The check response (C8).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JurisdictionCheckResponse {
+    /// Whether the check may proceed.
+    pub allowed: bool,
+    /// `self_declared`, `ip`, or `both`; absent when allowed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restricted_by: Option<String>,
+    /// The list version the decision cites.
+    pub list_version: String,
+    /// The evidence record the decision wrote.
+    pub evidence_id: String,
+}
+
+impl JurisdictionCheckResponse {
+    /// Maps the application result at the boundary.
+    #[must_use]
+    pub fn from_result(result: &CheckResult) -> Self {
+        Self {
+            allowed: result.decision().is_allowed(),
+            restricted_by: result
+                .decision()
+                .restricted_by()
+                .map(|source| source.as_str().to_string()),
+            list_version: result.decision().list_version().to_string(),
+            evidence_id: result.evidence_id().to_string(),
+        }
+    }
+}
+
+/// One entry of a publish request.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JurisdictionEntryRequest {
+    /// The ISO 3166-1 alpha-2 code.
+    pub country_code: String,
+    /// `allowed` or `restricted`.
+    pub status: String,
+    /// Who maintains the entry.
+    pub source: String,
+}
+
+/// `POST /v1/internal/jurisdiction/publish` body (W3).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JurisdictionPublishRequest {
+    /// The monotonic version label.
+    pub version: String,
+    /// The complete set of country rules.
+    pub entries: Vec<JurisdictionEntryRequest>,
+    /// An optional caller-computed digest to verify.
+    #[serde(default)]
+    pub checksum: Option<String>,
+}
+
+impl JurisdictionPublishRequest {
+    /// Maps the wire form to the application request.
+    #[must_use]
+    pub fn into_application(self) -> PublishRequest {
+        PublishRequest {
+            version: self.version,
+            entries: self
+                .entries
+                .into_iter()
+                .map(|entry| PublishEntry {
+                    country_code: entry.country_code,
+                    status: entry.status,
+                    source: entry.source,
+                })
+                .collect(),
+            expected_checksum: self.checksum,
+        }
+    }
+}
+
+/// The publish response (W3).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JurisdictionPublishResponse {
+    /// The published version label.
+    pub version: String,
+    /// How many countries the version names.
+    pub entry_count: usize,
+    /// The digest over the ordered entries.
+    pub checksum: String,
+}
+
+impl JurisdictionPublishResponse {
+    /// Maps the application result at the boundary.
+    #[must_use]
+    pub fn from_published(list: &PublishedList) -> Self {
+        Self {
+            version: list.version().to_string(),
+            entry_count: list.entry_count(),
+            checksum: list.checksum().to_string(),
         }
     }
 }

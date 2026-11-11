@@ -1,0 +1,21 @@
+{
+  "stage": "functional-design",
+  "unit": "u5-account-lifecycle",
+  "upstream_ids": ["AC4.1.1", "AC4.1.2", "AC4.2.1", "AC4.2.2", "AC4.3.1", "AC4.3.2", "AC4.3.3", "AC4.4.1", "AC4.4.2", "AC4.5.1", "AC4.5.2", "AC7.2.1", "AC7.2.2"],
+  "coverage": [
+    { "id": "AC4.1.1", "status": "OK", "target": "BR5.1" },
+    { "id": "AC4.1.2", "status": "OK", "target": "BR5.1" },
+    { "id": "AC4.2.1", "status": "OK", "target": "BR5.2" },
+    { "id": "AC4.2.2", "status": "OK", "target": "BR5.2" },
+    { "id": "AC4.3.1", "status": "OK", "target": "BR5.3, BR5.4" },
+    { "id": "AC4.3.2", "status": "OK", "target": "BR5.5, BR5.10" },
+    { "id": "AC4.3.3", "status": "OK", "target": "BR5.7, amended by this stage's Q4: reads and sign-in are allowed during the window, writes are refused" },
+    { "id": "AC4.4.1", "status": "OK", "target": "BR5.7" },
+    { "id": "AC4.4.2", "status": "N/A", "target": "legal-hold behaviour is BRD-017's, which has not been worked; this release erases unconditionally (BR5.10)" },
+    { "id": "AC4.5.1", "status": "OK", "target": "BR5.8" },
+    { "id": "AC4.5.2", "status": "OK", "target": "BR5.6" },
+    { "id": "AC7.2.1", "status": "OK", "target": "BR5.9" },
+    { "id": "AC7.2.2", "status": "OK", "target": "BR5.9" }
+  ],
+  "reverse": []
+}

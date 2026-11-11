@@ -1,0 +1,25 @@
+{
+  "stage": "infrastructure-design",
+  "unit": "u6-jurisdiction-gate",
+  "upstream_ids": ["NFR2.1", "NFR2.6", "NFR20.5", "NFR2.5", "NFR20.3", "NFR9.1", "NFR23.4", "NFR23.3", "NFR23.2", "NFR19.1", "NFR23.1", "NFR19.2", "NFR20.1", "NFR20.6", "NFR1.1", "NFR18.1", "NFR1.3", "NFR1.4"],
+  "coverage": [
+    { "id": "NFR2.1", "status": "OK", "target": "Identity API replicas with an in-memory list" },
+    { "id": "NFR2.6", "status": "OK", "target": "Postgres versioned list publish path" },
+    { "id": "NFR20.5", "status": "OK", "target": "10 s replica refresh timer" },
+    { "id": "NFR2.5", "status": "OK", "target": "in-memory active list" },
+    { "id": "NFR20.3", "status": "OK", "target": "provider client quota and in-process decision cache" },
+    { "id": "NFR9.1", "status": "OK", "target": "TLS at the CDN edge and on provider egress" },
+    { "id": "NFR23.4", "status": "OK", "target": "circuit breaker and fail-closed configuration" },
+    { "id": "NFR23.3", "status": "OK", "target": "gateway-derived connection address; /internal not exposed at the edge" },
+    { "id": "NFR23.2", "status": "OK", "target": "publish Docker secret and admin role gate" },
+    { "id": "NFR19.1", "status": "OK", "target": "Loki pipeline with no raw IP field" },
+    { "id": "NFR23.1", "status": "OK", "target": "Postgres role grants on jurisdiction tables" },
+    { "id": "NFR19.2", "status": "OK", "target": "checksum column on jurisdiction_list_versions" },
+    { "id": "NFR20.1", "status": "OK", "target": "in-memory list sized to 300 entries" },
+    { "id": "NFR20.6", "status": "OK", "target": "growth headroom at 10x launch size" },
+    { "id": "NFR1.1", "status": "OK", "target": "replicated Identity API with Swarm health checks" },
+    { "id": "NFR18.1", "status": "OK", "target": "Supabase Postgres backup and recovery" },
+    { "id": "NFR1.3", "status": "OK", "target": "circuit breaker fail-closed path" },
+    { "id": "NFR1.4", "status": "OK", "target": "continued-use 503 path" }
+  ]
+}

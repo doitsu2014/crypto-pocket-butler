@@ -148,6 +148,9 @@ pub fn from_app_error(error: &AppError, correlation_id: &str) -> ProblemDetails 
             Some(detail.clone()),
             correlation_id,
         ),
+        AppError::Gone(detail) => {
+            ProblemDetails::new(410, "gone", "Gone", Some(detail.clone()), correlation_id)
+        }
         AppError::Unavailable(detail) => ProblemDetails::new(
             503,
             "unavailable",

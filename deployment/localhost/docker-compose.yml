@@ -271,6 +271,7 @@ services:
       RUST_LOG: ${RUST_LOG:-info}
       GATEWAY_PORT: "8080"
       ASSET_REGISTRY_URL: http://asset-registry:8081
+      IDENTITY_URL: http://identity-api:8083
       <<: *jwt
     depends_on:
       asset-registry:
@@ -352,6 +353,9 @@ services:
       RUST_LOG: ${RUST_LOG:-info}
       IDENTITY_WORKER_PORT: "8085"
       DATABASE_URL: postgres://identity_app:${LOCAL_DB_PASSWORD:?}@db:5432/postgres
+      # The erasure step connects as identity_retention: identity_app is
+      # append-only on consent, so this is a second, delete-only DSN.
+      IDENTITY_RETENTION_DATABASE_URL: postgres://identity_retention:${LOCAL_DB_PASSWORD:?}@db:5432/postgres
       SERVICE_TOKENS_FILE: /run/secrets/service_tokens.json
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?}
       SUPABASE_AUTH_URL: http://auth:9999

@@ -1,0 +1,22 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u5-account-lifecycle",
+  "upstream_ids": ["NFR21", "NFR22", "NFR23", "NFR24", "NFR25", "NFR26"],
+  "coverage": [
+    { "id": "NFR21", "status": "OK", "target": "audited transitions follow the Audit service's six months; status_transitions and deletion_requests are retained as account evidence and anonymised with the tombstone (NFR22.3), not deleted by a retention job in this unit" },
+    { "id": "NFR22", "status": "OK", "target": "NFR22.1, NFR22.2, NFR22.3" },
+    { "id": "NFR23", "status": "OK", "target": "NFR23.1, NFR23.2" },
+    { "id": "NFR24", "status": "OK", "target": "NFR10.3 (fresh status per request), NFR24.1, NFR24.2" },
+    { "id": "NFR25", "status": "N/A", "target": "backend unit; the account-status screens are U7's" },
+    { "id": "NFR26", "status": "N/A", "target": "no user-facing copy; U7 owns the wording of the deletion and restore screens" }
+  ],
+  "reverse": [
+    { "id": "NFR1.x", "status": "N/A", "target": "availability and failure prefixes inherited from the BRD-001 intent requirements record (NFR1.1–NFR1.4 in reliability-requirements.md)" },
+    { "id": "NFR2.x", "status": "N/A", "target": "latency prefixes inherited from the BRD-001 record (NFR2.1–NFR2.6 in performance-requirements.md)" },
+    { "id": "NFR9.x/NFR10.x", "status": "N/A", "target": "authentication and authorisation prefixes inherited from the BRD-001 record (NFR9.1–NFR10.1 in security-requirements.md)" },
+    { "id": "NFR17.x", "status": "N/A", "target": "observability prefixes inherited from the BRD-001 record (NFR17.1–NFR17.7 in observability-requirements.md)" },
+    { "id": "NFR18.x", "status": "N/A", "target": "recovery prefixes inherited from the BRD-001 record (NFR18.1–NFR18.3 in reliability-requirements.md)" },
+    { "id": "NFR19.x", "status": "N/A", "target": "audit prefixes inherited from the BRD-001 record (NFR19.1–NFR19.3 in security-requirements.md)" },
+    { "id": "NFR20.x", "status": "N/A", "target": "scalability prefixes inherited from the BRD-001 record (NFR20.1–NFR20.3 in scalability-requirements.md)" }
+  ]
+}

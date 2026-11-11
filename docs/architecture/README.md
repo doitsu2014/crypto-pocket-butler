@@ -229,6 +229,15 @@ TypeScript 5.
    over internal HTTP and never call email or push providers directly.
 9. Support reads go through the gateway and Identity with a recorded reason, a time bound and
    an audit event; the Support Console never calls portfolio or credential endpoints.
+10. Role, status, and ownership decisions are made once inside the Identity Service and called
+    in-process by every Identity module. A service outside Identity (Account, Portfolio, and
+    any future caller) enforces the same rule through C4 `POST /internal/authorize` with its
+    own service token in `x-service-token` and the user's JWT unchanged in `Authorization`.
+    The subject and role come from that validated JWT — a body carrying `callerSubject` or
+    `roleClaim` is refused with 400 — and every denial is audited before the refusal returns.
+    The admin role change is reachable as `PUT /v1/admin/users/{id}/role` through the gateway
+    (admin required at the edge and re-checked inside Identity from the same token); the C4
+    `/internal/admin/role` path remains for a service caller.
 
 ---
 
@@ -310,6 +319,7 @@ covers `Production` only; Supabase services are external systems, not deployment
 | Self-hosted Swarm observability stack (Loki/Prometheus/Tempo/Grafana) instead of Supabase Logs & Metrics | One more stack to deploy, upgrade and back up; Supabase is scoped to the database platform; dashboards, alert rules and retention are fully under product control |
 | Single Swarm cluster with CDN and multi-AZ at launch | No active-active multi-region; accepted for launch, revisit when latency or availability targets require it |
 | Consent-aware analytics only | Lower acquisition insight than ad-tech tracking; accepted for privacy and regulatory safety |
+| Authorisation decided in-process inside Identity, with a thin C4 endpoint for other services (instead of a shared library or a network hop per in-Identity request) | The operation catalogue, status read, audit write, and ownership rule exist once; in-Identity callers pay no hop; Account and Portfolio use one small HTTP surface with a service token plus the forwarded JWT |
 
 ---
 
@@ -318,7 +328,7 @@ covers `Production` only; Supabase services are external systems, not deployment
 | BRD | Where it is satisfied |
 | --- | --- |
 | BRD-001 Product vision and scope | Whole model; global retail aggregation, P&L, valuation, orders, briefs, billing and support |
-| BRD-002 Users, roles and permissions | Identity Service (roles from `app_metadata.role`), gateway deny-by-default + admin/support gating, Support Console |
+| BRD-002 Users, roles and permissions | Identity Service (roles from `app_metadata.role`, one in-process authorisation decision exposed through C4 for Account and Portfolio), gateway deny-by-default + admin/support gating, Support Console |
 | BRD-003 Authentication and sessions | Supabase Auth + SPA (PKCE, MFA, passkeys, magic link), Identity webhooks, session revocation |
 | BRD-004 Account management and coverage | Account Service (verified read-only credentials, multi-venue and multi-chain adapters, WalletConnect, xpub, CSV, spam filtering, quotas) |
 | BRD-005 Asset catalog and market data | Asset Registry Service, Market Data Service (multi-source prices, FX, benchmarks, licensing, freshness) |

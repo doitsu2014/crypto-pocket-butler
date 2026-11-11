@@ -3,7 +3,9 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Loading } from "../components";
 import SignInPage from "../features/auth/SignInPage";
 import VerifyEmailPage from "../features/auth/VerifyEmailPage";
+import { GateFullPageRetry } from "../features/signup-gates/GateFullPageRetry";
 import { AppShell } from "./AppShell";
+import { RequireGatesPassed } from "./RequireGatesPassed";
 import { RequireSession } from "./RequireSession";
 
 /**
@@ -13,6 +15,7 @@ import { RequireSession } from "./RequireSession";
  * lazily loaded route chunk (performance design: code splitting).
  */
 
+const SignupGatesPage = lazy(() => import("../features/signup-gates/SignupGatesPage"));
 const OnboardingPage = lazy(() => import("../features/onboarding/OnboardingPage"));
 const ConnectPage = lazy(() => import("../features/connect/ConnectPage"));
 const DashboardPage = lazy(() => import("../features/portfolio/DashboardPage"));
@@ -39,6 +42,16 @@ function protectedPage(node: ReactNode): ReactNode {
   return <RequireSession>{page(node)}</RequireSession>;
 }
 
+/**
+ * A post-sign-in product route: signed in, and only reachable once every
+ * sign-up gate has passed on the server (AC6.2.2, AC6.5.2). `/settings/mfa`
+ * stays outside the guard because it is itself an `owned-elsewhere`
+ * destination.
+ */
+function gatedPage(node: ReactNode): ReactNode {
+  return <RequireSession>{<RequireGatesPassed>{page(node)}</RequireGatesPassed>}</RequireSession>;
+}
+
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -46,44 +59,49 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <SignInPage /> },
       { path: "verify-email", element: <VerifyEmailPage /> },
-      { path: "onboarding", element: protectedPage(<OnboardingPage />) },
-      { path: "connect", element: protectedPage(<ConnectPage />) },
-      { path: "dashboard", element: protectedPage(<DashboardPage />) },
-      { path: "portfolios", element: protectedPage(<PortfoliosPage />) },
+      {
+        path: "gates",
+        element: protectedPage(<SignupGatesPage />),
+        errorElement: <GateFullPageRetry onRetry={() => window.location.reload()} />,
+      },
+      { path: "onboarding", element: gatedPage(<OnboardingPage />) },
+      { path: "connect", element: gatedPage(<ConnectPage />) },
+      { path: "dashboard", element: gatedPage(<DashboardPage />) },
+      { path: "portfolios", element: gatedPage(<PortfoliosPage />) },
       {
         path: "portfolios/:portfolioId",
-        element: protectedPage(<PortfolioDetailPage />),
+        element: gatedPage(<PortfolioDetailPage />),
       },
       {
         path: "portfolios/:portfolioId/targets",
-        element: protectedPage(<TargetsPage />),
+        element: gatedPage(<TargetsPage />),
       },
       {
         path: "portfolios/:portfolioId/intents",
-        element: protectedPage(<IntentsPage />),
+        element: gatedPage(<IntentsPage />),
       },
       {
         path: "portfolios/:portfolioId/trades",
-        element: protectedPage(<TradesPage />),
+        element: gatedPage(<TradesPage />),
       },
       {
         path: "portfolios/:portfolioId/history",
-        element: protectedPage(<HistoryPage />),
+        element: gatedPage(<HistoryPage />),
       },
-      { path: "activity", element: protectedPage(<ActivityPage />) },
-      { path: "briefs", element: protectedPage(<BriefsPage />) },
+      { path: "activity", element: gatedPage(<ActivityPage />) },
+      { path: "briefs", element: gatedPage(<BriefsPage />) },
       {
         path: "briefs/:briefId",
-        element: protectedPage(<BriefDetailPage />),
+        element: gatedPage(<BriefDetailPage />),
       },
       {
         path: "notifications",
-        element: protectedPage(<NotificationsPage />),
+        element: gatedPage(<NotificationsPage />),
       },
-      { path: "settings", element: protectedPage(<SettingsPage />) },
+      { path: "settings", element: gatedPage(<SettingsPage />) },
       { path: "settings/mfa", element: protectedPage(<MfaPage />) },
-      { path: "privacy", element: protectedPage(<PrivacyPage />) },
-      { path: "help", element: protectedPage(<HelpPage />) },
+      { path: "privacy", element: gatedPage(<PrivacyPage />) },
+      { path: "help", element: gatedPage(<HelpPage />) },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

@@ -1,0 +1,297 @@
+{
+  "stage": "code-generation",
+  "unit": "u1-user-registry",
+  "upstream_ids": [
+    "AC1.1.1",
+    "AC1.1.2",
+    "AC1.2.1",
+    "AC1.2.2",
+    "AC1.3.1",
+    "AC1.3.2",
+    "AC1.4.1",
+    "AC1.4.2",
+    "AC1.5.1",
+    "AC1.5.2",
+    "AC1.6.1",
+    "AC1.6.2",
+    "AC4.1.1",
+    "AC4.1.2",
+    "AC7.1.1",
+    "AC7.1.2",
+    "NFR2.1",
+    "NFR2.2",
+    "NFR2.3",
+    "NFR2.4",
+    "NFR22.1",
+    "NFR9.1",
+    "NFR10.1",
+    "NFR23.1",
+    "NFR23.2",
+    "NFR9.2",
+    "NFR19.1",
+    "NFR20.1",
+    "NFR20.2",
+    "NFR20.3",
+    "NFR20.4",
+    "NFR1.1",
+    "NFR1.2",
+    "NFR1.3",
+    "NFR1.4",
+    "NFR24.1",
+    "NFR18.1",
+    "BR1.1",
+    "BR1.2",
+    "BR1.3",
+    "BR1.4",
+    "BR1.5",
+    "BR1.6",
+    "BR1.7",
+    "BR1.8",
+    "BR1.9",
+    "BR1.10"
+  ],
+  "coverage": [
+    {
+      "id": "AC1.1.1",
+      "status": "OK",
+      "target": "services/identity/tests/application.rs"
+    },
+    {
+      "id": "AC1.1.2",
+      "status": "OK",
+      "target": "services/identity/tests/repositories.rs"
+    },
+    {
+      "id": "AC1.2.1",
+      "status": "OK",
+      "target": "services/identity/domain/src/user.rs"
+    },
+    {
+      "id": "AC1.2.2",
+      "status": "OK",
+      "target": "services/identity/tests/domain.rs"
+    },
+    {
+      "id": "AC1.3.1",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/repositories/users.rs"
+    },
+    {
+      "id": "AC1.3.2",
+      "status": "Deferred",
+      "target": "ownership columns live on other units' resources; u1 supplies the stable internal user id they reference"
+    },
+    {
+      "id": "AC1.4.1",
+      "status": "OK",
+      "target": "services/identity/domain/src/user.rs"
+    },
+    {
+      "id": "AC1.4.2",
+      "status": "OK",
+      "target": "services/identity/tests/domain.rs"
+    },
+    {
+      "id": "AC1.5.1",
+      "status": "OK",
+      "target": "services/identity/migrations/0001_init.up.sql"
+    },
+    {
+      "id": "AC1.5.2",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/auth.rs"
+    },
+    {
+      "id": "AC1.6.1",
+      "status": "OK",
+      "target": "services/identity/tests/application.rs"
+    },
+    {
+      "id": "AC1.6.2",
+      "status": "OK",
+      "target": "services/identity/domain/src/user.rs"
+    },
+    {
+      "id": "AC4.1.1",
+      "status": "OK",
+      "target": "services/identity/domain/src/user.rs"
+    },
+    {
+      "id": "AC4.1.2",
+      "status": "OK",
+      "target": "services/identity/tests/repositories.rs"
+    },
+    {
+      "id": "AC7.1.1",
+      "status": "OK",
+      "target": "services/identity/application/src/user_registry.rs"
+    },
+    {
+      "id": "AC7.1.2",
+      "status": "OK",
+      "target": "services/identity/tests/application.rs"
+    },
+    {
+      "id": "NFR2.1",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/repositories/users.rs"
+    },
+    {
+      "id": "NFR2.2",
+      "status": "OK",
+      "target": "services/identity/application/src/principal.rs"
+    },
+    {
+      "id": "NFR2.3",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/repositories/users.rs"
+    },
+    {
+      "id": "NFR2.4",
+      "status": "OK",
+      "target": "services/identity/domain/src/user.rs"
+    },
+    {
+      "id": "NFR22.1",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/repositories/users.rs"
+    },
+    {
+      "id": "NFR9.1",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/auth.rs"
+    },
+    {
+      "id": "NFR10.1",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/auth.rs"
+    },
+    {
+      "id": "NFR23.1",
+      "status": "OK",
+      "target": "services/identity/migrations/0001_init.up.sql"
+    },
+    {
+      "id": "NFR23.2",
+      "status": "OK",
+      "target": "services/identity/migrations/0004_user_registry_extensions.up.sql"
+    },
+    {
+      "id": "NFR9.2",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/auth.rs"
+    },
+    {
+      "id": "NFR19.1",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/audit_client.rs"
+    },
+    {
+      "id": "NFR20.1",
+      "status": "N/A",
+      "target": "stateless replicas; scaling is the Swarm stack's replica policy, not this unit's code"
+    },
+    {
+      "id": "NFR20.2",
+      "status": "N/A",
+      "target": "stateless replicas; scaling is the Swarm stack's replica policy, not this unit's code"
+    },
+    {
+      "id": "NFR20.3",
+      "status": "N/A",
+      "target": "stateless replicas; scaling is the Swarm stack's replica policy, not this unit's code"
+    },
+    {
+      "id": "NFR20.4",
+      "status": "N/A",
+      "target": "stateless replicas; scaling is the Swarm stack's replica policy, not this unit's code"
+    },
+    {
+      "id": "NFR1.1",
+      "status": "N/A",
+      "target": "availability is the Swarm health-check and replica policy's; this unit adds no availability mechanism"
+    },
+    {
+      "id": "NFR1.2",
+      "status": "N/A",
+      "target": "availability is the Swarm health-check and replica policy's; this unit adds no availability mechanism"
+    },
+    {
+      "id": "NFR1.3",
+      "status": "N/A",
+      "target": "availability is the Swarm health-check and replica policy's; this unit adds no availability mechanism"
+    },
+    {
+      "id": "NFR1.4",
+      "status": "N/A",
+      "target": "availability is the Swarm health-check and replica policy's; this unit adds no availability mechanism"
+    },
+    {
+      "id": "NFR24.1",
+      "status": "OK",
+      "target": "services/identity/http/src/middleware.rs"
+    },
+    {
+      "id": "NFR18.1",
+      "status": "N/A",
+      "target": "backup and restore are the platform's (Supabase Postgres automated backups); documented in the code summary"
+    },
+    {
+      "id": "BR1.1",
+      "status": "OK",
+      "target": "services/identity/tests/repositories.rs"
+    },
+    {
+      "id": "BR1.2",
+      "status": "OK",
+      "target": "services/identity/domain/src/user.rs"
+    },
+    {
+      "id": "BR1.3",
+      "status": "Deferred",
+      "target": "ownership columns live on other units' resources; u1 supplies the stable internal user id they reference"
+    },
+    {
+      "id": "BR1.4",
+      "status": "OK",
+      "target": "services/identity/domain/src/user.rs"
+    },
+    {
+      "id": "BR1.5",
+      "status": "OK",
+      "target": "services/identity/migrations/0001_init.up.sql"
+    },
+    {
+      "id": "BR1.6",
+      "status": "OK",
+      "target": "services/identity/application/src/principal.rs"
+    },
+    {
+      "id": "BR1.7",
+      "status": "OK",
+      "target": "services/identity/domain/src/user.rs"
+    },
+    {
+      "id": "BR1.8",
+      "status": "OK",
+      "target": "services/identity/infrastructure/src/repositories/users.rs"
+    },
+    {
+      "id": "BR1.9",
+      "status": "OK",
+      "target": "services/identity/application/src/user_registry.rs"
+    },
+    {
+      "id": "BR1.10",
+      "status": "OK",
+      "target": "services/identity/tests/repositories.rs"
+    }
+  ],
+  "reverse": [
+    {
+      "id": "BR1.8",
+      "status": "N/A",
+      "target": "extends NFR22 within this unit: the subject is persisted only as a hash and deterministic ciphertext"
+    }
+  ]
+}

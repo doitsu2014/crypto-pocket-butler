@@ -313,11 +313,14 @@ impl JwksValidator {
                     .email
                     .map(|email| email.trim().to_string())
                     .filter(|email| !email.is_empty()),
+                display_name: None,
                 assurance: AssuranceLevel::parse(claims.aal.as_deref()),
                 has_exchange_credentials: metadata.has_exchange_credentials.unwrap_or(false),
                 session_id: claims.session_id,
                 user_agent: None,
                 location: None,
+                country_code: None,
+                client_ip: None,
             },
             kid,
         ))

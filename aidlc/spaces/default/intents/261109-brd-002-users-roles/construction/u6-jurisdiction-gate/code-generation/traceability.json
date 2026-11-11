@@ -1,0 +1,263 @@
+{
+  "stage": "code-generation",
+  "unit": "u6-jurisdiction-gate",
+  "upstream_ids": ["AC6.3.1", "AC6.3.2", "AC6.4.1", "AC6.4.2"],
+  "stories": ["US6.3", "US6.4"],
+  "contracts": ["C8", "C9"],
+  "coverage": [
+    {
+      "id": "BR1.1",
+      "status": "OK",
+      "code": [
+        "services/identity/domain/src/jurisdiction.rs::decide",
+        "services/identity/application/src/jurisdiction.rs::CheckJurisdiction::check"
+      ],
+      "tests": [
+        "services/identity/tests/domain.rs::jurisdiction_decision_allows_only_when_both_signals_are_allowed",
+        "services/identity/tests/application.rs::jurisdiction_both_allowed_signals_allow_and_the_decision_cites_the_list_version"
+      ]
+    },
+    {
+      "id": "BR1.2",
+      "status": "OK",
+      "code": [
+        "services/identity/domain/src/jurisdiction.rs::decide",
+        "services/identity/domain/src/jurisdiction.rs::RestrictionSource::SelfDeclared"
+      ],
+      "tests": [
+        "services/identity/tests/domain.rs::jurisdiction_decision_names_a_restricted_self_declared_country",
+        "services/identity/tests/application.rs::jurisdiction_a_self_declared_restricted_country_denies_and_is_audited"
+      ]
+    },
+    {
+      "id": "BR1.3",
+      "status": "OK",
+      "code": [
+        "services/identity/domain/src/jurisdiction.rs::decide",
+        "services/identity/domain/src/jurisdiction.rs::RestrictionSource::Ip",
+        "services/identity/domain/src/jurisdiction.rs::RestrictionSource::Both"
+      ],
+      "tests": [
+        "services/identity/tests/domain.rs::jurisdiction_decision_names_a_restricted_ip_country_and_both_when_both_restrict",
+        "services/identity/tests/application.rs::jurisdiction_an_ip_restricted_country_denies_and_the_stricter_signal_wins"
+      ]
+    },
+    {
+      "id": "BR1.4",
+      "status": "OK",
+      "code": [
+        "services/identity/domain/src/jurisdiction.rs::CountryCode::parse",
+        "services/identity/application/src/jurisdiction.rs::CheckJurisdiction::check",
+        "services/identity/application/src/jurisdiction.rs::PublishList::publish"
+      ],
+      "tests": [
+        "services/identity/tests/domain.rs::jurisdiction_country_code_accepts_two_upper_case_letters_and_refuses_other_forms",
+        "services/identity/tests/application.rs::jurisdiction_an_invalid_country_or_ip_is_refused_before_the_provider_is_called",
+        "services/identity/tests/http.rs::jurisdiction_check_refuses_an_invalid_country_and_a_client_forwarded_ip"
+      ]
+    },
+    {
+      "id": "BR1.5",
+      "status": "OK",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs::CheckJurisdiction::locate"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_a_provider_failure_fails_closed_and_opens_the_circuit",
+        "services/identity/tests/http.rs::jurisdiction_check_fails_closed_when_the_provider_is_unavailable"
+      ]
+    },
+    {
+      "id": "BR1.6",
+      "status": "OK",
+      "code": [
+        "services/identity/domain/src/jurisdiction.rs::JurisdictionListVersion::from_stored",
+        "services/identity/domain/src/jurisdiction.rs::JurisdictionListVersion::status_for",
+        "services/identity/infrastructure/src/repositories/jurisdiction.rs::PgJurisdictionListRepository::active"
+      ],
+      "tests": [
+        "services/identity/tests/domain.rs::jurisdiction_list_refuses_a_stored_checksum_that_does_not_match_its_entries",
+        "services/identity/tests/domain.rs::jurisdiction_list_treats_an_absent_country_as_restricted",
+        "services/identity/tests/repositories.rs::jurisdiction_a_stored_list_with_a_mismatched_checksum_is_refused"
+      ]
+    },
+    {
+      "id": "BR1.7",
+      "status": "OK",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs::write_evidence",
+        "services/identity/infrastructure/src/audit_client.rs::HttpDecisionAudit"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_a_self_declared_restricted_country_denies_and_is_audited",
+        "services/identity/tests/application.rs::jurisdiction_an_audit_failure_refuses_the_decision_and_the_retry_is_idempotent"
+      ]
+    },
+    {
+      "id": "BR1.8",
+      "status": "OK",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs::CheckJurisdiction::check"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_an_ip_restricted_country_denies_and_the_stricter_signal_wins"
+      ],
+      "note": "The check is the continued-use re-evaluation path; the caller applies the denial."
+    },
+    {
+      "id": "BR1.9",
+      "status": "OK",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs::CheckJurisdiction::check"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_a_self_declared_restricted_country_denies_and_is_audited"
+      ],
+      "note": "The gate owns no user writes; a decision is returned before any provisioning call."
+    },
+    {
+      "id": "BR1.10",
+      "status": "OK",
+      "code": [
+        "services/identity/domain/src/jurisdiction.rs::Decision::list_version",
+        "services/identity/http/src/dto.rs::JurisdictionCheckResponse"
+      ],
+      "tests": [
+        "services/identity/tests/domain.rs::jurisdiction_decision_allows_only_when_both_signals_are_allowed",
+        "services/identity/tests/http.rs::jurisdiction_check_returns_an_allowed_decision_with_the_list_version"
+      ]
+    },
+    {
+      "id": "NFR2.2",
+      "status": "OK",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs::ProviderBudget",
+        "services/identity/application/src/jurisdiction.rs::CheckJurisdiction::locate"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_a_provider_failure_fails_closed_and_opens_the_circuit"
+      ]
+    },
+    {
+      "id": "NFR2.3",
+      "status": "OK",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs::ProviderCircuit"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_a_provider_failure_fails_closed_and_opens_the_circuit"
+      ]
+    },
+    {
+      "id": "NFR2.4",
+      "status": "OK",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs::write_evidence",
+        "services/identity/infrastructure/src/audit_client.rs::HttpDecisionAudit"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_an_audit_failure_refuses_the_decision_and_the_retry_is_idempotent"
+      ]
+    },
+    {
+      "id": "NFR1.4",
+      "status": "OK",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs::CheckJurisdiction::check"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_a_provider_failure_fails_closed_and_opens_the_circuit",
+        "services/identity/tests/application.rs::jurisdiction_an_audit_failure_refuses_the_decision_and_the_retry_is_idempotent"
+      ]
+    },
+    {
+      "id": "NFR19.1",
+      "status": "OK",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs::CheckJurisdiction::write_evidence",
+        "services/identity/application/src/jurisdiction.rs::write_evidence"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_a_self_declared_restricted_country_denies_and_is_audited"
+      ],
+      "note": "Evidence carries country codes, the list version, and the restriction source; the test asserts the raw IP is absent."
+    },
+    {
+      "id": "NFR19.2",
+      "status": "OK",
+      "code": [
+        "services/identity/domain/src/jurisdiction.rs::checksum_of",
+        "services/identity/migrations/0003_jurisdiction_list.up.sql"
+      ],
+      "tests": [
+        "services/identity/tests/domain.rs::jurisdiction_list_computes_a_stable_checksum_over_its_ordered_entries",
+        "services/identity/tests/repositories.rs::jurisdiction_a_stored_list_with_a_mismatched_checksum_is_refused"
+      ]
+    },
+    {
+      "id": "NFR23.1",
+      "status": "OK",
+      "code": [
+        "services/identity/migrations/0003_jurisdiction_list.up.sql"
+      ],
+      "tests": [
+        "services/identity/tests/repositories.rs::jurisdiction_a_published_list_version_round_trips_with_its_rules_and_checksum"
+      ],
+      "note": "Publish writes with the existing identity_app role, as the approved plan settles."
+    },
+    {
+      "id": "NFR23.2",
+      "status": "OK",
+      "code": [
+        "services/identity/http/src/handlers.rs::publish_jurisdiction"
+      ],
+      "tests": [
+        "services/identity/tests/http.rs::jurisdiction_publish_requires_the_admin_role_and_stores_a_new_version"
+      ]
+    },
+    {
+      "id": "NFR23.3",
+      "status": "OK",
+      "code": [
+        "services/identity/http/src/handlers.rs::check_jurisdiction",
+        "services/identity/http/src/middleware.rs::require_jurisdiction_check",
+        "services/gateway/http/src/middleware.rs::client_ip",
+        "services/gateway/http/src/middleware.rs::rate_limit",
+        "services/gateway/http/src/server.rs::serve"
+      ],
+      "tests": [
+        "services/identity/tests/http.rs::jurisdiction_check_refuses_an_invalid_country_and_a_client_forwarded_ip",
+        "services/gateway/tests/http.rs::client_ip_strips_forwarded_for_and_uses_the_observed_peer",
+        "services/gateway/tests/http.rs::client_ip_uses_the_trusted_edge_header_when_no_peer_is_attached",
+        "services/gateway/tests/http.rs::client_ip_never_forwards_a_caller_supplied_value"
+      ]
+    },
+    {
+      "id": "C8",
+      "status": "OK",
+      "code": [
+        "services/identity/http/src/routes.rs::router",
+        "services/identity/http/src/dto.rs"
+      ],
+      "tests": [
+        "services/identity/tests/http.rs::jurisdiction_check_returns_an_allowed_decision_with_the_list_version",
+        "services/identity/tests/http.rs::jurisdiction_check_returns_a_denied_decision_naming_each_restricting_signal"
+      ]
+    },
+    {
+      "id": "C9",
+      "status": "OK",
+      "code": [
+        "services/identity/infrastructure/src/audit_client.rs::HttpDecisionAudit"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs::jurisdiction_an_audit_failure_refuses_the_decision_and_the_retry_is_idempotent"
+      ]
+    }
+  ],
+  "openFollowUps": [
+    "NFR20.3 decision cache (5 minutes) is not implemented; it is outside the approved plan's steps.",
+    "U1 must pass the gateway-derived x-client-ip in the C8 body; that consumer code is not part of this unit.",
+    "The pre-sign-up gate's jurisdiction_rules and the runtime jurisdiction_list_rules remain two sources; a later unit should decide whether to converge them."
+  ]
+}

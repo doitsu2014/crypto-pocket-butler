@@ -6,25 +6,32 @@
 
 /// A capability role. It comes only from `app_metadata.role`; anything else is a
 /// plain user (BR1.2).
+///
+/// `System` exists only for a scheduled job's caller identity: no claim, header,
+/// body, or stored role can produce it (BR2.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Role {
-    /// A regular user.
+    /// A regular user; the authorisation vocabulary calls this role `owner`.
     User,
     /// An administrator.
     Admin,
     /// A support operator.
     Support,
+    /// A scheduled job acting for no user.
+    System,
 }
 
 impl Role {
     /// Reads the role claim, treating a missing or unknown value as `user`.
+    ///
+    /// This is the one place a claim becomes a role (BR2.2): only `admin` and
+    /// `support` are recognised, and no value here can ever produce `system`.
     #[must_use]
     pub fn from_claim(raw: Option<&str>) -> Self {
         match raw.map(str::trim) {
             Some("admin") => Self::Admin,
             Some("support") => Self::Support,
-            Some("user") | Some("") | None => Self::User,
-            Some(_) => Self::User,
+            _ => Self::User,
         }
     }
 
@@ -35,6 +42,22 @@ impl Role {
             Self::User => "user",
             Self::Admin => "admin",
             Self::Support => "support",
+            Self::System => "system",
+        }
+    }
+
+    /// The value written to the provider's `app_metadata.role` claim (BR2.2).
+    ///
+    /// The provider vocabulary names the regular user `owner`; any value other
+    /// than `admin` or `support` reads back as owner, so writing `owner` is
+    /// stable. `system` is never written: it exists only for jobs.
+    #[must_use]
+    pub fn provider_value(self) -> &'static str {
+        match self {
+            Self::User => "owner",
+            Self::Admin => "admin",
+            Self::Support => "support",
+            Self::System => "system",
         }
     }
 
@@ -48,6 +71,12 @@ impl Role {
     #[must_use]
     pub fn is_support(self) -> bool {
         self == Self::Support
+    }
+
+    /// Whether this is the job-only system role.
+    #[must_use]
+    pub fn is_system(self) -> bool {
+        self == Self::System
     }
 
     /// Parses a stored value.
@@ -124,6 +153,8 @@ pub struct VerifiedClaims {
     /// Identity stores it on the user record so C3 can answer a service caller
     /// with the verified address; Notification never stores it (NFR9.3).
     pub email: Option<String>,
+    /// The display name the identity provider supplies, when it supplies one.
+    pub display_name: Option<String>,
     /// The `aal` claim.
     pub assurance: AssuranceLevel,
     /// `app_metadata.has_exchange_credentials` (BR2.1).
@@ -134,6 +165,12 @@ pub struct VerifiedClaims {
     pub user_agent: Option<String>,
     /// The gateway's coarse city/country geolocation, never the full IP.
     pub location: Option<String>,
+    /// The self-declared ISO 3166-1 alpha-2 country supplied by the trusted
+    /// caller; used only by the jurisdiction gate at first provisioning (C8).
+    pub country_code: Option<String>,
+    /// The client address observed by the trusted caller, never a client-written
+    /// header; used only by the jurisdiction gate at first provisioning (C8).
+    pub client_ip: Option<String>,
 }
 
 impl VerifiedClaims {

@@ -4,6 +4,7 @@
 //! client forwards the user JWT unchanged, sets the correlation id, strips
 //! hop-by-hop headers, and refuses redirects.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -11,15 +12,33 @@ use gateway_application::ports::{ForwardRequest, UpstreamClient, UpstreamError, 
 use reqwest::header::{HeaderName, HeaderValue, CONTENT_TYPE};
 
 /// Forwards requests to the owning service over internal HTTP.
+///
+/// Each declared route names its service; this client maps that name to the
+/// service's internal base URL. An undeclared name is refused rather than sent
+/// to a default.
 pub struct ReqwestUpstreamClient {
     client: reqwest::Client,
-    base_url: String,
+    services: BTreeMap<String, String>,
 }
 
 impl ReqwestUpstreamClient {
-    /// Creates the client for one service base URL.
+    /// Creates the client for one service base URL. The route table's
+    /// walking-skeleton owner is the Asset Registry; `new` keeps that mapping
+    /// for the single-upstream tests.
     #[must_use]
     pub fn new(base_url: impl Into<String>, timeout_ms: u64) -> Self {
+        Self::with_services(
+            BTreeMap::from([(
+                gateway_domain::ServiceName::registry().as_str().to_string(),
+                base_url.into(),
+            )]),
+            timeout_ms,
+        )
+    }
+
+    /// Creates the client from a service-name to base-URL map.
+    #[must_use]
+    pub fn with_services(services: BTreeMap<String, String>, timeout_ms: u64) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(timeout_ms))
             .redirect(reqwest::redirect::Policy::none())
@@ -27,7 +46,10 @@ impl ReqwestUpstreamClient {
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             client,
-            base_url: base_url.into().trim_end_matches('/').to_string(),
+            services: services
+                .into_iter()
+                .map(|(service, base_url)| (service, base_url.trim_end_matches('/').to_string()))
+                .collect(),
         }
     }
 }
@@ -54,7 +76,13 @@ impl UpstreamClient for ReqwestUpstreamClient {
     async fn forward(&self, request: ForwardRequest) -> Result<UpstreamResponse, UpstreamError> {
         let method = reqwest::Method::from_bytes(request.method.as_str().as_bytes())
             .map_err(|error| UpstreamError::Rejected(error.to_string()))?;
-        let url = format!("{}{}", self.base_url, request.path_and_query);
+        let base_url = self.services.get(request.service.as_str()).ok_or_else(|| {
+            UpstreamError::Unavailable(format!(
+                "no upstream is configured for service '{}'",
+                request.service.as_str()
+            ))
+        })?;
+        let url = format!("{base_url}{}", request.path_and_query);
         let mut builder = self.client.request(method, url);
 
         // Forward the support console's X-Support-Reason header unchanged. It

@@ -5,11 +5,11 @@ organisation or team memory.
 
 ## Project Context
 
-- **Name**: replace with your project name
-- **Stack**: replace with your stack
-- **Build**: replace with the exact build command
-- **Lint**: replace with the exact lint command
-- **Test**: replace with the exact test command
+- **Name**: Crypto Pocket Butler
+- **Stack**: Rust 2021 backend and API Gateway (Axum, tower, sqlx, rust_decimal, tokio); React 18 + TypeScript 5 frontends (Vite, TanStack Query, Recharts) on Tailwind CSS v4; Supabase Postgres; Docker Swarm
+- **Build**: `cargo build --workspace`; `yarn build` in `web/` and `support-console/`
+- **Lint**: `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `yarn lint` and `yarn format:check` in `web/` and `support-console/`
+- **Test**: `cargo test --workspace` (the `#[ignore]` adapter and migration suites need a disposable Postgres via `TEST_DATABASE_URL` and are a blocking gate); `yarn test` in `web/` and `support-console/`; `bash scripts/check-boundaries.sh`
 
 ## Project Practices
 
@@ -33,8 +33,6 @@ organisation or team memory.
 - ALWAYS use `rust_decimal` for quantities and values; never binary floating point. (`.claude/rules/development.md`, `docs/architecture/README.md` — decimal arithmetic kept on purpose) (affirmed 2026-11-05)
 
 - ALWAYS use React 18 + TypeScript 5 with Vite, TanStack Query, `@supabase/supabase-js`, Recharts, and Tailwind CSS v4 mapped to Parchment Ledger tokens for frontend work. (`.claude/rules/development.md`) (affirmed 2026-11-05)
-
-- ALWAYS use Yarn ≥ 6, pinned through corepack, for every JavaScript/TypeScript command. (`.claude/rules/development.md`, `docs/development/README.md`) (affirmed 2026-11-05)
 
 - ALWAYS give each service one Supabase Postgres schema and one Postgres role, and read another service's data only through that service's HTTP API. (`.claude/rules/development.md`, `docs/architecture/README.md` §7) (affirmed 2026-11-05)
 
@@ -74,8 +72,6 @@ organisation or team memory.
 
 - ALWAYS include rollback steps in every deployment procedure, and a smoke test or health check for production deployments. (`memory/phases/operation.md`) (affirmed 2026-11-05)
 
-- ALWAYS deploy with Docker Swarm rolling updates using the Swarm defaults, with the service health check gating the update. (Interview Q6) (affirmed 2026-11-05)
-
 - ALWAYS ship schema changes as versioned sqlx up/down migration pairs, and apply the matching down migration when a release is rolled back. (Interview Q7) (affirmed 2026-11-05)
 
 - ALWAYS quantify SLOs with a percentage and a time window, and set alert thresholds below the SLO breach. (`memory/phases/operation.md`) (affirmed 2026-11-05)
@@ -114,6 +110,18 @@ organisation or team memory.
 
 - ALWAYS define the retention and legal-hold policy, launch jurisdictions, privacy notices, consumer-subscription terms, market-data licences, and incident-response plan before launch. (BRD-012 — "Must define before launch") (affirmed 2026-11-05)
 
+- ALWAYS use Yarn 4.18.1, pinned through corepack (`packageManager: yarn@4.18.1` at the root and in `web/` and `support-console/`), for every JavaScript/TypeScript command. (`.claude/rules/development.md`, `package.json`, `web/package.json`, `support-console/package.json` — supersedes the earlier version rule, which no Yarn release satisfied) (affirmed 2026-11-10)
+
+- ALWAYS deploy with the Docker Swarm rolling update configured in `infra/swarm-stack.yml` — `parallelism: 1`, `failure_action: rollback`, `monitor: 30s`, `order: start-first` for API, edge, SPA, retention, job-orchestration and `identity-worker` services, and `order: stop-first` for the remaining background workers — with the service health check gating the update. (Interview Q1, `infra/swarm-stack.yml` — supersedes the earlier defaults wording, which conflicts with the stack's explicit configuration) (affirmed 2026-11-10)
+
+- ALWAYS ship schema changes as versioned sqlx up/down migration pairs, and ALWAYS apply the matching down migration when a release is rolled back — the release job carries the automatic down step. (Interview Q6) (affirmed 2026-11-10)
+
+- ALWAYS measure Rust line coverage with `cargo llvm-cov`. (Interview Q4) (affirmed 2026-11-10)
+
+- ALWAYS provision a disposable Postgres database per gate run and run the `#[ignore]` adapter and migration suites against it as a blocking gate, with `TEST_DATABASE_URL` pointing at that database. (Interview Q5) (affirmed 2026-11-10)
+
+- ALWAYS keep the canonical build, lint and test command list in `aidlc/spaces/default/memory/project.md` as the single authoritative list. (Interview Q7) (affirmed 2026-11-10)
+
 ## Forbidden
 - NEVER use a backend language other than Rust or an ORM other than sqlx. (`.claude/rules/development.md`) (affirmed 2026-11-05)
 - NEVER let `domain` import a sibling crate or framework — no Axum, sqlx, reqwest, or serde transport types. (`.claude/rules/development.md`, `docs/development/README.md`) (affirmed 2026-11-05)
@@ -145,3 +153,5 @@ organisation or team memory.
 - NEVER commit generated Structurizr artefacts (`docs/architecture/workspace.json`, `docs/architecture/.structurizr/`). (`.gitignore`, `docs/architecture/README.md` §3) (affirmed 2026-11-05)
 - NEVER carry forward an unresolved contradiction between requirements; surface and resolve it explicitly. (`memory/phases/inception.md`) (affirmed 2026-11-05)
 - NEVER introduce a new requirement in inception without documenting its origin. (`memory/phases/inception.md`) (affirmed 2026-11-05)
+- NEVER ship a schema change without a matching down migration. (Interview Q6) (affirmed 2026-11-10)
+- NEVER let a Swarm service update proceed without its health check passing. (Interview Q1) (affirmed 2026-11-10)

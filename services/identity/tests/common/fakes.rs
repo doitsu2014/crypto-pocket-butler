@@ -4,23 +4,40 @@
 //! be made to fail once so error paths are exercised without a database.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone as _, Utc};
+use identity_application::account_lifecycle::AccountObservation;
+use identity_application::authorisation::ports::{
+    AuditSink, AuditWriteContext, AuthorisationEvent, ObservationSink, RoleWriter, StatusFailure,
+    StatusReadError, StatusReader,
+};
+use identity_application::consent::ports::{
+    DeliveryOutcome, DrainerObservation, ObservationSink as ConsentObservationSink,
+    PreferenceWriteOutcome, StateQueryOutcome, WithdrawalRollbackCause,
+};
+use identity_application::jurisdiction::{
+    AuditSink as JurisdictionAuditSink, GeoLocator, ListRepository,
+};
 use identity_application::ports::{
     AuditClient, AuthAdmin, AuthError, Clock, ConsentRepository, ContributorGateway,
-    DeletionRepository, DeviceSessionRepository, DueCandidate, DueUserRepository, ExportRepository,
-    ExportStore, ExternalError, GateGrant, GateTokenIssuer, JurisdictionRepository, ReadinessProbe,
-    RepositoryError, ServiceTokenRegistry, ShreddingKeyRepository, SupportGrantRepository,
-    TokenValidator, UserRepository, WakeTransport,
+    DeletionRepository, DeviceSessionRepository, DueCandidate, DueUserRepository, ErasureStore,
+    ExportRepository, ExportStore, ExternalError, GateGrant, GateRefusal, GateTokenIssuer,
+    JurisdictionGate, JurisdictionRepository, ReadinessProbe, RepositoryError,
+    ServiceTokenRegistry, ShreddingKeyRepository, StatusChange, StatusTransitionStore,
+    SupportGrantRepository, TokenValidator, UserRepository, WakeTransport,
 };
+use identity_domain::preferences::{BaseCurrency, Locale, TimeZone};
 use identity_domain::{
-    AuditRecord, ConsentPurpose, ConsentRecord, Contributor, DeletionProgress, DeletionRequest,
+    AuditRecord, ConsentAction, ConsentEvent, ConsentEventDraft, ConsentKind, ConsentPurpose,
+    ConsentRecord, ConsentRecordId, Contributor, CountryCode, DeletionProgress, DeletionRequest,
     DeletionRequestId, DeviceSession, DeviceSessionId, ExportRequest, ExportRequestId,
-    JurisdictionRule, RetainedCategory, ShreddingKey, ShreddingKeyId, ShreddingKeyStatus,
-    SupportAccessGrant, SupportGrantId, User, UserId, VerifiedClaims,
+    JurisdictionListVersion, JurisdictionRule, PreferenceUpdate, ProviderProfile, RetainedCategory,
+    Role, ShreddingKey, ShreddingKeyId, ShreddingKeyStatus, StatusTransition, StatusTransitionId,
+    StoredPreferences, SupportAccessGrant, SupportGrantId, User, UserId, UserStatus,
+    VerifiedClaims,
 };
 use uuid::Uuid;
 
@@ -38,8 +55,14 @@ pub struct FakeUsers {
     pub users: Mutex<BTreeMap<Uuid, User>>,
     /// Supabase subject -> internal id.
     pub subjects: Mutex<BTreeMap<String, Uuid>>,
+    /// Subject hash -> internal id of an erased account (the tombstone).
+    pub erased: Mutex<BTreeMap<String, Uuid>>,
     /// Internal id -> revealed subject.
     pub revealed: Mutex<BTreeMap<Uuid, String>>,
+    /// The key store the provision transaction writes through.
+    pub keys: Mutex<Option<Arc<FakeKeys>>>,
+    /// When set, the next subject lookup reports a hash collision.
+    pub collide: Mutex<bool>,
     /// One-shot repository failure.
     pub failure: Mutex<Option<RepositoryError>>,
 }
@@ -59,6 +82,16 @@ impl FakeUsers {
             .lock()
             .unwrap()
             .insert(user.id().as_uuid(), subject.to_string());
+    }
+
+    /// Shares the key store so `provision` can create the key reference.
+    pub fn attach_keys(&self, keys: Arc<FakeKeys>) {
+        *self.keys.lock().unwrap() = Some(keys);
+    }
+
+    /// Makes the next subject lookup report a collision.
+    pub fn collide_next(&self) {
+        *self.collide.lock().unwrap() = true;
     }
 
     /// Reads a stored user.
@@ -89,8 +122,70 @@ impl UserRepository for FakeUsers {
         auth_subject: &str,
     ) -> Result<Option<User>, RepositoryError> {
         maybe_fail(&self.failure)?;
+        if std::mem::take(&mut *self.collide.lock().unwrap()) {
+            return Err(RepositoryError::Validation(
+                "the presented subject does not match the stored subject".to_string(),
+            ));
+        }
         let id = self.subjects.lock().unwrap().get(auth_subject).copied();
+        if let Some(id) = id {
+            return Ok(self.get(UserId::new(id)));
+        }
+        // The tombstone: an erased subject resolves to its deleted record, never
+        // to `None`, so the principal denies it instead of provisioning it
+        // again (BR5.8, AC4.5.1).
+        let hash = identity_application::user_registry::subject_hash(auth_subject);
+        let erased = self.erased.lock().unwrap().get(&hash).copied();
+        Ok(erased.and_then(|id| self.get(UserId::new(id))))
+    }
+
+    async fn find_by_subject_hash(
+        &self,
+        subject_hash: &str,
+    ) -> Result<Option<User>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        let id = self
+            .subjects
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(subject, _)| {
+                identity_application::user_registry::subject_hash(subject) == subject_hash
+            })
+            .map(|(_, id)| *id)
+            .or_else(|| self.erased.lock().unwrap().get(subject_hash).copied());
         Ok(id.and_then(|id| self.get(UserId::new(id))))
+    }
+
+    async fn find_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        Ok(self
+            .users
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|user| user.email() == Some(email))
+            .min_by_key(|user| (user.created_at(), user.id().as_uuid()))
+            .cloned())
+    }
+
+    async fn provision(
+        &self,
+        user: &User,
+        auth_subject: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ShreddingKey, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        let keys = self
+            .keys
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| RepositoryError::Unavailable("no key store attached".to_string()))?;
+        let key =
+            <FakeKeys as ShreddingKeyRepository>::create_for_user(&keys, user.id(), now).await?;
+        self.seed(user.clone(), auth_subject);
+        Ok(key)
     }
 
     async fn insert(
@@ -129,8 +224,13 @@ impl UserRepository for FakeUsers {
     async fn anonymise(&self, user: &User) -> Result<(), RepositoryError> {
         maybe_fail(&self.failure)?;
         let id = user.id().as_uuid();
+        // The hash moves to the tombstone before the personal row leaves.
         if let Some(subject) = self.revealed.lock().unwrap().remove(&id) {
             self.subjects.lock().unwrap().remove(&subject);
+            self.erased.lock().unwrap().insert(
+                identity_application::user_registry::subject_hash(&subject),
+                id,
+            );
         }
         self.users.lock().unwrap().insert(id, user.clone());
         Ok(())
@@ -562,14 +662,7 @@ impl DeletionRepository for FakeDeletions {
             .lock()
             .unwrap()
             .iter()
-            .filter(|deletion| {
-                deletion.user_id() == user_id
-                    && matches!(
-                        deletion.status(),
-                        identity_domain::DeletionStatus::Requested
-                            | identity_domain::DeletionStatus::InProgress
-                    )
-            })
+            .filter(|deletion| deletion.user_id() == user_id && deletion.is_open())
             .max_by_key(|deletion| deletion.requested_at())
             .cloned())
     }
@@ -584,8 +677,15 @@ impl DeletionRepository for FakeDeletions {
         let mut deletions = self.deletions.lock().unwrap();
         let Some(deletion) = deletions
             .iter_mut()
-            .filter(|deletion| deletion.is_claimable(now))
-            .min_by_key(|deletion| deletion.requested_at())
+            .filter(|deletion| {
+                deletion.is_open()
+                    && deletion.next_attempt_at() <= now
+                    && deletion.recoverable_until() <= now
+                    && deletion
+                        .lease_until()
+                        .is_none_or(|lease_until| now >= lease_until)
+            })
+            .min_by_key(|deletion| deletion.recoverable_until())
         else {
             return Ok(None);
         };
@@ -593,6 +693,190 @@ impl DeletionRepository for FakeDeletions {
             RepositoryError::Conflict(format!("deletion claim refused: {error}"))
         })?;
         Ok(Some(deletion.clone()))
+    }
+}
+
+/// In-memory status transitions and the audit intents they carry (BR5.9).
+#[derive(Default)]
+pub struct FakeStatusTransitions {
+    /// Appended transitions.
+    pub transitions: Mutex<Vec<StatusTransition>>,
+    /// The next `seq`.
+    pub next_seq: AtomicI64,
+    /// Where the status write lands.
+    pub users: Mutex<Option<Arc<FakeUsers>>>,
+    /// Where an opened or cancelled request lands.
+    pub deletions: Mutex<Option<Arc<FakeDeletions>>>,
+    /// One-shot failure.
+    pub failure: Mutex<Option<RepositoryError>>,
+}
+
+impl FakeStatusTransitions {
+    /// Shares the user store the status write updates.
+    pub fn attach_users(&self, users: Arc<FakeUsers>) {
+        *self.users.lock().unwrap() = Some(users);
+    }
+
+    /// Shares the request store the open/cancel writes update.
+    pub fn attach_deletions(&self, deletions: Arc<FakeDeletions>) {
+        *self.deletions.lock().unwrap() = Some(deletions);
+    }
+
+    /// The transitions appended so far.
+    pub fn stored(&self) -> Vec<StatusTransition> {
+        self.transitions.lock().unwrap().clone()
+    }
+
+    fn record(&self, change: &StatusChange) -> Result<StatusTransition, RepositoryError> {
+        let transition = StatusTransition::new(
+            StatusTransitionId::generate(),
+            change.user_id,
+            change.from,
+            change.to,
+            &change.actor,
+            change.reason.as_deref(),
+            change.occurred_at,
+        )
+        .map_err(|error| RepositoryError::Conflict(error.to_string()))?;
+        let seq = self.next_seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let stored = StatusTransition::from_stored(
+            transition.id(),
+            transition.user_id(),
+            transition.from_status(),
+            transition.to_status(),
+            transition.actor().to_string(),
+            transition.reason().map(ToString::to_string),
+            transition.occurred_at(),
+            seq,
+        );
+        self.transitions.lock().unwrap().push(stored.clone());
+        Ok(stored)
+    }
+
+    fn write_status(&self, change: &StatusChange) -> Result<(), RepositoryError> {
+        let users = self.users.lock().unwrap().clone();
+        let Some(users) = users else {
+            return Err(RepositoryError::Unavailable(
+                "no user store attached".to_string(),
+            ));
+        };
+        let mut stored = users
+            .get(change.user_id)
+            .ok_or_else(|| RepositoryError::Conflict("the account does not exist".to_string()))?;
+        if stored.status() != change.from {
+            return Err(RepositoryError::Conflict(format!(
+                "the account is no longer '{}'",
+                change.from.as_str()
+            )));
+        }
+        stored
+            .transition(change.to, change.occurred_at)
+            .map_err(|error| RepositoryError::Conflict(error.to_string()))?;
+        users
+            .users
+            .lock()
+            .unwrap()
+            .insert(change.user_id.as_uuid(), stored);
+        Ok(())
+    }
+
+    fn request_store(&self) -> Result<Arc<FakeDeletions>, RepositoryError> {
+        self.deletions
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| RepositoryError::Unavailable("no request store attached".to_string()))
+    }
+}
+
+#[async_trait]
+impl StatusTransitionStore for FakeStatusTransitions {
+    async fn apply(&self, change: &StatusChange) -> Result<StatusTransition, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.write_status(change)?;
+        self.record(change)
+    }
+
+    async fn open_deletion(
+        &self,
+        change: &StatusChange,
+        request: &DeletionRequest,
+    ) -> Result<StatusTransition, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        let deletions = self.request_store()?;
+        if deletions
+            .find_active_for_user(change.user_id)
+            .await?
+            .is_some()
+        {
+            return Err(RepositoryError::Conflict(
+                "a deletion request is already open".to_string(),
+            ));
+        }
+        self.write_status(change)?;
+        deletions.insert(request).await?;
+        self.record(change)
+    }
+
+    async fn cancel_deletion(
+        &self,
+        change: &StatusChange,
+        request: &DeletionRequest,
+    ) -> Result<StatusTransition, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.write_status(change)?;
+        self.request_store()?.update(request).await?;
+        self.record(change)
+    }
+
+    async fn newest_for_user(
+        &self,
+        user_id: UserId,
+    ) -> Result<Option<StatusTransition>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        Ok(self
+            .transitions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|transition| transition.user_id() == user_id)
+            .max_by_key(|transition| transition.seq())
+            .cloned())
+    }
+}
+
+/// Records the account-lifecycle metrics the tests assert on.
+#[derive(Default)]
+pub struct FakeAccountObservation {
+    /// `(from, to, actor_kind)` per accepted transition.
+    pub transitions: Mutex<Vec<(String, String, String)>>,
+    /// Refusal reasons.
+    pub refusals: Mutex<Vec<String>>,
+    /// Deletion events.
+    pub deletion_events: Mutex<Vec<String>>,
+    /// Failed erasure steps.
+    pub erasure_failures: Mutex<Vec<String>>,
+}
+
+impl AccountObservation for FakeAccountObservation {
+    fn record_transition(&self, from: UserStatus, to: UserStatus, actor_kind: &str) {
+        self.transitions.lock().unwrap().push((
+            from.as_str().to_string(),
+            to.as_str().to_string(),
+            actor_kind.to_string(),
+        ));
+    }
+
+    fn record_refusal(&self, reason: &str) {
+        self.refusals.lock().unwrap().push(reason.to_string());
+    }
+
+    fn record_deletion_event(&self, event: &str) {
+        self.deletion_events.lock().unwrap().push(event.to_string());
+    }
+
+    fn record_erasure_failure(&self, step: &str) {
+        self.erasure_failures.lock().unwrap().push(step.to_string());
     }
 }
 
@@ -1018,5 +1302,821 @@ impl DueUserRepository for FakeUsers {
             .skip(usize::try_from(offset).unwrap_or(usize::MAX))
             .take(usize::try_from(limit).unwrap_or(usize::MAX))
             .collect())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// U6 — the jurisdiction gate's ports
+// ---------------------------------------------------------------------------
+
+/// The in-process jurisdiction gate.
+#[derive(Default)]
+pub struct FakeGate {
+    /// Whether the next clearance is denied.
+    pub deny: Mutex<Option<String>>,
+    /// Whether the next clearance is unavailable.
+    pub unavailable: Mutex<Option<String>>,
+    /// The `(country, ip)` declarations presented.
+    pub calls: Mutex<Vec<(String, String)>>,
+}
+
+impl FakeGate {
+    /// Denies the next clearance with `reason`.
+    pub fn deny_next(&self, reason: &str) {
+        *self.deny.lock().unwrap() = Some(reason.to_string());
+    }
+
+    /// Makes the next clearance unavailable.
+    pub fn fail_next(&self, detail: &str) {
+        *self.unavailable.lock().unwrap() = Some(detail.to_string());
+    }
+
+    /// The declarations the gate was asked about.
+    pub fn calls(&self) -> Vec<(String, String)> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl JurisdictionGate for FakeGate {
+    async fn clear(
+        &self,
+        country_code: &str,
+        ip: &str,
+        _correlation_id: &str,
+    ) -> Result<(), GateRefusal> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((country_code.to_string(), ip.to_string()));
+        if let Some(detail) = self.unavailable.lock().unwrap().take() {
+            return Err(GateRefusal::Unavailable(detail));
+        }
+        if let Some(reason) = self.deny.lock().unwrap().take() {
+            return Err(GateRefusal::Denied(reason));
+        }
+        Ok(())
+    }
+}
+
+/// In-memory jurisdiction list store.
+#[derive(Default)]
+pub struct FakeListStore {
+    /// The active version, when one is published.
+    pub active: Mutex<Option<JurisdictionListVersion>>,
+    /// Every published version, in publish order.
+    pub published: Mutex<Vec<JurisdictionListVersion>>,
+    /// One-shot failure.
+    pub failure: Mutex<Option<RepositoryError>>,
+}
+
+impl FakeListStore {
+    /// Seeds the active version without recording a publish.
+    pub fn seed(&self, list: JurisdictionListVersion) {
+        *self.active.lock().unwrap() = Some(list);
+    }
+
+    /// Makes the next call fail.
+    pub fn fail_next(&self, error: RepositoryError) {
+        *self.failure.lock().unwrap() = Some(error);
+    }
+
+    /// The published version labels, in order.
+    pub fn published_versions(&self) -> Vec<String> {
+        self.published
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|list| list.version().to_string())
+            .collect()
+    }
+}
+
+#[async_trait]
+impl ListRepository for FakeListStore {
+    async fn active(&self) -> Result<Option<JurisdictionListVersion>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        Ok(self.active.lock().unwrap().clone())
+    }
+
+    async fn publish(&self, list: &JurisdictionListVersion) -> Result<(), RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.published.lock().unwrap().push(list.clone());
+        *self.active.lock().unwrap() = Some(list.clone());
+        Ok(())
+    }
+}
+
+/// In-memory geolocation provider.
+#[derive(Default)]
+pub struct FakeGeoLocator {
+    /// Country per IP.
+    pub countries: Mutex<BTreeMap<String, String>>,
+    /// Country returned for any unlisted IP.
+    pub default_country: Mutex<Option<String>>,
+    /// Queued failures, consumed in order.
+    pub failures: Mutex<Vec<ExternalError>>,
+    /// Every IP the provider was asked about.
+    pub calls: Mutex<Vec<String>>,
+}
+
+impl FakeGeoLocator {
+    /// Maps one IP to a country.
+    pub fn set(&self, ip: &str, country: &str) {
+        self.countries
+            .lock()
+            .unwrap()
+            .insert(ip.to_string(), country.to_string());
+    }
+
+    /// Sets the fallback country for unlisted IPs.
+    pub fn set_default(&self, country: &str) {
+        *self.default_country.lock().unwrap() = Some(country.to_string());
+    }
+
+    /// Queues one provider failure.
+    pub fn fail_next(&self, error: ExternalError) {
+        self.failures.lock().unwrap().push(error);
+    }
+
+    /// How many provider calls were made.
+    pub fn call_count(&self) -> usize {
+        self.calls.lock().unwrap().len()
+    }
+}
+
+#[async_trait]
+impl GeoLocator for FakeGeoLocator {
+    async fn country_for(&self, ip: &str) -> Result<CountryCode, ExternalError> {
+        self.calls.lock().unwrap().push(ip.to_string());
+        let queued = {
+            let mut failures = self.failures.lock().unwrap();
+            if failures.is_empty() {
+                None
+            } else {
+                Some(failures.remove(0))
+            }
+        };
+        if let Some(error) = queued {
+            return Err(error);
+        }
+        let country = self
+            .countries
+            .lock()
+            .unwrap()
+            .get(ip)
+            .cloned()
+            .or_else(|| self.default_country.lock().unwrap().clone())
+            .ok_or_else(|| ExternalError::Unavailable("no country for this address".to_string()))?;
+        CountryCode::parse(&country).map_err(|error| ExternalError::Refused(error.to_string()))
+    }
+}
+
+/// In-memory decision audit sink.
+#[derive(Default)]
+pub struct FakeDecisionAudit {
+    /// Recorded events with their correlation id and idempotency key.
+    pub records: Mutex<Vec<(AuditRecord, String, String)>>,
+    /// Every idempotency key presented, including failed attempts.
+    pub attempts: Mutex<Vec<String>>,
+    /// Queued failures, consumed in order.
+    pub failures: Mutex<Vec<RepositoryError>>,
+}
+
+impl FakeDecisionAudit {
+    /// Queues one audit failure.
+    pub fn fail_next(&self, error: RepositoryError) {
+        self.failures.lock().unwrap().push(error);
+    }
+
+    /// The recorded actions.
+    pub fn actions(&self) -> Vec<String> {
+        self.records
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(record, _, _)| record.action().to_string())
+            .collect()
+    }
+
+    /// The idempotency keys that reached the sink.
+    pub fn attempted_keys(&self) -> Vec<String> {
+        self.attempts.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl JurisdictionAuditSink for FakeDecisionAudit {
+    async fn record(
+        &self,
+        record: &AuditRecord,
+        correlation_id: &str,
+        idempotency_key: &str,
+    ) -> Result<(), RepositoryError> {
+        self.attempts
+            .lock()
+            .unwrap()
+            .push(idempotency_key.to_string());
+        let queued = {
+            let mut failures = self.failures.lock().unwrap();
+            if failures.is_empty() {
+                None
+            } else {
+                Some(failures.remove(0))
+            }
+        };
+        if let Some(error) = queued {
+            return Err(error);
+        }
+        self.records.lock().unwrap().push((
+            record.clone(),
+            correlation_id.to_string(),
+            idempotency_key.to_string(),
+        ));
+        Ok(())
+    }
+}
+
+/// The status reader fake: serves a stored status and can fail once or always.
+#[derive(Default)]
+pub struct FakeStatusReader {
+    statuses: Mutex<BTreeMap<Uuid, UserStatus>>,
+    failure: Mutex<Option<StatusReadError>>,
+    always_fails: Mutex<BTreeMap<Uuid, StatusReadError>>,
+    calls: AtomicUsize,
+}
+
+impl FakeStatusReader {
+    /// Serves `status` for `id`.
+    pub fn set(&self, id: UserId, status: UserStatus) {
+        self.statuses.lock().unwrap().insert(id.as_uuid(), status);
+    }
+
+    /// Makes the next read fail.
+    pub fn fail_next(&self, error: StatusReadError) {
+        *self.failure.lock().unwrap() = Some(error);
+    }
+
+    /// Makes every read for `id` fail.
+    pub fn fail_for(&self, id: UserId, error: StatusReadError) {
+        self.always_fails
+            .lock()
+            .unwrap()
+            .insert(id.as_uuid(), error);
+    }
+
+    /// How many times the reader was asked.
+    pub fn calls(&self) -> usize {
+        self.calls.load(Ordering::Relaxed)
+    }
+}
+
+#[async_trait]
+impl StatusReader for FakeStatusReader {
+    async fn status_of(&self, user_id: UserId) -> Result<Option<UserStatus>, StatusReadError> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        if let Some(error) = self.failure.lock().unwrap().take() {
+            return Err(error);
+        }
+        if let Some(error) = self
+            .always_fails
+            .lock()
+            .unwrap()
+            .get(&user_id.as_uuid())
+            .cloned()
+        {
+            return Err(error);
+        }
+        Ok(self
+            .statuses
+            .lock()
+            .unwrap()
+            .get(&user_id.as_uuid())
+            .copied())
+    }
+}
+
+/// The authorisation audit sink fake: records every event, fails on demand.
+#[derive(Default)]
+pub struct FakeAuthorisationAudit {
+    /// Recorded events with their correlation ids.
+    pub events: Mutex<Vec<(AuthorisationEvent, String)>>,
+    failure: Mutex<Option<RepositoryError>>,
+}
+
+impl FakeAuthorisationAudit {
+    /// Makes the next write fail.
+    pub fn fail_next(&self, error: RepositoryError) {
+        *self.failure.lock().unwrap() = Some(error);
+    }
+
+    /// The recorded events.
+    pub fn events(&self) -> Vec<(AuthorisationEvent, String)> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl AuditSink for FakeAuthorisationAudit {
+    async fn record(
+        &self,
+        event: &AuthorisationEvent,
+        correlation_id: &str,
+    ) -> Result<(), RepositoryError> {
+        if let Some(error) = self.failure.lock().unwrap().take() {
+            return Err(error);
+        }
+        self.events
+            .lock()
+            .unwrap()
+            .push((event.clone(), correlation_id.to_string()));
+        Ok(())
+    }
+}
+
+/// The provider role writer fake: records writes, fails on demand.
+#[derive(Default)]
+pub struct FakeRoleWriter {
+    writes: Mutex<Vec<(String, Role)>>,
+    failure: Mutex<Option<ExternalError>>,
+}
+
+impl FakeRoleWriter {
+    /// Makes the next write fail.
+    pub fn fail_next(&self, error: ExternalError) {
+        *self.failure.lock().unwrap() = Some(error);
+    }
+
+    /// The recorded `(subject, role)` writes.
+    pub fn writes(&self) -> Vec<(String, Role)> {
+        self.writes.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl RoleWriter for FakeRoleWriter {
+    async fn set_role(&self, subject: &str, role: Role) -> Result<(), ExternalError> {
+        if let Some(error) = self.failure.lock().unwrap().take() {
+            return Err(error);
+        }
+        self.writes
+            .lock()
+            .unwrap()
+            .push((subject.to_string(), role));
+        Ok(())
+    }
+}
+
+/// An observation sink that records what the decision and cache reported.
+#[derive(Default)]
+pub struct FakeObservation {
+    /// `(operation class, reason)` for each decision.
+    pub decisions: Mutex<Vec<(String, String)>>,
+    /// Status lookup failure causes.
+    pub status_failures: Mutex<Vec<String>>,
+    /// Audit write failure contexts.
+    pub audit_failures: Mutex<Vec<String>>,
+    /// Role-change outcomes.
+    pub role_changes: Mutex<Vec<String>>,
+    /// The last reported `(age seconds, entries)`.
+    pub cache: Mutex<Option<(i64, usize)>>,
+}
+
+impl ObservationSink for FakeObservation {
+    fn record_decision(
+        &self,
+        class: identity_domain::OperationClass,
+        reason: identity_domain::DenialReason,
+        _elapsed: std::time::Duration,
+    ) {
+        self.decisions
+            .lock()
+            .unwrap()
+            .push((class.as_str().to_string(), reason.as_str().to_string()));
+    }
+
+    fn record_status_lookup_failure(&self, cause: StatusFailure) {
+        self.status_failures
+            .lock()
+            .unwrap()
+            .push(cause.as_str().to_string());
+    }
+
+    fn record_audit_write_failure(&self, context: AuditWriteContext) {
+        self.audit_failures
+            .lock()
+            .unwrap()
+            .push(context.as_str().to_string());
+    }
+
+    fn record_cache(&self, age_seconds: i64, entries: usize) {
+        *self.cache.lock().unwrap() = Some((age_seconds, entries));
+    }
+
+    fn record_role_change(&self, success: bool) {
+        self.role_changes.lock().unwrap().push(if success {
+            "success".to_string()
+        } else {
+            "failed".to_string()
+        });
+    }
+}
+
+/// U4's observation sink: records every metric the consent and preference use
+/// cases and the outbox drainer emit.
+#[derive(Default)]
+pub struct FakeObservationSink {
+    /// `(outcome, has_missing)` for each consent-state query.
+    pub state_queries: Mutex<Vec<(StateQueryOutcome, bool)>>,
+    /// `(kind, action)` for each recorded consent event.
+    pub events: Mutex<Vec<(ConsentKind, ConsentAction)>>,
+    /// The outcome of each preference write.
+    pub preference_writes: Mutex<Vec<PreferenceWriteOutcome>>,
+    /// The cause of each withdrawal rollback.
+    pub rollbacks: Mutex<Vec<WithdrawalRollbackCause>>,
+    /// `(pending, oldest age)` for each drainer pass.
+    pub passes: Mutex<Vec<(u64, i64)>>,
+    /// The outcome of each delivery.
+    pub deliveries: Mutex<Vec<DeliveryOutcome>>,
+}
+
+impl ConsentObservationSink for FakeObservationSink {
+    fn record_state_query(
+        &self,
+        outcome: StateQueryOutcome,
+        has_missing: bool,
+        _elapsed: std::time::Duration,
+    ) {
+        self.state_queries
+            .lock()
+            .unwrap()
+            .push((outcome, has_missing));
+    }
+
+    fn record_consent_event(&self, kind: ConsentKind, action: ConsentAction) {
+        self.events.lock().unwrap().push((kind, action));
+    }
+
+    fn record_preference_write(&self, outcome: PreferenceWriteOutcome) {
+        self.preference_writes.lock().unwrap().push(outcome);
+    }
+
+    fn record_withdrawal_rollback(&self, cause: WithdrawalRollbackCause) {
+        self.rollbacks.lock().unwrap().push(cause);
+    }
+}
+
+impl DrainerObservation for FakeObservationSink {
+    fn record_pass(&self, pending: u64, oldest_age_seconds: i64) {
+        self.passes
+            .lock()
+            .unwrap()
+            .push((pending, oldest_age_seconds));
+    }
+
+    fn record_delivery(&self, outcome: DeliveryOutcome) {
+        self.deliveries.lock().unwrap().push(outcome);
+    }
+}
+
+/// U4's erasure role fake: records the deletes the worker routed through the
+/// dedicated erasure connection.
+#[derive(Default)]
+pub struct FakeErasureStore {
+    /// The users whose consent-scoped rows were erased.
+    pub erased: Mutex<Vec<UserId>>,
+    /// One-shot erasure failure.
+    pub failure: Mutex<Option<RepositoryError>>,
+}
+
+#[async_trait]
+impl ErasureStore for FakeErasureStore {
+    async fn erase_consent(&self, user_id: UserId) -> Result<u64, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.erased.lock().unwrap().push(user_id);
+        Ok(0)
+    }
+}
+
+/// U4's consent store. A withdrawal stages its event and audit intent and moves
+/// them only on commit, so the atomicity the transaction port promises is
+/// observable.
+#[derive(Default)]
+pub struct FakeConsentRepository {
+    inner: Arc<FakeConsentInner>,
+}
+
+#[derive(Default)]
+struct FakeConsentInner {
+    events: Mutex<Vec<ConsentEvent>>,
+    staged_events: Mutex<Vec<ConsentEvent>>,
+    outbox: Mutex<Vec<identity_application::consent::ports::AuditIntent>>,
+    staged_outbox: Mutex<Vec<identity_application::consent::ports::AuditIntent>>,
+    failure: Mutex<Option<RepositoryError>>,
+    outbox_failure: Mutex<Option<RepositoryError>>,
+    commits: AtomicUsize,
+    rollbacks: AtomicUsize,
+    next_seq: AtomicI64,
+}
+
+impl FakeConsentRepository {
+    /// Every committed event.
+    pub fn events(&self) -> Vec<ConsentEvent> {
+        self.inner.events.lock().unwrap().clone()
+    }
+
+    /// Every committed outbox intent.
+    pub fn outbox(&self) -> Vec<identity_application::consent::ports::AuditIntent> {
+        self.inner.outbox.lock().unwrap().clone()
+    }
+
+    /// The commit count.
+    pub fn commits(&self) -> usize {
+        self.inner.commits.load(Ordering::Relaxed)
+    }
+
+    /// The rollback count.
+    pub fn rollbacks(&self) -> usize {
+        self.inner.rollbacks.load(Ordering::Relaxed)
+    }
+
+    /// Seeds a committed event.
+    pub fn seed(&self, event: ConsentEvent) {
+        self.inner.events.lock().unwrap().push(event);
+    }
+
+    /// Makes the next read fail.
+    pub fn fail_next(&self, error: RepositoryError) {
+        *self.inner.failure.lock().unwrap() = Some(error);
+    }
+
+    /// Makes the next audit enqueue fail (the outbox insert fails).
+    pub fn fail_outbox_next(&self, error: RepositoryError) {
+        *self.inner.outbox_failure.lock().unwrap() = Some(error);
+    }
+
+    fn next_event(
+        &self,
+        user_id: UserId,
+        kind: ConsentKind,
+        action: ConsentAction,
+        policy_version: &str,
+    ) -> ConsentEvent {
+        let seq = self.inner.next_seq.fetch_add(1, Ordering::Relaxed) + 1;
+        ConsentEvent::from_stored(
+            ConsentRecordId::generate(),
+            seq,
+            user_id,
+            kind,
+            action,
+            Utc.with_ymd_and_hms(2026, 11, 10, 12, 0, 0).unwrap() + Duration::seconds(seq),
+            policy_version,
+        )
+    }
+
+    fn newest_for(
+        events: &[ConsentEvent],
+        user_id: UserId,
+        kind: ConsentKind,
+    ) -> Option<ConsentEvent> {
+        events
+            .iter()
+            .filter(|event| event.user_id() == user_id && event.kind() == kind)
+            .max_by_key(|event| (event.occurred_at(), event.seq()))
+            .cloned()
+    }
+}
+
+#[async_trait]
+impl identity_application::consent::ports::ConsentRepository for FakeConsentRepository {
+    async fn newest_per_kind(&self, user_id: UserId) -> Result<Vec<ConsentEvent>, RepositoryError> {
+        maybe_fail(&self.inner.failure)?;
+        let events = self.inner.events.lock().unwrap().clone();
+        Ok(ConsentKind::ALL
+            .into_iter()
+            .filter_map(|kind| Self::newest_for(&events, user_id, kind))
+            .collect())
+    }
+
+    async fn history(
+        &self,
+        user_id: UserId,
+        limit: u32,
+        before: Option<identity_application::consent::ports::HistoryCursor>,
+    ) -> Result<Vec<ConsentEvent>, RepositoryError> {
+        maybe_fail(&self.inner.failure)?;
+        let mut events: Vec<ConsentEvent> = self
+            .inner
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| event.user_id() == user_id)
+            .cloned()
+            .collect();
+        events.sort_by_key(|event| std::cmp::Reverse((event.occurred_at(), event.seq())));
+        if let Some(cursor) = before {
+            events.retain(|event| {
+                event.occurred_at() < cursor.occurred_at
+                    || (event.occurred_at() == cursor.occurred_at && event.seq() < cursor.seq)
+            });
+        }
+        events.truncate(limit as usize);
+        Ok(events)
+    }
+
+    async fn insert(&self, draft: &ConsentEventDraft) -> Result<ConsentEvent, RepositoryError> {
+        maybe_fail(&self.inner.failure)?;
+        let event = self.next_event(
+            draft.user_id(),
+            draft.kind(),
+            draft.action(),
+            draft.policy_version().as_str(),
+        );
+        self.inner.events.lock().unwrap().push(event.clone());
+        Ok(event)
+    }
+
+    async fn begin_withdraw(
+        &self,
+        user_id: UserId,
+        kind: ConsentKind,
+    ) -> Result<Box<dyn identity_application::consent::ports::ConsentTransaction>, RepositoryError>
+    {
+        maybe_fail(&self.inner.failure)?;
+        Ok(Box::new(FakeConsentTransaction {
+            inner: self.inner.clone(),
+            user_id,
+            kind,
+        }))
+    }
+}
+
+struct FakeConsentTransaction {
+    inner: Arc<FakeConsentInner>,
+    user_id: UserId,
+    kind: ConsentKind,
+}
+
+#[async_trait]
+impl identity_application::consent::ports::ConsentTransaction for FakeConsentTransaction {
+    async fn newest(&mut self, kind: ConsentKind) -> Result<Option<ConsentEvent>, RepositoryError> {
+        maybe_fail(&self.inner.failure)?;
+        let events = self.inner.events.lock().unwrap();
+        Ok(FakeConsentRepository::newest_for(
+            &events,
+            self.user_id,
+            kind,
+        ))
+    }
+
+    async fn insert_event(
+        &mut self,
+        draft: &ConsentEventDraft,
+    ) -> Result<ConsentEvent, RepositoryError> {
+        let event = self.next_staged(draft);
+        self.inner.staged_events.lock().unwrap().push(event.clone());
+        Ok(event)
+    }
+
+    async fn enqueue_audit(
+        &mut self,
+        intent: &identity_application::consent::ports::AuditIntent,
+    ) -> Result<(), RepositoryError> {
+        maybe_fail(&self.inner.outbox_failure)?;
+        self.inner
+            .staged_outbox
+            .lock()
+            .unwrap()
+            .push(intent.clone());
+        Ok(())
+    }
+
+    async fn commit(self: Box<Self>) -> Result<(), RepositoryError> {
+        let mut staged = self.inner.staged_events.lock().unwrap();
+        self.inner.events.lock().unwrap().append(&mut staged);
+        let mut staged_outbox = self.inner.staged_outbox.lock().unwrap();
+        self.inner.outbox.lock().unwrap().append(&mut staged_outbox);
+        self.inner.commits.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+
+    async fn rollback(self: Box<Self>) -> Result<(), RepositoryError> {
+        self.inner.staged_events.lock().unwrap().clear();
+        self.inner.staged_outbox.lock().unwrap().clear();
+        self.inner.rollbacks.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+impl FakeConsentTransaction {
+    fn next_staged(&self, draft: &ConsentEventDraft) -> ConsentEvent {
+        let seq = self.inner.next_seq.fetch_add(1, Ordering::Relaxed) + 1;
+        ConsentEvent::from_stored(
+            ConsentRecordId::generate(),
+            seq,
+            self.user_id,
+            draft.kind(),
+            draft.action(),
+            Utc.with_ymd_and_hms(2026, 11, 10, 12, 0, 0).unwrap() + Duration::seconds(seq),
+            draft.policy_version().as_str(),
+        )
+    }
+}
+
+/// U4's preferences store: one row per user, only the supplied fields change.
+#[derive(Default)]
+pub struct FakePreferencesRepository {
+    /// Stored rows keyed by user id.
+    pub rows: Mutex<BTreeMap<Uuid, StoredPreferences>>,
+    /// One-shot read or write failure.
+    pub failure: Mutex<Option<RepositoryError>>,
+}
+
+impl FakePreferencesRepository {
+    /// The stored row for one user.
+    pub fn row(&self, user_id: UserId) -> Option<StoredPreferences> {
+        self.rows.lock().unwrap().get(&user_id.as_uuid()).cloned()
+    }
+}
+
+#[async_trait]
+impl identity_application::preferences::ports::PreferencesRepository for FakePreferencesRepository {
+    async fn load(&self, user_id: UserId) -> Result<Option<StoredPreferences>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        Ok(self.row(user_id))
+    }
+
+    async fn upsert(
+        &self,
+        user_id: UserId,
+        update: &PreferenceUpdate,
+        _now: DateTime<Utc>,
+    ) -> Result<StoredPreferences, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        let mut rows = self.rows.lock().unwrap();
+        let stored = rows.entry(user_id.as_uuid()).or_default();
+        if update.locale.is_some() {
+            stored.locale = update.locale;
+        }
+        if update.base_currency.is_some() {
+            stored.base_currency = update.base_currency;
+        }
+        if update.timezone.is_some() {
+            stored.timezone = update.timezone.clone();
+        }
+        if update.notification_email.is_some() {
+            stored.notification_email = update.notification_email;
+        }
+        if update.notification_push.is_some() {
+            stored.notification_push = update.notification_push;
+        }
+        Ok(stored.clone())
+    }
+}
+
+/// U4's provider-profile lookup.
+#[derive(Default)]
+pub struct FakeUserLookup {
+    /// Stored provider profiles keyed by user id.
+    pub profiles: Mutex<BTreeMap<Uuid, ProviderProfile>>,
+    /// One-shot lookup failure.
+    pub failure: Mutex<Option<RepositoryError>>,
+}
+
+impl FakeUserLookup {
+    /// Seeds one provider profile.
+    pub fn seed(&self, user_id: UserId, profile: ProviderProfile) {
+        self.profiles
+            .lock()
+            .unwrap()
+            .insert(user_id.as_uuid(), profile);
+    }
+}
+
+#[async_trait]
+impl identity_application::preferences::ports::UserLookup for FakeUserLookup {
+    async fn provider_profile(
+        &self,
+        user_id: UserId,
+    ) -> Result<Option<ProviderProfile>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        // A provisioned user always has a profile in the real adapter. The fake
+        // resolves an unseeded id to the launch defaults so a test that only
+        // provisions through the principal path still gets an effective read.
+        Ok(Some(
+            self.profiles
+                .lock()
+                .unwrap()
+                .get(&user_id.as_uuid())
+                .cloned()
+                .unwrap_or_else(|| {
+                    ProviderProfile::new(
+                        Locale::En,
+                        BaseCurrency::parse("USD").expect("USD is valid"),
+                        TimeZone::parse("UTC").expect("UTC is valid"),
+                    )
+                }),
+        ))
     }
 }

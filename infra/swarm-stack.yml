@@ -8,6 +8,7 @@
 #   docker build -f services/audit/Dockerfile.retention -t <registry>/audit-retention:<tag> .
 #   docker build -f services/identity/Dockerfile.api -t <registry>/identity-api:<tag> .
 #   docker build -f services/identity/Dockerfile.worker -t <registry>/identity-worker:<tag> .
+#   docker build -f services/identity/Dockerfile.migrate -t <registry>/identity-migrate:<tag> .
 #   docker build -f services/account/Dockerfile.api -t <registry>/account-api:<tag> .
 #   docker build -f services/account/Dockerfile.worker -t <registry>/account-worker:<tag> .
 #   docker build -f services/account/Dockerfile.migrate -t <registry>/account-migrate:<tag> .
@@ -41,6 +42,19 @@
 # Identity credentials and signing keys are Docker secrets created from Supabase
 # Vault by the pipeline, never stack variables:
 #   docker secret create identity_database_url -
+#   docker secret create identity_migrate_database_url -
+#     The migrator DSN carries DDL rights; the runtime DSN does not.
+#   docker secret create identity_retention_database_url -
+#     The erasure job's own DSN, connecting as the LOGIN role identity_retention,
+#     which 0005_preferences_consent creates. The runtime identity_app role is
+#     append-only on consent, so the worker's erasure step cannot use
+#     identity_database_url. The platform owns this value; it is never a stack
+#     variable.
+#   docker secret create identity_smoke_token -
+#     The release smoke job presents this token on C3
+#     GET /v1/internal/users/by-subject/{subjectHash}; the service-token map
+#     must carry an "identity-smoke" entry with the same value, which is
+#     read-only on that path and refused everywhere else.
 #   docker secret create identity_service_tokens -
 #     The JSON token map must carry a "notification" entry whose token is the
 #     same value as notification_outbound_token: Notification presents it on C3
@@ -48,8 +62,17 @@
 #     It must also carry a "reporting" entry whose token is
 #     reporting_outbound_token: Reporting presents it on C3
 #     GET /v1/internal/users/due, and any other caller is refused (403).
+#     For C4 POST /internal/authorize it must carry an "account-api" entry whose
+#     token is the account service's own outbound token (the "account" entry of
+#     account_service_tokens), a "portfolio" entry whose token is the value of
+#     portfolio_outbound_token, and an "identity-smoke" entry whose token is the
+#     value of identity_smoke_token. Any other caller is refused (403).
 #   docker secret create identity_supabase_service_role -
 #   docker secret create identity_gate_token_key -
+#   docker secret create identity_jurisdiction_provider_url -
+#   docker secret create identity_jurisdiction_provider_key -
+#     The jurisdiction gate's geolocation provider (U6). The URL and key are
+#     secrets so the provider contract never appears in the stack file.
 #
 # Account credentials are Docker secrets created from Supabase Vault by the
 # pipeline, never stack variables. The migrator DSN carries DDL rights; the
@@ -161,6 +184,8 @@ services:
       RUST_LOG: info
       GATEWAY_PORT: "8080"
       ASSET_REGISTRY_URL: http://asset-registry:8081
+      # U2: the admin role change and the U1 identity routes forward here.
+      IDENTITY_URL: http://identity-api:8083
       JWT_JWKS_URL: ${JWT_JWKS_URL}
       JWT_ISSUER: ${JWT_ISSUER}
       JWT_AUDIENCE: ${JWT_AUDIENCE}
@@ -350,6 +375,8 @@ services:
       SERVICE_TOKENS_FILE: /run/secrets/identity_service_tokens
       SUPABASE_SERVICE_ROLE_KEY_FILE: /run/secrets/identity_supabase_service_role
       GATE_TOKEN_KEY_FILE: /run/secrets/identity_gate_token_key
+      JURISDICTION_PROVIDER_URL_FILE: /run/secrets/identity_jurisdiction_provider_url
+      JURISDICTION_PROVIDER_KEY_FILE: /run/secrets/identity_jurisdiction_provider_key
       JWT_JWKS_URL: ${JWT_JWKS_URL}
       JWT_ISSUER: ${JWT_ISSUER}
       JWT_AUDIENCE: ${JWT_AUDIENCE}
@@ -368,6 +395,8 @@ services:
       - identity_service_tokens
       - identity_supabase_service_role
       - identity_gate_token_key
+      - identity_jurisdiction_provider_url
+      - identity_jurisdiction_provider_key
     networks:
       - internal
     read_only: true
@@ -407,6 +436,7 @@ services:
       RUST_LOG: info
       IDENTITY_WORKER_PORT: "8085"
       DATABASE_URL_FILE: /run/secrets/identity_database_url
+      IDENTITY_RETENTION_DATABASE_URL_FILE: /run/secrets/identity_retention_database_url
       # Must map "notification" to the same token as notification_outbound_token.
       SERVICE_TOKENS_FILE: /run/secrets/identity_service_tokens
       SUPABASE_SERVICE_ROLE_KEY_FILE: /run/secrets/identity_supabase_service_role
@@ -422,6 +452,7 @@ services:
       PORTFOLIO_URL: ${PORTFOLIO_URL:-http://portfolio:8101}
     secrets:
       - identity_database_url
+      - identity_retention_database_url
       - identity_service_tokens
       - identity_supabase_service_role
     networks:
@@ -457,6 +488,27 @@ services:
           cpus: "0.5"
           memory: 512M
 
+  identity-migrate:
+    image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/identity-migrate:${TAG:-latest}
+    environment:
+      RUST_LOG: info
+      DATABASE_URL_FILE: /run/secrets/identity_migrate_database_url
+    secrets:
+      - identity_migrate_database_url
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
   account-api:
     image: ${REGISTRY:-ghcr.io/crypto-pocket-butler}/account-api:${TAG:-latest}
     environment:
@@ -473,6 +525,8 @@ services:
       ACCOUNT_TOKEN_SERVICE: account
       ACCOUNT_API_POOL: "12"
       AUDIT_URL: http://audit-api:8084
+      # C4: the authorisation decision this service calls to enforce BR2.13.
+      IDENTITY_URL: http://identity-api:8083
       NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8099}
       ASSET_REGISTRY_URL: http://asset-registry:8081
       EVM_RPC_URL: ${EVM_RPC_URL}
@@ -605,7 +659,8 @@ services:
       ACCOUNT_URL: http://account-api:8091
       MARKET_DATA_URL: http://market-data-api:8093
       LEDGER_URL: http://ledger-api:8097
-      IDENTITY_URL: http://identity-api:8089
+      # C4: identity listens on 8083; 8089 is a closed port.
+      IDENTITY_URL: http://identity-api:8083
       NOTIFICATION_URL: ${NOTIFICATION_URL:-http://notification-api:8099}
       AUDIT_URL: http://audit-api:8084
       PORTFOLIO_WORKER_URL: http://portfolio-worker:8102
@@ -1454,11 +1509,21 @@ secrets:
     external: true
   identity_database_url:
     external: true
+  identity_migrate_database_url:
+    external: true
+  identity_retention_database_url:
+    external: true
+  identity_smoke_token:
+    external: true
   identity_service_tokens:
     external: true
   identity_supabase_service_role:
     external: true
   identity_gate_token_key:
+    external: true
+  identity_jurisdiction_provider_url:
+    external: true
+  identity_jurisdiction_provider_key:
     external: true
   account_database_url:
     external: true

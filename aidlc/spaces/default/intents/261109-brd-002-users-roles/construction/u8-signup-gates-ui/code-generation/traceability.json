@@ -1,0 +1,188 @@
+{
+  "stage": "code-generation",
+  "unit": "u8-signup-gates-ui",
+  "upstream_ids": [
+    "AC6.2.1",
+    "AC6.2.2",
+    "AC6.3.1",
+    "AC6.3.2",
+    "AC6.5.1",
+    "AC6.5.2",
+    "NFR2.1",
+    "NFR2.2",
+    "NFR2.3",
+    "NFR2.4",
+    "NFR2.5",
+    "NFR2.6",
+    "NFR2.7",
+    "NFR24.1",
+    "NFR9.1",
+    "NFR10.1",
+    "NFR10.2",
+    "NFR11.1",
+    "NFR11.2",
+    "NFR22.1",
+    "NFR22.2",
+    "NFR22.3",
+    "NFR24.2",
+    "NFR25.1",
+    "NFR25.2",
+    "NFR25.3",
+    "NFR25.4",
+    "NFR26.1",
+    "NFR26.2",
+    "NFR26.3"
+  ],
+  "coverage": [
+    {
+      "id": "AC6.2.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/GateForm.tsx"
+    },
+    {
+      "id": "AC6.2.2",
+      "status": "OK",
+      "target": "web/src/app/RequireGatesPassed.tsx"
+    },
+    {
+      "id": "AC6.3.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/BlockedJurisdictionNotice.tsx"
+    },
+    {
+      "id": "AC6.3.2",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/useGateStatus.ts"
+    },
+    {
+      "id": "AC6.5.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/AcceptanceCheckbox.tsx"
+    },
+    {
+      "id": "AC6.5.2",
+      "status": "OK",
+      "target": "web/src/app/RequireGatesPassed.test.tsx"
+    },
+    {
+      "id": "NFR2.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/SignupGatesPage.tsx"
+    },
+    {
+      "id": "NFR2.2",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/useGateStatus.ts"
+    },
+    {
+      "id": "NFR2.3",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/useSubmitGates.ts"
+    },
+    {
+      "id": "NFR2.4",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/CountrySelect.tsx"
+    },
+    {
+      "id": "NFR2.5",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/GateForm.tsx"
+    },
+    {
+      "id": "NFR2.6",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/useGateStatus.ts"
+    },
+    {
+      "id": "NFR2.7",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/useGateStatus.ts"
+    },
+    {
+      "id": "NFR24.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/useGateStatus.ts"
+    },
+    {
+      "id": "NFR9.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/countries.ts"
+    },
+    {
+      "id": "NFR10.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/submissionTicket.ts"
+    },
+    {
+      "id": "NFR10.2",
+      "status": "OK",
+      "target": "web/src/api/client.ts"
+    },
+    {
+      "id": "NFR11.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/submissionTicket.ts"
+    },
+    {
+      "id": "NFR11.2",
+      "status": "N/A",
+      "target": "Server-side obligation: G3/C6 must treat already-recorded consent kinds as a no-op (U1/U4/U6); the client key holder covers in-app remounts only and is never persisted."
+    },
+    {
+      "id": "NFR22.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/GateErrorNotice.tsx"
+    },
+    {
+      "id": "NFR22.2",
+      "status": "OK",
+      "target": "web/src/api/client.ts"
+    },
+    {
+      "id": "NFR22.3",
+      "status": "OK",
+      "target": "web/src/api/client.ts"
+    },
+    {
+      "id": "NFR24.2",
+      "status": "OK",
+      "target": "web/src/app/RequireGatesPassed.tsx"
+    },
+    {
+      "id": "NFR25.1",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/CountrySelect.tsx"
+    },
+    {
+      "id": "NFR25.2",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/GateErrorNotice.tsx"
+    },
+    {
+      "id": "NFR25.3",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/GateForm.tsx"
+    },
+    {
+      "id": "NFR25.4",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/SignupGatesPage.test.tsx"
+    },
+    {
+      "id": "NFR26.1",
+      "status": "OK",
+      "target": "web/src/i18n/en.json"
+    },
+    {
+      "id": "NFR26.2",
+      "status": "OK",
+      "target": "web/src/features/signup-gates/SignupGatesScreen.tsx"
+    },
+    {
+      "id": "NFR26.3",
+      "status": "N/A",
+      "target": "No date/time is displayed on the gate screen or the blocked notice; nothing to localise."
+    }
+  ]
+}

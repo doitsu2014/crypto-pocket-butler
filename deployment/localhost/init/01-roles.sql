@@ -23,7 +23,7 @@ BEGIN
   -- with LOGIN means the migration's IF NOT EXISTS branch is taken and its
   -- grants still apply.
   FOREACH role_name IN ARRAY ARRAY[
-    'identity_app', 'identity_readonly', 'identity_migrator',
+    'identity_app', 'identity_retention', 'identity_readonly', 'identity_migrator',
     'account_svc', 'account_readonly', 'account_migrator',
     'analytics_svc', 'analytics_readonly', 'analytics_migrator',
     'audit_app', 'audit_readonly', 'audit_retention', 'audit_migrator',

@@ -44,10 +44,20 @@ apply_migrations() {
   local file
   for file in $(find "$directory" -maxdepth 1 -name '*.up.sql' | sort); do
     echo "applying ${file#/services/} (schema ${schema}, role ${user})"
-    psql_for "$user" --single-transaction <<SQL
+    if [[ "$(basename "$file")" == "0005_preferences_consent.up.sql" ]]; then
+      # 0005 must run statement by statement: its backfill procedures COMMIT per
+      # batch and its indexes are built CONCURRENTLY, both of which a single
+      # transaction refuses. This mirrors identity_infrastructure::migrations.
+      psql_for "$user" <<SQL
 SET search_path TO ${schema};
 \i ${file}
 SQL
+    else
+      psql_for "$user" --single-transaction <<SQL
+SET search_path TO ${schema};
+\i ${file}
+SQL
+    fi
   done
 }
 

@@ -7,9 +7,73 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use identity_domain::{
     AuditRecord, ConsentPurpose, ConsentRecord, Contributor, DeletionRequest, DeviceSession,
-    ExportRequest, JurisdictionRule, RetainedCategory, ShreddingKey, SupportAccessGrant, User,
-    UserId, VerifiedClaims,
+    ExportRequest, JurisdictionRule, RetainedCategory, ShreddingKey, StatusTransition,
+    SupportAccessGrant, User, UserId, UserStatus, VerifiedClaims,
 };
+
+/// One status change the lifecycle store applies atomically: the `users` status
+/// column, the append-only transition, and the audit intent (BR5.9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusChange {
+    /// The account whose status changes.
+    pub user_id: UserId,
+    /// The status the caller observed.
+    pub from: UserStatus,
+    /// The status the edge moves to.
+    pub to: UserStatus,
+    /// The owner id, the admin id, or `system`.
+    pub actor: String,
+    /// `owner`, `admin`, or `system`; the audit payload carries it.
+    pub actor_kind: &'static str,
+    /// The admin reason, when the rule requires one.
+    pub reason: Option<String>,
+    /// When the change was requested.
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Applies status changes, transitions, and audit intents in one transaction.
+#[async_trait]
+pub trait StatusTransitionStore: Send + Sync {
+    /// Writes `users.status`, appends the transition, and enqueues its audit
+    /// row. A stored row whose status no longer equals `change.from` is refused
+    /// with [`RepositoryError::Conflict`].
+    ///
+    /// # Errors
+    /// Returns [`RepositoryError`] when the transaction cannot commit.
+    async fn apply(&self, change: &StatusChange) -> Result<StatusTransition, RepositoryError>;
+
+    /// Applies a status change and inserts the open deletion request in one
+    /// transaction (BR5.3).
+    ///
+    /// # Errors
+    /// Returns [`RepositoryError::Conflict`] when another open request exists.
+    async fn open_deletion(
+        &self,
+        change: &StatusChange,
+        request: &DeletionRequest,
+    ) -> Result<StatusTransition, RepositoryError>;
+
+    /// Applies a status change and records the cancellation in one transaction
+    /// (BR5.4).
+    ///
+    /// # Errors
+    /// Returns [`RepositoryError`] when the request cannot be updated.
+    async fn cancel_deletion(
+        &self,
+        change: &StatusChange,
+        request: &DeletionRequest,
+    ) -> Result<StatusTransition, RepositoryError>;
+
+    /// Reads the newest transition for one user, the evidence of its current
+    /// status.
+    ///
+    /// # Errors
+    /// Returns [`RepositoryError`] when the store cannot answer.
+    async fn newest_for_user(
+        &self,
+        user_id: UserId,
+    ) -> Result<Option<StatusTransition>, RepositoryError>;
+}
 
 /// A persistence or external failure surfaced without leaking driver types
 /// inward. The variants let the HTTP boundary choose 409/503 without parsing an
@@ -31,6 +95,11 @@ pub enum RepositoryError {
     /// The database refused the statement because the role lacks the grant.
     #[error("refused: {0}")]
     Forbidden(String),
+
+    /// A stored value is inconsistent with the presented one; the action fails
+    /// closed rather than returning a record the caller does not own.
+    #[error("refused: {0}")]
+    Validation(String),
 }
 
 /// A failed call to an external dependency.
@@ -72,10 +141,32 @@ pub trait UserRepository: Send + Sync {
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, RepositoryError>;
 
     /// Finds the user whose encrypted Supabase subject matches `auth_subject`.
+    /// A hash hit whose decrypted ciphertext names another subject is refused
+    /// with [`RepositoryError::Validation`] (fail closed).
     async fn find_by_auth_subject(
         &self,
         auth_subject: &str,
     ) -> Result<Option<User>, RepositoryError>;
+
+    /// Finds one user by the lower-case hex SHA-256 of the provider subject,
+    /// for the C3 lookup. The caller already validated the subject.
+    async fn find_by_subject_hash(
+        &self,
+        subject_hash: &str,
+    ) -> Result<Option<User>, RepositoryError>;
+
+    /// Finds one user by exact email address, for the admin lookup.
+    async fn find_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError>;
+
+    /// Creates the shredding-key reference, the user, and the protected subject
+    /// in one transaction. Returns the key reference that now protects the user;
+    /// a failure leaves no partial record.
+    async fn provision(
+        &self,
+        user: &User,
+        auth_subject: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ShreddingKey, RepositoryError>;
 
     /// Inserts the user and its protected subject. The repository calls
     /// `identity.protect`; it never handles key material.
@@ -96,6 +187,40 @@ pub trait UserRepository: Send + Sync {
 
     /// Anonymises the user's own fields and removes the encrypted subject.
     async fn anonymise(&self, user: &User) -> Result<(), RepositoryError>;
+}
+
+/// Why the jurisdiction gate did not clear a provider (C8).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum GateRefusal {
+    /// The declared or observed country is restricted.
+    #[error("{0}")]
+    Denied(String),
+    /// The declaration or the observed address is malformed.
+    #[error("{0}")]
+    Invalid(String),
+    /// The list, provider, or evidence store could not answer.
+    #[error("{0}")]
+    Unavailable(String),
+}
+
+/// Clears a provider for provisioning (C8).
+///
+/// The C8 HTTP endpoint remains for consumers in other services; the registry
+/// calls this port in-process inside the Identity service.
+#[async_trait]
+pub trait JurisdictionGate: Send + Sync {
+    /// Returns `Ok(())` only when both the self-declared country and the
+    /// IP-resolved country are allowed.
+    ///
+    /// # Errors
+    /// Returns [`GateRefusal`] when the provider is restricted, the declaration
+    /// is malformed, or the decision cannot be made.
+    async fn clear(
+        &self,
+        country_code: &str,
+        ip: &str,
+        correlation_id: &str,
+    ) -> Result<(), GateRefusal>;
 }
 
 /// Reads and writes the per-subject shredding-key references.
@@ -138,6 +263,18 @@ pub trait ConsentRepository: Send + Sync {
     /// Removes the user's consent history during anonymisation. Returns the
     /// number of records removed.
     async fn delete_for_user(&self, user_id: UserId) -> Result<u64, RepositoryError>;
+}
+
+/// Removes a user's erasure-scoped rows through the dedicated erasure role.
+///
+/// The application connects as `identity_app`, which is append-only on consent
+/// (BR4.4). The erasure job connects as `identity_retention`, so its deletes go
+/// through this separate port and connection pool (FR17.3, NFR22.3).
+#[async_trait]
+pub trait ErasureStore: Send + Sync {
+    /// Deletes the user's consent events, preferences, and archived events.
+    /// Returns how many consent events were removed.
+    async fn erase_consent(&self, user_id: UserId) -> Result<u64, RepositoryError>;
 }
 
 /// Reads and writes support-access grants.
@@ -224,16 +361,17 @@ pub trait DeletionRepository: Send + Sync {
         id: identity_domain::DeletionRequestId,
     ) -> Result<Option<DeletionRequest>, RepositoryError>;
 
-    /// Persists progress, completion, or failure.
+    /// Persists progress, the window, completion, or the retry bookkeeping.
     async fn update(&self, deletion: &DeletionRequest) -> Result<(), RepositoryError>;
 
-    /// Finds the user's active request, if one is requested or in progress.
+    /// Finds the user's open request (neither cancelled nor erased), if any.
     async fn find_active_for_user(
         &self,
         user_id: UserId,
     ) -> Result<Option<DeletionRequest>, RepositoryError>;
 
-    /// Atomically claims the oldest claimable request and sets its lease.
+    /// Atomically claims the oldest due request: open, past its recovery
+    /// window, due for a retry, and not under a live lease (W4).
     async fn claim_next(
         &self,
         worker: &str,

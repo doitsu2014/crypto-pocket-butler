@@ -349,3 +349,37 @@ export interface ClientErrorEvent {
   correlationId: string;
   sessionId?: string;
 }
+
+// ── Signup gates (U8) ──────────────────────────────────────────────────────
+// Transcribed from contract-summary.md C1 (Principal) and functional-spec §6
+// (G2/G3). Additive only — no existing type changes.
+
+export type PrincipalRole = "owner" | "admin" | "support";
+
+export type PrincipalStatus = "pending" | "active" | "disabled" | "pending_deletion" | "deleted";
+
+export type PrincipalNextStep = "none" | "verify_email" | "enrol_mfa" | "restore_account";
+
+/** C1: the self-scoped, read-only principal answer (functional-spec §6 G1). */
+export interface Principal {
+  userId: string;
+  role: PrincipalRole;
+  status: PrincipalStatus;
+  displayName?: string;
+  emailVerified?: boolean;
+  nextStep: PrincipalNextStep;
+}
+
+/** G2: what is still outstanding, and whether continued use is blocked. */
+export interface SignupGateState {
+  missing: Array<"terms" | "risk" | "age">;
+  jurisdictionBlocked: boolean;
+}
+
+/** G3 request body — exactly four fields (functional-spec §3). */
+export interface SignupGatesPayload {
+  countryCode: string;
+  terms: boolean;
+  risk: boolean;
+  age: boolean;
+}

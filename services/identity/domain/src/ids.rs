@@ -94,3 +94,8 @@ uuid_id!(
     "The identifier of one device-session row.",
     "device session"
 );
+uuid_id!(
+    StatusTransitionId,
+    "The identifier of one recorded account-status change.",
+    "status transition"
+);

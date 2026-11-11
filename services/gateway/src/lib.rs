@@ -40,8 +40,17 @@ pub fn build_state(config: &Config) -> anyhow::Result<AppState> {
         config.jwt_issuer.clone(),
         config.jwt_audience.clone(),
     ));
-    let upstream = Arc::new(ReqwestUpstreamClient::new(
+    let mut services = std::collections::BTreeMap::new();
+    services.insert(
+        gateway_domain::ServiceName::registry().as_str().to_string(),
         config.registry_url.clone(),
+    );
+    services.insert(
+        gateway_domain::ServiceName::identity().as_str().to_string(),
+        config.identity_url.clone(),
+    );
+    let upstream = Arc::new(ReqwestUpstreamClient::with_services(
+        services,
         config.upstream_timeout_ms,
     ));
     let audit = Arc::new(TracingAuditSink);

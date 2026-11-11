@@ -106,6 +106,7 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
             accountService -> billingService "Checks account, coverage and sync-frequency quotas" "Internal HTTP"
             accountService -> analyticsService "Emits sync, coverage and account-type events" "Internal HTTP"
             accountService -> auditService "Records credential and account lifecycle audit events" "Internal HTTP"
+            accountService -> identityService "Calls the C4 authorisation decision to verify role, status, and cross-owner linkage before storing a link" "Internal HTTP, service token + forwarded JWT"
             accountService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             assetRegistryService -> supabasePostgres "Reads and writes assets, contracts, decimals, chains, token registries, sources and quarantine" "Supabase Postgres (schema registry, role registry)"
@@ -132,6 +133,7 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
             portfolioService -> billingService "Checks portfolio quotas and entitlements" "Internal HTTP"
             portfolioService -> analyticsService "Emits valuation, drift, allocation and activation events" "Internal HTTP"
             portfolioService -> auditService "Records order decision, snapshot and performance audit events" "Internal HTTP"
+            portfolioService -> identityService "Calls the C4 authorisation decision to enforce role, status, and ownership on every read and write" "Internal HTTP, service token + forwarded JWT"
             portfolioService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             ledgerService -> supabasePostgres "Appends transactions and adjustments, stores cost lots, P&L and reconciliation state" "Supabase Postgres (schema ledger, role ledger)"

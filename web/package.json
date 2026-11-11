@@ -64,6 +64,7 @@
     "globals": "^15.14.0",
     "jest-axe": "^10.0.0",
     "jsdom": "^25.0.1",
+    "msw": "^2.7.0",
     "prettier": "^3.4.2",
     "size-limit": "^14.3.0",
     "tailwindcss": "^4.0.0",

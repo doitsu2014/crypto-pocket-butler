@@ -10,6 +10,8 @@ pub struct Config {
     pub port: u16,
     /// Asset Registry base URL on the internal network.
     pub registry_url: String,
+    /// Identity base URL on the internal network.
+    pub identity_url: String,
     /// Supabase JWKS URL (public).
     pub jwks_url: String,
     /// Expected JWT issuer.
@@ -35,6 +37,7 @@ impl Config {
                 .parse()
                 .context("GATEWAY_PORT must be a valid port")?,
             registry_url: env_or("ASSET_REGISTRY_URL", "http://asset-registry:8081"),
+            identity_url: env_or("IDENTITY_URL", "http://identity-api:8083"),
             jwks_url: required("JWT_JWKS_URL")?,
             jwt_issuer: required("JWT_ISSUER")?,
             jwt_audience: required("JWT_AUDIENCE")?,

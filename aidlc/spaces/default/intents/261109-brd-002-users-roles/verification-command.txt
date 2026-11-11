@@ -1,0 +1,1 @@
+cargo test --workspace && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && yarn --cwd web test && yarn --cwd web lint && yarn --cwd web build && yarn --cwd support-console test && yarn --cwd support-console lint

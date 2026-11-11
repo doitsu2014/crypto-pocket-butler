@@ -102,6 +102,31 @@ async fn a_declared_route_is_proxied_and_the_response_is_returned() {
 }
 
 #[tokio::test]
+async fn a_u4_me_route_is_proxied_to_identity() {
+    let upstream = Arc::new(FakeUpstream::ok());
+    let state = state(
+        FakeValidator::user(),
+        upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+
+    let (status, _, body) = send(
+        &state,
+        AxumMethod::PUT,
+        "/v1/me/preferences",
+        Some("valid-user-token"),
+        Some("corr-u4"),
+        Some("{\"locale\":\"vi\"}"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ok"], true);
+    assert_eq!(upstream.calls(), 1);
+}
+
+#[tokio::test]
 async fn a_missing_token_is_a_401_problem() {
     let state = state(
         FakeValidator::user(),
@@ -189,6 +214,45 @@ async fn a_user_cannot_reach_an_admin_route_but_an_admin_can() {
         Some("valid-admin-token"),
         None,
         Some("{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(admin_upstream.calls(), 1);
+}
+
+#[tokio::test]
+async fn the_admin_role_change_is_reachable_through_the_gateway() {
+    let user_state = state(
+        FakeValidator::user(),
+        Arc::new(FakeUpstream::ok()),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+    let (status, _, _) = send(
+        &user_state,
+        AxumMethod::PUT,
+        "/v1/admin/users/11111111-1111-4111-8111-111111111111/role",
+        Some("valid-user-token"),
+        None,
+        Some(r#"{"newRole":"admin","reason":"promotion"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let admin_upstream = Arc::new(FakeUpstream::ok());
+    let admin_state = state(
+        FakeValidator::admin(),
+        admin_upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+    let (status, _, _) = send(
+        &admin_state,
+        AxumMethod::PUT,
+        "/v1/admin/users/11111111-1111-4111-8111-111111111111/role",
+        Some("valid-admin-token"),
+        None,
+        Some(r#"{"newRole":"admin","reason":"promotion"}"#),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -375,4 +439,85 @@ async fn a_timeout_is_recorded_as_a_5xx_for_the_error_rate() {
 async fn the_method_parser_rejects_nothing_the_gateway_uses() {
     assert!(Method::parse("GET").is_ok());
     assert!(Method::parse("BREW").is_err());
+}
+
+// ---------------------------------------------------------------------------
+// U6 — the trusted client address (NFR23.3)
+// ---------------------------------------------------------------------------
+
+async fn client_ip_probe(request: Request<Body>) -> String {
+    request
+        .headers()
+        .get("x-client-ip")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("none")
+        .to_string()
+}
+
+fn client_ip_router() -> axum::Router {
+    axum::Router::new()
+        .route("/probe", axum::routing::get(client_ip_probe))
+        .layer(axum::middleware::from_fn(
+            gateway_http::middleware::client_ip,
+        ))
+}
+
+async fn probe_client_ip(request: Request<Body>) -> String {
+    let response = client_ip_router().oneshot(request).await.unwrap();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    String::from_utf8(bytes.to_vec()).unwrap()
+}
+
+#[tokio::test]
+async fn client_ip_strips_forwarded_for_and_uses_the_observed_peer() {
+    let mut request = Request::builder()
+        .uri("/probe")
+        .header("x-forwarded-for", "203.0.113.9")
+        .header("x-client-ip", "203.0.113.10")
+        .body(Body::empty())
+        .unwrap();
+    request
+        .extensions_mut()
+        .insert(axum::extract::connect_info::ConnectInfo(
+            std::net::SocketAddr::from(([192, 0, 2, 44], 40000)),
+        ));
+
+    assert_eq!(probe_client_ip(request).await, "192.0.2.44");
+}
+
+#[tokio::test]
+async fn client_ip_uses_the_trusted_edge_header_when_no_peer_is_attached() {
+    let request = Request::builder()
+        .uri("/probe")
+        .header("x-forwarded-for", "203.0.113.9")
+        .header("x-real-ip", "198.51.100.7")
+        .body(Body::empty())
+        .unwrap();
+
+    assert_eq!(probe_client_ip(request).await, "198.51.100.7");
+}
+
+#[tokio::test]
+async fn client_ip_never_forwards_a_caller_supplied_value() {
+    let spoofed = Request::builder()
+        .uri("/probe")
+        .header("x-client-ip", "203.0.113.10")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        probe_client_ip(spoofed).await,
+        "none",
+        "a client-written x-client-ip is stripped"
+    );
+
+    let malformed = Request::builder()
+        .uri("/probe")
+        .header("x-real-ip", "not-an-address")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        probe_client_ip(malformed).await,
+        "none",
+        "a malformed edge header never reaches downstream"
+    );
 }

@@ -1,0 +1,36 @@
+{
+  "stage": "nfr-design",
+  "unit": "u1-user-registry",
+  "upstream_ids": ["NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR22.1", "NFR9.1", "NFR10.1", "NFR23.1", "NFR23.2", "NFR9.2", "NFR19.1", "NFR20.1", "NFR20.2", "NFR20.3", "NFR20.4", "NFR1.1", "NFR1.2", "NFR1.3", "NFR1.4", "NFR24.1", "NFR18.1"],
+  "coverage": [
+    { "id": "NFR2.1", "status": "OK", "target": "performance-design resolution budget" },
+    { "id": "NFR2.2", "status": "OK", "target": "performance-design provisioning budget" },
+    { "id": "NFR2.3", "status": "OK", "target": "performance-design admin lookup index" },
+    { "id": "NFR2.4", "status": "OK", "target": "performance-design profile update budget" },
+    { "id": "NFR22.1", "status": "OK", "target": "security-design subject hash and ciphertext" },
+    { "id": "NFR9.1", "status": "OK", "target": "security-design no secrets in logs or responses" },
+    { "id": "NFR10.1", "status": "OK", "target": "security-design trust boundaries" },
+    { "id": "NFR23.1", "status": "OK", "target": "security-design least privilege" },
+    { "id": "NFR23.2", "status": "OK", "target": "security-design admin boundary" },
+    { "id": "NFR9.2", "status": "OK", "target": "security-design input validation" },
+    { "id": "NFR19.1", "status": "OK", "target": "security-design audit and observability-design" },
+    { "id": "NFR20.1", "status": "OK", "target": "scalability-design indexed lookups" },
+    { "id": "NFR20.2", "status": "OK", "target": "scalability-design horizontal scaling" },
+    { "id": "NFR20.3", "status": "OK", "target": "reliability-design provisioning transaction" },
+    { "id": "NFR20.4", "status": "OK", "target": "scalability-design admin index" },
+    { "id": "NFR1.1", "status": "OK", "target": "reliability-design availability and health checks" },
+    { "id": "NFR1.2", "status": "OK", "target": "reliability-design provisioning transaction" },
+    { "id": "NFR1.3", "status": "OK", "target": "reliability-design idempotent provisioning" },
+    { "id": "NFR1.4", "status": "OK", "target": "reliability-design fail-closed gate" },
+    { "id": "NFR24.1", "status": "OK", "target": "reliability-design status freshness" },
+    { "id": "NFR18.1", "status": "OK", "target": "reliability-design recovery objectives" }
+  ],
+  "reverse": [
+    { "id": "NFR17.1", "status": "N/A", "target": "designed in observability-design; the NFR-requirements sensor does not enumerate this file" },
+    { "id": "NFR17.2", "status": "N/A", "target": "designed in observability-design metrics" },
+    { "id": "NFR17.3", "status": "N/A", "target": "designed in observability-design latency histogram" },
+    { "id": "NFR17.4", "status": "N/A", "target": "designed in observability-design alerts" },
+    { "id": "NFR17.5", "status": "N/A", "target": "designed in observability-design tracing" },
+    { "id": "NFR19.2", "status": "N/A", "target": "designed in observability-design audit events" }
+  ]
+}

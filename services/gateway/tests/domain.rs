@@ -128,6 +128,77 @@ fn path_patterns_reject_malformed_declarations() {
 fn service_names_reject_blank_values() {
     assert!(ServiceName::new("  ").is_err());
     assert_eq!(ServiceName::registry().as_str(), "asset-registry");
+    assert_eq!(ServiceName::identity().as_str(), "identity");
+}
+
+#[test]
+fn the_identity_routes_are_declared_with_the_admin_search_gated() {
+    let table = RouteTable::default_registry_routes();
+
+    for (method, path) in [
+        (
+            Method::Get,
+            "/v1/principals/11111111-1111-4111-8111-111111111111",
+        ),
+        (
+            Method::Get,
+            "/v1/users/11111111-1111-4111-8111-111111111111",
+        ),
+    ] {
+        let route = table.match_route(method, path).expect("identity route");
+        assert_eq!(route.service.as_str(), "identity");
+        assert!(!route.requires_admin);
+    }
+
+    let search = table
+        .match_route(Method::Get, "/v1/admin/users")
+        .expect("admin search route");
+    assert_eq!(search.service.as_str(), "identity");
+    assert!(
+        search.requires_admin,
+        "the admin search needs the admin role"
+    );
+}
+
+#[test]
+fn the_me_preferences_and_consent_routes_are_identity_and_not_admin() {
+    let table = RouteTable::default_registry_routes();
+
+    for (method, path) in [
+        (Method::Get, "/v1/me/preferences"),
+        (Method::Put, "/v1/me/preferences"),
+        (Method::Get, "/v1/me/consent/state"),
+        (Method::Get, "/v1/me/consent"),
+        (Method::Post, "/v1/me/consent"),
+        (Method::Post, "/v1/me/consent/terms/withdraw"),
+    ] {
+        let route = table.match_route(method, path).expect("U4 route");
+        assert_eq!(route.service.as_str(), "identity", "{method:?} {path}");
+        assert!(!route.requires_admin, "{method:?} {path}");
+    }
+
+    assert!(
+        table
+            .match_route(Method::Get, "/v1/me/consent/terms")
+            .is_none(),
+        "only the declared sub-paths are served"
+    );
+}
+
+#[test]
+fn the_admin_role_change_route_is_declared_and_requires_admin() {
+    let table = RouteTable::default_registry_routes();
+    let route = table
+        .match_route(
+            Method::Put,
+            "/v1/admin/users/11111111-1111-4111-8111-111111111111/role",
+        )
+        .expect("role-change route");
+    assert_eq!(route.service.as_str(), "identity");
+    assert!(
+        route.requires_admin,
+        "the role change needs the admin role at the edge"
+    );
 }
 
 #[test]

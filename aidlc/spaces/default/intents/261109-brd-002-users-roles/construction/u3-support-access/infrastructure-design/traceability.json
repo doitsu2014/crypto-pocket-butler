@@ -1,0 +1,416 @@
+{
+  "stage": "infrastructure-design",
+  "unit": "u3-support-access",
+  "upstream_ids": [
+    "NFR2.1",
+    "NFR2.11",
+    "NFR2.10",
+    "NFR24.1",
+    "NFR9.1",
+    "NFR9.2",
+    "NFR10.1",
+    "NFR10.7",
+    "NFR11.1",
+    "NFR19.1",
+    "NFR19.4",
+    "NFR22.1",
+    "NFR22.2",
+    "NFR23.1",
+    "NFR23.3",
+    "NFR23.2",
+    "NFR10.3",
+    "NFR10.4",
+    "NFR10.6",
+    "NFR10.5",
+    "NFR19.3",
+    "NFR1.5",
+    "NFR20.1",
+    "NFR20.9",
+    "NFR20.2",
+    "NFR20.3",
+    "NFR20.4",
+    "NFR20.5",
+    "NFR20.7",
+    "NFR20.8",
+    "NFR20.6",
+    "NFR1.1",
+    "NFR1.11",
+    "NFR18.1",
+    "NFR18.4",
+    "NFR18.3",
+    "NFR18.2",
+    "NFR2.2",
+    "NFR2.3",
+    "NFR2.4",
+    "NFR2.5",
+    "NFR2.6",
+    "NFR2.7",
+    "NFR2.8",
+    "NFR2.9",
+    "NFR17.1",
+    "NFR17.2",
+    "NFR17.3",
+    "NFR10.2",
+    "NFR19.2",
+    "NFR17.4",
+    "NFR17.5",
+    "NFR17.6",
+    "NFR17.7",
+    "NFR17.8",
+    "NFR17.9",
+    "NFR17.10",
+    "NFR17.11",
+    "NFR17.12",
+    "NFR17.13",
+    "NFR1.2",
+    "NFR1.3",
+    "NFR1.4",
+    "NFR1.6",
+    "NFR1.7",
+    "NFR1.8",
+    "NFR1.9",
+    "NFR1.10"
+  ],
+  "coverage": [
+    {
+      "id": "NFR2.1",
+      "status": "N/A",
+      "target": "Code-level budget on the existing identity-api compute and pool; infrastructure-specification.md sizes nothing new"
+    },
+    {
+      "id": "NFR2.11",
+      "status": "N/A",
+      "target": "The support sink joins the existing drainer inside identity-api (built and spawned in build_api_state, services/identity/src/lib.rs:291,350); one more sink in an existing pass, no new schedule, service or resource"
+    },
+    {
+      "id": "NFR2.10",
+      "status": "N/A",
+      "target": "The 500 ms deadline is a code-level timeout; infrastructure-specification.md records no timeout resource"
+    },
+    {
+      "id": "NFR24.1",
+      "status": "N/A",
+      "target": "No cache is provisioned; infrastructure-specification.md 'What is deliberately not provisioned'"
+    },
+    {
+      "id": "NFR9.1",
+      "status": "OK",
+      "target": "Both owners verify an inbound token by hash against their own service_token_registry, where identity is already a caller (privacy_export/privacy_anonymise); the new support_metadata_read operation must be seeded, and Account has no infra/sql seed file — recorded in infrastructure-specification.md 'Configuration this unit depends on'"
+    },
+    {
+      "id": "NFR9.2",
+      "status": "N/A",
+      "target": "A no-callback constraint on the two owner endpoints; no infrastructure control expresses it"
+    },
+    {
+      "id": "NFR10.1",
+      "status": "OK",
+      "target": "identity-api already receives JWT_JWKS_URL, JWT_ISSUER and JWT_AUDIENCE in infra/swarm-stack.yml; no new configuration"
+    },
+    {
+      "id": "NFR10.7",
+      "status": "N/A",
+      "target": "The support route set is a code-level boundary; infrastructure adds no route that names content"
+    },
+    {
+      "id": "NFR11.1",
+      "status": "OK",
+      "target": "The gateway route table gains max_requests_per_minute on the four support paths, and the token-hash bucket gets its own bounded map so it cannot evict the IP windows. The shipped limiter is in-process and the gateway runs 2 replicas, so a configured budget is per replica and the fleet ceiling is 2x — stated in infrastructure-specification.md 'Infrastructure Services'"
+    },
+    {
+      "id": "NFR19.1",
+      "status": "OK",
+      "target": "The existing audit-api service (insert-only role) receives the support events; infrastructure-specification.md 'Infrastructure Services'"
+    },
+    {
+      "id": "NFR19.4",
+      "status": "OK",
+      "target": "support_audit_outbox in the identity schema, drained by the existing drainer inside identity-api through the existing AUDIT_URL and DATABASE_URL secrets; identity-worker runs PrivacyWorker only"
+    },
+    {
+      "id": "NFR22.1",
+      "status": "N/A",
+      "target": "Metric label vocabularies are closed enums in the code; no infrastructure control governs them"
+    },
+    {
+      "id": "NFR22.2",
+      "status": "N/A",
+      "target": "Log field selection is code-level; the new service provides no secret or personal datum to log"
+    },
+    {
+      "id": "NFR23.1",
+      "status": "OK",
+      "target": "Migration 0007 grants the new table to identity_app (select/insert/update/delete) and identity_readonly (select); identity_migrator keeps DDL. No cross-schema grant"
+    },
+    {
+      "id": "NFR23.3",
+      "status": "OK",
+      "target": "The identity service token stays in the service-token registry and Docker secrets (Vault-backed); this unit adds no secret to infra/swarm-stack.yml"
+    },
+    {
+      "id": "NFR23.2",
+      "status": "OK",
+      "target": "The audit-api insert-only role is unchanged; U3 posts C9/C10 events and writes only its own outbox table"
+    },
+    {
+      "id": "NFR10.3",
+      "status": "N/A",
+      "target": "Holder check is a code rule in the domain; no infrastructure resource enforces it"
+    },
+    {
+      "id": "NFR10.4",
+      "status": "N/A",
+      "target": "The grant-is-not-ownership rule lives in the code and the schema has no cross-service reference by design"
+    },
+    {
+      "id": "NFR10.6",
+      "status": "N/A",
+      "target": "Uniform 403 is a response-shape decision in the code"
+    },
+    {
+      "id": "NFR10.5",
+      "status": "N/A",
+      "target": "The projection allowlist is a DTO shape in the code"
+    },
+    {
+      "id": "NFR19.3",
+      "status": "N/A",
+      "target": "The fixed audit field set is a code shape; no infrastructure control adds or removes a field"
+    },
+    {
+      "id": "NFR1.5",
+      "status": "OK",
+      "target": "The operator replay/export statement runs against support_audit_outbox in the identity schema; monitoring-design.md routes SupportOutboxDeadRows to it"
+    },
+    {
+      "id": "NFR20.1",
+      "status": "OK",
+      "target": "Partial unique index on (support_agent_id, user_id) WHERE status IN ('pending_approval','active'), created by 0007_support_access.up.sql"
+    },
+    {
+      "id": "NFR20.9",
+      "status": "N/A",
+      "target": "No cache is provisioned for the projection; infrastructure-specification.md 'What is deliberately not provisioned'"
+    },
+    {
+      "id": "NFR20.2",
+      "status": "N/A",
+      "target": "Conditional UPDATE in the repository; the database enforces it, no infrastructure resource is added"
+    },
+    {
+      "id": "NFR20.3",
+      "status": "N/A",
+      "target": "Conditional UPDATE on the current status; statement-level, no infrastructure resource"
+    },
+    {
+      "id": "NFR20.4",
+      "status": "N/A",
+      "target": "One transaction in the repository; no infrastructure resource"
+    },
+    {
+      "id": "NFR20.5",
+      "status": "OK",
+      "target": "identity-api's 3 replicas drain concurrently under FOR UPDATE SKIP LOCKED; the claim query and its partial index are the infrastructure shape that makes N replicas safe"
+    },
+    {
+      "id": "NFR20.7",
+      "status": "OK",
+      "target": "0007_support_access.up.sql adds the partial unique index; support_grants_read_idx survives unchanged; no second user index"
+    },
+    {
+      "id": "NFR20.8",
+      "status": "OK",
+      "target": "0007_support_access.up.sql adds the partial indexes on (next_attempt_at) WHERE state = 'pending' and (delivered_at) WHERE state = 'delivered'"
+    },
+    {
+      "id": "NFR20.6",
+      "status": "OK",
+      "target": "No partitioning or archival provisioned; the grants table grows ~365,000 rows/year and identity_app holds no DELETE on it (infrastructure-specification.md 'Infrastructure Services')"
+    },
+    {
+      "id": "NFR1.1",
+      "status": "OK",
+      "target": "identity-migrate runs 0007 to completion before identity-api is updated; cicd-pipeline.md 'The migration gate'"
+    },
+    {
+      "id": "NFR1.11",
+      "status": "N/A",
+      "target": "The single-attempt 200 ms append is a client setting in the code; no infrastructure control"
+    },
+    {
+      "id": "NFR18.1",
+      "status": "OK",
+      "target": "The identity schema, including the new table, inherits the platform's Supabase Postgres backup (RPO ≤ 24 h, RTO ≤ 4 h); no unit-owned store"
+    },
+    {
+      "id": "NFR18.4",
+      "status": "N/A",
+      "target": "Replica safety comes from the stateless service and the SKIP LOCKED claim; identity-api already runs 3 replicas, nothing new is provisioned"
+    },
+    {
+      "id": "NFR18.3",
+      "status": "OK",
+      "target": "infra/swarm-stack.yml identity-api update_config (start-first, parallelism 1, failure_action rollback, monitor 30s) gated on the /healthz health check"
+    },
+    {
+      "id": "NFR18.2",
+      "status": "OK",
+      "target": "0007_support_access.{up,down}.sql ship as a pair; the down step restores the approval shape as NOT VALID, requires the export first, and refuses to drop a non-empty outbox (cicd-pipeline.md 'Rollback procedure')"
+    },
+    {
+      "id": "NFR2.2",
+      "status": "N/A",
+      "target": "Per-request budgets (60/150 ms) are code-level; infrastructure-specification.md sizes nothing new"
+    },
+    {
+      "id": "NFR2.3",
+      "status": "N/A",
+      "target": "One grant read and one conditional UPDATE plus its outbox row are code-level statements; no infrastructure resource"
+    },
+    {
+      "id": "NFR2.4",
+      "status": "N/A",
+      "target": "The zero-row-update branch is a code path; no infrastructure resource"
+    },
+    {
+      "id": "NFR2.5",
+      "status": "N/A",
+      "target": "SET LOCAL statement_timeout = '500ms' is a session setting in the code; no infrastructure control"
+    },
+    {
+      "id": "NFR2.6",
+      "status": "N/A",
+      "target": "HttpSupportMetadataSource timeouts (1 s connect, 120 ms request) are client settings in the code"
+    },
+    {
+      "id": "NFR2.7",
+      "status": "N/A",
+      "target": "The try_join! fan-out and the 300 ms composition budget are code-level; the read is bounded at 20,000/day, so no sizing follows"
+    },
+    {
+      "id": "NFR2.8",
+      "status": "N/A",
+      "target": "A refusal never fans out — a code branch with no infrastructure expression"
+    },
+    {
+      "id": "NFR2.9",
+      "status": "N/A",
+      "target": "HttpAuditClient's 200 ms single-attempt append is a client setting in the code"
+    },
+    {
+      "id": "NFR17.1",
+      "status": "OK",
+      "target": "monitoring-design.md 'Metrics and KPIs': support_grants_total{operation,outcome} scraped zero-initialised, summed over the 3 identity-api replicas, with the write SLI and SupportWriteFailures reading it"
+    },
+    {
+      "id": "NFR17.2",
+      "status": "OK",
+      "target": "monitoring-design.md: support_reads_total{outcome} with its four outcomes, summed over replicas, driving the read SLI and SupportReadUnavailable"
+    },
+    {
+      "id": "NFR17.3",
+      "status": "OK",
+      "target": "monitoring-design.md: support_read_duration_seconds histogram, and SupportReadLatency at p95 150 ms / p99 300 ms for 10 min"
+    },
+    {
+      "id": "NFR10.2",
+      "status": "N/A",
+      "target": "The support and admin roles are read from app_metadata.role in the code; no infrastructure resource grants or withholds a role"
+    },
+    {
+      "id": "NFR19.2",
+      "status": "OK",
+      "target": "The grant table and support_audit_outbox live in the same identity schema, so the mutation and its outbox row commit in one Postgres transaction; infrastructure-specification.md 'Infrastructure Services'"
+    },
+    {
+      "id": "NFR17.4",
+      "status": "OK",
+      "target": "monitoring-design.md: support_metadata_source_errors_total{source,cause} and SupportMetadataSourceErrors at 0.2% per source for 10 min"
+    },
+    {
+      "id": "NFR17.5",
+      "status": "OK",
+      "target": "monitoring-design.md: support_audit_write_failures_total{cause} and SupportAuditFailingClosed (P1, any increase over 5 min)"
+    },
+    {
+      "id": "NFR17.6",
+      "status": "OK",
+      "target": "monitoring-design.md: support_outbox_deliveries_total{outcome} summed over replicas, and SupportOutboxDeadRows on any dead over 15 min"
+    },
+    {
+      "id": "NFR17.7",
+      "status": "OK",
+      "target": "monitoring-design.md: support_outbox_pending is a scrape-time COUNT(*) through SupportOutboxBacklog, and SupportOutboxBacklog fires above 100 rows for 15 min"
+    },
+    {
+      "id": "NFR17.8",
+      "status": "OK",
+      "target": "monitoring-design.md: support_outbox_oldest_age_seconds is a scrape-time MIN(created_at) through SupportOutboxBacklog, and SupportOutboxStalled fires above 900 s"
+    },
+    {
+      "id": "NFR17.9",
+      "status": "OK",
+      "target": "monitoring-design.md: support_outbox_last_pass_timestamp_seconds is written at the end of every support pass inside identity-api; SupportOutboxStalled reads max() over the 3 replicas and fires on stale or absent"
+    },
+    {
+      "id": "NFR17.10",
+      "status": "OK",
+      "target": "monitoring-design.md: support_grant_decision_errors_total{cause} and SupportGrantDecisionErrors above 0.1% for 10 min"
+    },
+    {
+      "id": "NFR17.11",
+      "status": "OK",
+      "target": "infrastructure-specification.md 'Deployment' release-gate row: /healthz with start-first is the Swarm update gate; cicd-pipeline.md 'Deployment strategy'"
+    },
+    {
+      "id": "NFR17.12",
+      "status": "OK",
+      "target": "cicd-pipeline.md 'Deployment strategy': /readyz reports the database and the audit store, and the metadata sources are reported there without failing readiness"
+    },
+    {
+      "id": "NFR17.13",
+      "status": "OK",
+      "target": "cicd-pipeline.md 'Deployment strategy': the drainer heartbeat is in neither endpoint, so a drainer stall is an alert and never a readiness failure"
+    },
+    {
+      "id": "NFR1.2",
+      "status": "OK",
+      "target": "monitoring-design.md 'SLIs and SLOs': read availability is the product of its four fail-closed dependencies (~99.6%), not the platform 99.9%, with the budget stated"
+    },
+    {
+      "id": "NFR1.3",
+      "status": "OK",
+      "target": "infrastructure-specification.md 'Deployment' release-gate row: /healthz must not depend on Account or Portfolio, or their outage would pull every replica out of an update"
+    },
+    {
+      "id": "NFR1.4",
+      "status": "OK",
+      "target": "0007_support_access.up.sql creates support_audit_outbox with state (pending/delivered/dead), attempts, next_attempt_at, last_error, an idempotency key and delivered_at; the claim query takes a 30 s lease"
+    },
+    {
+      "id": "NFR1.6",
+      "status": "OK",
+      "target": "The outbox row id is the idempotency key — a primary-key column in 0007_support_access.up.sql, stable across attempts and replay"
+    },
+    {
+      "id": "NFR1.7",
+      "status": "OK",
+      "target": "0007_support_access.up.sql grants identity_app DELETE on support_audit_outbox, which the drainer's 24 h cleanup uses; no separate audit store is provisioned"
+    },
+    {
+      "id": "NFR1.8",
+      "status": "OK",
+      "target": "monitoring-design.md: pending and oldest-age are scrape-time reads through SupportOutboxBacklog and the heartbeat is the one in-process reading; SupportOutboxStalled also fires on an absent heartbeat"
+    },
+    {
+      "id": "NFR1.9",
+      "status": "N/A",
+      "target": "No write is retried automatically — a code decision; BR3.3's 409 is the safety net"
+    },
+    {
+      "id": "NFR1.10",
+      "status": "N/A",
+      "target": "The two source reads are single-attempt with a 120 ms request timeout inside the 500 ms deadline — code-level client settings"
+    }
+  ]
+}

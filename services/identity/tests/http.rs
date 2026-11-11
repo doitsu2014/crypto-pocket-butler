@@ -11,6 +11,7 @@ use axum::body::Body;
 use axum::http::{header, HeaderMap, Method, Request, StatusCode};
 use common::*;
 use http_body_util::BodyExt;
+use identity_application::ports::ExternalError;
 use identity_domain::CountryCode;
 use identity_http::metrics::Metrics;
 use identity_http::router;
@@ -194,11 +195,13 @@ async fn a_deleted_user_is_refused_with_a_problem_document() {
 }
 
 #[tokio::test]
-async fn consent_append_and_read_round_trip_with_an_ownership_denial() {
+async fn the_legacy_consent_append_is_retired_and_the_read_still_denies_another_user() {
     let harness = harness();
     let view = principal(&harness.state, "user-token", USER_SUBJECT).await;
     let user_id = view["userId"].as_str().unwrap().to_string();
 
+    // U4 retires the purpose-shaped append: it wrote rows the event gate could
+    // not see. The caller is pointed at the event route.
     let (status, _, body) = send_auth(
         &harness.state,
         Method::POST,
@@ -207,8 +210,15 @@ async fn consent_append_and_read_round_trip_with_an_ownership_denial() {
         Some(json!({ "purpose": "analytics", "granted": true, "source": "settings" })),
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(json_body(&body)["granted"], true);
+    assert_eq!(status, StatusCode::GONE);
+    assert_eq!(
+        json_body(&body)["type"],
+        "https://errors.cpb/identity/consent-route-retired"
+    );
+    assert!(
+        harness.consent.records.lock().unwrap().is_empty(),
+        "no purpose-shaped row is written"
+    );
 
     let (status, _, body) = send_auth(
         &harness.state,
@@ -219,7 +229,7 @@ async fn consent_append_and_read_round_trip_with_an_ownership_denial() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json_body(&body)["analytics"], true);
+    assert_eq!(json_body(&body)["analytics"], false);
     assert_eq!(json_body(&body)["marketing"], false);
 
     let (status, _, _) = send_auth(
@@ -769,4 +779,515 @@ async fn the_due_user_endpoint_requires_a_service_token() {
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------------------
+// U6 — the jurisdiction gate's internal endpoints (C8)
+// ---------------------------------------------------------------------------
+
+const JURISDICTION_CHECK: &str = "/v1/internal/jurisdiction/check";
+const JURISDICTION_PUBLISH: &str = "/v1/internal/jurisdiction/publish";
+
+async fn send_service(
+    state: &AppState,
+    uri: &str,
+    token: &str,
+    body: Option<Value>,
+) -> (StatusCode, HeaderMap, Vec<u8>) {
+    let authorization = format!("Bearer {token}");
+    send(
+        state,
+        Method::POST,
+        uri,
+        &[("authorization", authorization.as_str())],
+        body,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn jurisdiction_check_returns_an_allowed_decision_with_the_list_version() {
+    let harness = harness();
+    let (status, _, body) = send_service(
+        &harness.state,
+        JURISDICTION_CHECK,
+        "service-token",
+        Some(json!({ "countryCode": "VN", "ip": "192.0.2.10" })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let body = json_body(&body);
+    assert_eq!(body["allowed"], true);
+    assert_eq!(body["listVersion"], "2026-11-10.1");
+    assert!(
+        body["evidenceId"].as_str().is_some_and(|id| !id.is_empty()),
+        "the decision cites its evidence record"
+    );
+    assert_eq!(
+        harness.decision_audit.actions(),
+        vec!["identity.jurisdiction.check"]
+    );
+}
+
+#[tokio::test]
+async fn jurisdiction_check_returns_a_denied_decision_naming_each_restricting_signal() {
+    let harness = harness();
+
+    let (status, _, body) = send_service(
+        &harness.state,
+        JURISDICTION_CHECK,
+        "service-token",
+        Some(json!({ "countryCode": "KP", "ip": "192.0.2.10" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body = json_body(&body);
+    assert_eq!(body["allowed"], false);
+    assert_eq!(body["restrictedBy"], "self_declared");
+
+    let (status, _, body) = send_service(
+        &harness.state,
+        JURISDICTION_CHECK,
+        "service-token",
+        Some(json!({ "countryCode": "VN", "ip": "192.0.2.20" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body = json_body(&body);
+    assert_eq!(body["allowed"], false);
+    assert_eq!(body["restrictedBy"], "ip");
+}
+
+#[tokio::test]
+async fn jurisdiction_check_refuses_an_invalid_country_and_a_client_forwarded_ip() {
+    let harness = harness();
+
+    let (status, _, body) = send_service(
+        &harness.state,
+        JURISDICTION_CHECK,
+        "service-token",
+        Some(json!({ "countryCode": "vn", "ip": "192.0.2.10" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json_body(&body)["status"], 422);
+
+    // A client-supplied forwarding header is not a trusted address source.
+    let authorization = "Bearer service-token";
+    let (status, _, body) = send(
+        &harness.state,
+        Method::POST,
+        JURISDICTION_CHECK,
+        &[
+            ("authorization", authorization),
+            ("x-forwarded-for", "203.0.113.9"),
+        ],
+        Some(json!({ "countryCode": "VN", "ip": "192.0.2.10" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json_body(&body)["status"], 422);
+}
+
+#[tokio::test]
+async fn jurisdiction_check_fails_closed_when_the_provider_is_unavailable() {
+    let harness = harness();
+    harness
+        .geo
+        .fail_next(ExternalError::Unavailable("provider timeout".to_string()));
+    harness
+        .geo
+        .fail_next(ExternalError::Unavailable("provider timeout".to_string()));
+
+    let (status, headers, body) = send_service(
+        &harness.state,
+        JURISDICTION_CHECK,
+        "service-token",
+        Some(json!({ "countryCode": "VN", "ip": "192.0.2.10" })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        headers.get(header::CONTENT_TYPE).unwrap(),
+        "application/problem+json"
+    );
+    assert_eq!(json_body(&body)["status"], 503);
+    assert_eq!(
+        harness.decision_audit.actions().len(),
+        0,
+        "a provider failure records no decision"
+    );
+}
+
+#[tokio::test]
+async fn jurisdiction_publish_requires_the_admin_role_and_stores_a_new_version() {
+    let harness = harness();
+
+    let publish_body = json!({
+        "version": "2026-11-10.2",
+        "entries": [
+            { "countryCode": "VN", "status": "allowed", "source": "compliance" },
+            { "countryCode": "US", "status": "allowed", "source": "compliance" }
+        ]
+    });
+
+    let (status, _, _) = send_service(
+        &harness.state,
+        JURISDICTION_PUBLISH,
+        "user-token",
+        Some(publish_body.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "a non-admin cannot publish");
+
+    let (status, _, body) = send_service(
+        &harness.state,
+        JURISDICTION_PUBLISH,
+        "admin-token",
+        Some(publish_body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let body = json_body(&body);
+    assert_eq!(body["version"], "2026-11-10.2");
+    assert_eq!(body["entryCount"], 2);
+    assert_eq!(
+        harness.jurisdiction_lists.published_versions(),
+        vec!["2026-11-10.2"]
+    );
+}
+
+#[tokio::test]
+async fn jurisdiction_publish_refuses_an_empty_list_and_a_checksum_mismatch() {
+    let harness = harness();
+
+    let (status, _, body) = send_service(
+        &harness.state,
+        JURISDICTION_PUBLISH,
+        "admin-token",
+        Some(json!({ "version": "2026-11-10.2", "entries": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json_body(&body)["status"], 422);
+
+    let (status, _, body) = send_service(
+        &harness.state,
+        JURISDICTION_PUBLISH,
+        "admin-token",
+        Some(json!({
+            "version": "2026-11-10.3",
+            "entries": [
+                { "countryCode": "VN", "status": "allowed", "source": "compliance" }
+            ],
+            "checksum": "0".repeat(64)
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json_body(&body)["status"], 422);
+    assert!(
+        harness.jurisdiction_lists.published_versions().is_empty(),
+        "a refused publish never stores a version"
+    );
+}
+
+#[tokio::test]
+async fn jurisdiction_endpoints_refuse_an_unauthenticated_caller() {
+    let harness = harness();
+
+    let (status, _, _) = send(
+        &harness.state,
+        Method::POST,
+        JURISDICTION_CHECK,
+        &[],
+        Some(json!({ "countryCode": "VN", "ip": "192.0.2.10" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, _, _) = send(
+        &harness.state,
+        Method::POST,
+        JURISDICTION_PUBLISH,
+        &[],
+        Some(json!({ "version": "2026-11-10.2", "entries": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+fn bearer(token: &str) -> String {
+    format!("Bearer {token}")
+}
+
+#[tokio::test]
+async fn user_registry_principal_accepts_the_declaration_from_the_trusted_headers() {
+    let harness = harness();
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/principals/{USER_SUBJECT}"),
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "the token's own declaration clears");
+
+    // The middleware fills the declaration from the trusted caller headers when
+    // the token carries none.
+    let (status, _, _) = send(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/principals/{USER_SUBJECT}"),
+        &[
+            ("authorization", "Bearer undeclared-token"),
+            ("x-country-code", "VN"),
+            ("x-client-ip", "192.0.2.10"),
+        ],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn user_registry_principal_missing_declaration_is_a_422() {
+    let harness = harness();
+    let (status, _, body) = send(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/principals/{USER_SUBJECT}"),
+        &[("authorization", "Bearer undeclared-token")],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json_body(&body)["errors"][0]["field"], "jurisdiction");
+    assert_eq!(harness.users.len(), 0);
+}
+
+#[tokio::test]
+async fn user_registry_gate_denial_is_a_422_problem() {
+    let harness = harness();
+    harness
+        .gate_clearance
+        .deny_next("the declared country is restricted");
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/principals/{USER_SUBJECT}"),
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json_body(&body)["status"], 422);
+    assert_eq!(harness.users.len(), 0);
+}
+
+#[tokio::test]
+async fn user_registry_a_record_is_owner_or_admin_only() {
+    let harness = harness();
+    let target = active_user();
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    let other = active_user();
+    harness.users.seed(other.clone(), OTHER_SUBJECT);
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/users/{}", target.id()),
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(json_body(&body)["id"], target.id().to_string());
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/users/{}", other.id()),
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/users/{}", target.id()),
+        Some("admin-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn user_registry_admin_search_is_admin_only_and_a_miss_is_404() {
+    let harness = harness();
+    let target = active_user();
+    harness.users.seed(target.clone(), USER_SUBJECT);
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/admin/users?email=user@example.com",
+        Some("admin-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(json_body(&body)["id"], target.id().to_string());
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/admin/users?email=user@example.com",
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/admin/users?email=missing@example.com",
+        Some("admin-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn user_registry_internal_provision_requires_the_gateway_and_the_matching_hash() {
+    let harness = harness();
+    let hash = identity_application::user_registry::subject_hash(USER_SUBJECT);
+    let uri = format!("/v1/internal/users/by-subject/{hash}");
+    let body = json!({
+        "subject": USER_SUBJECT,
+        "role": "user",
+        "email": "user@example.com",
+        "emailConfirmed": true,
+        "displayName": "Test User",
+        "assurance": "aal1",
+        "hasExchangeCredentials": false,
+        "countryCode": "VN"
+    });
+    let authorization = bearer("gateway-token");
+    let (status, _, response) = send(
+        &harness.state,
+        Method::PUT,
+        &uri,
+        &[
+            ("authorization", authorization.as_str()),
+            ("x-client-ip", "192.0.2.10"),
+        ],
+        Some(body.clone()),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{}",
+        String::from_utf8_lossy(&response)
+    );
+
+    // A second PUT refreshes and answers 200.
+    let (status, _, _) = send(
+        &harness.state,
+        Method::PUT,
+        &uri,
+        &[
+            ("authorization", authorization.as_str()),
+            ("x-client-ip", "192.0.2.10"),
+        ],
+        Some(body.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The documented service-token checks: no token, a wrong service, and a
+    // mismatched subject hash.
+    let (status, _, _) = send(&harness.state, Method::PUT, &uri, &[], Some(body.clone())).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let notification = bearer("notification-token");
+    let (status, _, _) = send(
+        &harness.state,
+        Method::PUT,
+        &uri,
+        &[("authorization", notification.as_str())],
+        Some(body.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let wrong_hash = identity_application::user_registry::subject_hash(OTHER_SUBJECT);
+    let (status, _, _) = send(
+        &harness.state,
+        Method::PUT,
+        &format!("/v1/internal/users/by-subject/{wrong_hash}"),
+        &[
+            ("authorization", authorization.as_str()),
+            ("x-client-ip", "192.0.2.10"),
+        ],
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn user_registry_internal_lookup_returns_the_metadata_boundary() {
+    let harness = harness();
+    let target = active_user();
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    let hash = identity_application::user_registry::subject_hash(USER_SUBJECT);
+    let authorization = bearer("gateway-token");
+
+    let (status, _, body) = send(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/internal/users/by-subject/{hash}"),
+        &[("authorization", authorization.as_str())],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let body = json_body(&body);
+    assert_eq!(body["id"], target.id().to_string());
+    assert_eq!(body["email"], "user@example.com");
+    assert!(body.get("role").is_none(), "the boundary omits the role");
+
+    let (status, _, _) = send(
+        &harness.state,
+        Method::GET,
+        &format!(
+            "/v1/internal/users/by-subject/{}",
+            identity_application::user_registry::subject_hash(OTHER_SUBJECT)
+        ),
+        &[("authorization", authorization.as_str())],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _, body) = send(
+        &harness.state,
+        Method::GET,
+        "/v1/internal/users?email=user@example.com",
+        &[("authorization", authorization.as_str())],
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(json_body(&body)["id"], target.id().to_string());
 }

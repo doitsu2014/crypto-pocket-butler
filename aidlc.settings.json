@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "models": {
+    "schemaVersion": 1,
+    "agents": {
+      "architect": {
+        "model": {
+          "claude": "opus"
+        }
+      },
+      "architecture-reviewer": {
+        "effort": "high",
+        "model": {
+          "claude": "opus"
+        }
+      },
+      "aws-platform": {
+        "model": {
+          "claude": "opus"
+        }
+      },
+      "compliance": {
+        "model": {
+          "claude": "opus"
+        }
+      },
+      "composer": {
+        "model": {
+          "claude": "opus"
+        }
+      },
+      "delivery": {
+        "model": {
+          "claude": "sonnet"
+        }
+      },
+      "design": {
+        "model": {
+          "claude": "opus"
+        }
+      },
+      "developer": {
+        "model": {
+          "claude": "sonnet"
+        }
+      },
+      "devsecops": {
+        "model": {
+          "claude": "opus"
+        }
+      },
+      "operations": {
+        "model": {
+          "claude": "sonnet"
+        }
+      },
+      "pipeline-deploy": {
+        "model": {
+          "claude": "sonnet"
+        }
+      },
+      "product": {
+        "model": {
+          "claude": "opus"
+        }
+      },
+      "product-lead": {
+        "effort": "high",
+        "model": {
+          "claude": "opus"
+        }
+      },
+      "quality": {
+        "model": {
+          "claude": "opus"
+        }
+      }
+    }
+  }
+}

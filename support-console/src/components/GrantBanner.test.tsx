@@ -5,59 +5,111 @@ import { describe, expect, it, vi } from "vitest";
 import { activeGrant, expiredGrant, pendingGrant } from "../test/fixtures";
 import { GrantBanner } from "./GrantBanner";
 
-describe("GrantBanner", () => {
-  it("shows the reason, status, expiry, and approver for an active grant", () => {
-    const grant = activeGrant({ expiresAt: "2026-11-08T12:00:00.000Z" });
-    render(
-      <GrantBanner grant={grant} now={Date.parse("2026-11-08T10:00:00.000Z")} onRequestNew={vi.fn()} />,
-    );
+const NOW = Date.parse("2026-11-08T10:00:00.000Z");
 
-    expect(screen.getByTestId("grant-banner")).toHaveTextContent(
-      "Investigating a reported sync failure",
-    );
-    expect(screen.getByTestId("grant-banner")).toHaveTextContent("Active");
-    expect(screen.getByTestId("grant-banner")).toHaveTextContent(/access ends at/i);
-    expect(screen.getByTestId("grant-banner")).toHaveTextContent("agent-2");
+describe("GrantBanner", () => {
+  it("shows an active grant with its remaining minutes and the metadata-only reminder", () => {
+    const grant = activeGrant({
+      requestedAt: "2026-11-08T09:00:00.000Z",
+      expiresAt: "2026-11-08T10:42:00.000Z",
+    });
+    render(<GrantBanner grant={grant} now={NOW} onCheckStatus={vi.fn()} onRequestNew={vi.fn()} />);
+
+    const banner = screen.getByTestId("grant-banner");
+    expect(banner).toHaveTextContent("Active");
+    expect(banner).toHaveTextContent("42 minutes left");
+    expect(banner).toHaveTextContent(/every metadata read is recorded/i);
+    expect(banner).toHaveTextContent(/metadata only/i);
+    expect(banner).toHaveTextContent("user-1");
+    expect(banner).toHaveTextContent("agent-2");
   });
 
   it("shows pending approval without claiming access", () => {
     render(
-      <GrantBanner grant={pendingGrant()} now={Date.parse("2026-11-08T10:00:00.000Z")} onRequestNew={vi.fn()} />,
+      <GrantBanner
+        grant={pendingGrant()}
+        now={NOW}
+        onCheckStatus={vi.fn()}
+        onRequestNew={vi.fn()}
+      />,
     );
 
-    expect(screen.getByTestId("grant-banner")).toHaveTextContent("Pending approval");
-    expect(screen.getByTestId("grant-banner")).toHaveTextContent(/second approver/i);
-    expect(screen.getByTestId("grant-banner")).not.toHaveTextContent(/access ends at/i);
+    const banner = screen.getByTestId("grant-banner");
+    expect(banner).toHaveTextContent("Pending approval");
+    expect(banner).toHaveTextContent(/second approver/i);
+    expect(banner).not.toHaveTextContent(/minutes left/i);
+    expect(banner).not.toHaveTextContent(/metadata read is recorded/i);
   });
 
-  it("shows access ended for an expired grant and offers a new grant", async () => {
-    const user = userEvent.setup();
-    const onRequestNew = vi.fn();
-    render(
-      <GrantBanner grant={expiredGrant()} now={Date.now()} onRequestNew={onRequestNew} />,
-    );
+  it("ends access at expiresAt even when the stored status still says active", () => {
+    const grant = activeGrant({
+      requestedAt: "2026-11-08T09:00:00.000Z",
+      expiresAt: "2026-11-08T09:59:00.000Z",
+    });
+    render(<GrantBanner grant={grant} now={NOW} onCheckStatus={vi.fn()} onRequestNew={vi.fn()} />);
 
-    expect(screen.getByTestId("grant-banner")).toHaveTextContent(/access ended at/i);
-    await user.click(screen.getByTestId("grant-banner-request-new"));
-    expect(onRequestNew).toHaveBeenCalled();
+    const banner = screen.getByTestId("grant-banner");
+    expect(banner).toHaveTextContent("Expired");
+    expect(banner).toHaveTextContent(/access ended at/i);
+    expect(banner).not.toHaveTextContent(/minutes left/i);
   });
 
   it("shows a revoked grant as ended", () => {
     render(
       <GrantBanner
         grant={activeGrant({ status: "revoked" })}
-        now={Date.now()}
+        now={NOW}
+        onCheckStatus={vi.fn()}
         onRequestNew={vi.fn()}
       />,
     );
 
-    expect(screen.getByTestId("grant-banner")).toHaveTextContent("Revoked");
-    expect(screen.getByTestId("grant-banner")).toHaveTextContent(/revoked/i);
+    const banner = screen.getByTestId("grant-banner");
+    expect(banner).toHaveTextContent("Revoked");
+    expect(banner).toHaveTextContent(/revoked/i);
+  });
+
+  it("shows an already-expired grant with the ended copy", () => {
+    render(
+      <GrantBanner
+        grant={expiredGrant()}
+        now={Date.now()}
+        onCheckStatus={vi.fn()}
+        onRequestNew={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("grant-banner")).toHaveTextContent(/access ended at/i);
+  });
+
+  it("wires the check-status and request-new callbacks", async () => {
+    const user = userEvent.setup();
+    const onCheckStatus = vi.fn();
+    const onRequestNew = vi.fn();
+    render(
+      <GrantBanner
+        grant={activeGrant()}
+        now={NOW}
+        onCheckStatus={onCheckStatus}
+        onRequestNew={onRequestNew}
+      />,
+    );
+
+    await user.click(screen.getByTestId("grant-banner-check-status"));
+    await user.click(screen.getByTestId("grant-banner-request-new"));
+
+    expect(onCheckStatus).toHaveBeenCalledTimes(1);
+    expect(onRequestNew).toHaveBeenCalledTimes(1);
   });
 
   it("has no accessibility violations", async () => {
     const { container } = render(
-      <GrantBanner grant={activeGrant()} now={Date.now()} onRequestNew={vi.fn()} />,
+      <GrantBanner
+        grant={activeGrant()}
+        now={NOW}
+        onCheckStatus={vi.fn()}
+        onRequestNew={vi.fn()}
+      />,
     );
     expect((await axe(container)).violations).toEqual([]);
   });

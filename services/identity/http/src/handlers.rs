@@ -1,5 +1,8 @@
 //! Route handlers. Every refusal is an RFC 7807 problem carrying the correlation
 //! id; a validation refusal names the field paths and never the values.
+//!
+//! The support-access paths (FR16.3–FR16.6, BR3.9–BR3.13) record their outcome
+//! and latency in the `support_*` metric families before the response is built.
 
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{Extension, Path, Query, State};
@@ -15,15 +18,17 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::dto::{
-    AccountStatusResponse, AdminStatusRequest, ConsentAppendRequest, ConsentAppendResponse,
-    ConsentResponse, ContactResponse, DeletionResponse, ExportResponse, InternalProvisionRequest,
+    AccountStatusReadResponse, AccountStatusResponse, AdminLookupRequest, AdminStatusRequest,
+    AdminUserResponse, ConsentAppendRequest, ConsentAppendResponse, ConsentResponse,
+    ContactResponse, DeletionResponse, ExportResponse, InternalProvisionRequest,
     JurisdictionCheckRequest, JurisdictionCheckResponse, JurisdictionPublishRequest,
-    JurisdictionPublishResponse, PreferencesRequest, PreferencesResponse, PrincipalResponse,
-    SessionView, SessionsResponse, SignupGateRequest, SignupGateResponse, SupportCheckResponse,
-    SupportGrantRequest, SupportGrantResponse, UserResponse,
+    JurisdictionPublishResponse, PendingGrantResponse, PreferencesRequest, PreferencesResponse,
+    PrincipalResponse, ProfileAction, ProfileResponse, ProfileUpdateRequest, SessionView,
+    SessionsResponse, SignupGateRequest, SignupGateResponse, SupportGrantRequest,
+    SupportGrantResponse, SupportMetadataResponse, UserResponse,
 };
 use crate::middleware::{CorrelationId, ServicePrincipal, ValidatedClaims};
-use crate::problem::{from_app_error, validation, ProblemDetails};
+use crate::problem::{bad_request, from_app_error, no_record, validation, ProblemDetails};
 use crate::state::AppState;
 
 fn app_error(error: AppError, correlation: &str) -> Response {
@@ -47,6 +52,26 @@ pub(crate) async fn caller_of(
 
 fn parse_user_id(raw: &str) -> Result<UserId, FieldError> {
     UserId::parse(raw).map_err(|_| FieldError::new("userId", "is not a UUID"))
+}
+
+/// The support-access metric outcome for one write: `failed` is the 503 class,
+/// every other refusal is `refused`, and success is `accepted`.
+fn support_write_outcome(error: Option<&AppError>) -> &'static str {
+    match error {
+        None => "accepted",
+        Some(AppError::Unavailable(_)) => "failed",
+        Some(_) => "refused",
+    }
+}
+
+/// The support-access metric outcome for one metadata read.
+fn support_read_outcome(error: Option<&AppError>) -> &'static str {
+    match error {
+        None => "served",
+        Some(AppError::Forbidden(_)) => "refused",
+        Some(AppError::Unavailable(_)) => "unavailable",
+        Some(_) => "failed",
+    }
 }
 
 /// Liveness probe.
@@ -587,6 +612,120 @@ pub async fn get_deletion(
     }
 }
 
+/// D0: the caller's own account status (U7).
+///
+/// The caller is resolved from the stored record by auth subject, never with the
+/// denying `load_caller`, so a disabled, pending-deletion, or deleted person can
+/// learn where their account stands. The route accepts no user id.
+pub async fn my_account_status(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ValidatedClaims(claims)): Extension<ValidatedClaims>,
+) -> Response {
+    let caller = match caller_for_deletion(&state, claims, &correlation.0).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    Json(AccountStatusReadResponse::from(
+        state.profile.account_status(&caller),
+    ))
+    .into_response()
+}
+
+/// P1: the caller's own profile (U7). A plain owner read, no audit event.
+pub async fn my_profile(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ValidatedClaims(claims)): Extension<ValidatedClaims>,
+) -> Response {
+    let caller = match caller_of(&state, claims, &correlation.0).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    Json(ProfileResponse::from(&state.profile.view(&caller))).into_response()
+}
+
+/// P2: save a display name (W1) or adopt the provider name again (W2).
+pub async fn update_my_profile(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ValidatedClaims(claims)): Extension<ValidatedClaims>,
+    payload: Result<Json<ProfileUpdateRequest>, JsonRejection>,
+) -> Response {
+    let Json(request) = match payload {
+        Ok(payload) => payload,
+        Err(rejection) => {
+            return validation(
+                &correlation.0,
+                vec![FieldError::new("body", rejection.body_text())],
+            )
+            .into_response();
+        }
+    };
+    let action = match request.action() {
+        Ok(action) => action,
+        Err(fields) => return validation(&correlation.0, fields).into_response(),
+    };
+    let caller = match caller_of(&state, claims, &correlation.0).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    let result = match action {
+        ProfileAction::DisplayName(display_name) => {
+            state
+                .profile
+                .update_display_name(&caller, &display_name)
+                .await
+        }
+        ProfileAction::UseProviderName => state.profile.adopt_provider_name(&caller).await,
+    };
+    match result {
+        Ok(view) => Json(ProfileResponse::from(&view)).into_response(),
+        Err(error) => app_error(error, &correlation.0),
+    }
+}
+
+/// D1: the caller's open deletion request (U7/W3). Read-only; no audit event.
+///
+/// An empty answer carries the pinned no-record type so the SPA can tell "there
+/// is nothing open" from any other `404`.
+pub async fn my_deletion_request(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ValidatedClaims(claims)): Extension<ValidatedClaims>,
+) -> Response {
+    let caller = match caller_for_deletion(&state, claims, &correlation.0).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    match state.account_lifecycle.open_deletion(&caller).await {
+        Ok(deletion) => Json(DeletionResponse::from(&deletion)).into_response(),
+        Err(AppError::NotFound(_)) => no_record(&correlation.0).into_response(),
+        Err(error) => app_error(error, &correlation.0),
+    }
+}
+
+/// D2: cancel the caller's open deletion request (U7/W4).
+pub async fn cancel_my_deletion_request(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ValidatedClaims(claims)): Extension<ValidatedClaims>,
+) -> Response {
+    let caller = match caller_for_deletion(&state, claims, &correlation.0).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    match state.account_lifecycle.cancel_deletion(&caller).await {
+        Ok(deletion) => {
+            state
+                .metrics
+                .record_deletion_status(deletion.status().as_str());
+            Json(DeletionResponse::from(&deletion)).into_response()
+        }
+        Err(error) => app_error(error, &correlation.0),
+    }
+}
+
 /// WF7: request a support grant.
 pub async fn request_support_grant(
     State(state): State<AppState>,
@@ -606,17 +745,23 @@ pub async fn request_support_grant(
     };
     let user_id = match parse_user_id(&request.user_id) {
         Ok(id) => id,
-        Err(error) => return validation(&correlation.0, vec![error]).into_response(),
+        Err(_) => return bad_request(&correlation.0, "invalid-user-id").into_response(),
     };
     let caller = match caller_of(&state, claims, &correlation.0).await {
         Ok(caller) => caller,
         Err(response) => return response,
     };
-    match state
+    let started = std::time::Instant::now();
+    let result = state
         .support
         .request(&caller, user_id, &request.reason)
-        .await
-    {
+        .await;
+    state.metrics.record_support_write(
+        "request",
+        support_write_outcome(result.as_ref().err()),
+        started.elapsed(),
+    );
+    match result {
         Ok(grant) => (
             StatusCode::CREATED,
             Json(SupportGrantResponse::from(&grant)),
@@ -635,19 +780,20 @@ pub async fn approve_support_grant(
 ) -> Response {
     let grant_id = match SupportGrantId::parse(&grant_id) {
         Ok(id) => id,
-        Err(_) => {
-            return validation(
-                &correlation.0,
-                vec![FieldError::new("grantId", "is not a UUID")],
-            )
-            .into_response();
-        }
+        Err(_) => return bad_request(&correlation.0, "invalid-grant-id").into_response(),
     };
     let caller = match caller_of(&state, claims, &correlation.0).await {
         Ok(caller) => caller,
         Err(response) => return response,
     };
-    match state.support.approve(&caller, grant_id).await {
+    let started = std::time::Instant::now();
+    let result = state.support.approve(&caller, grant_id).await;
+    state.metrics.record_support_write(
+        "approve",
+        support_write_outcome(result.as_ref().err()),
+        started.elapsed(),
+    );
+    match result {
         Ok(grant) => Json(SupportGrantResponse::from(&grant)).into_response(),
         Err(error) => app_error(error, &correlation.0),
     }
@@ -662,56 +808,57 @@ pub async fn revoke_support_grant(
 ) -> Response {
     let grant_id = match SupportGrantId::parse(&grant_id) {
         Ok(id) => id,
-        Err(_) => {
-            return validation(
-                &correlation.0,
-                vec![FieldError::new("grantId", "is not a UUID")],
-            )
-            .into_response();
-        }
+        Err(_) => return bad_request(&correlation.0, "invalid-grant-id").into_response(),
     };
     let caller = match caller_of(&state, claims, &correlation.0).await {
         Ok(caller) => caller,
         Err(response) => return response,
     };
-    match state.support.revoke(&caller, grant_id).await {
+    let started = std::time::Instant::now();
+    let result = state.support.revoke(&caller, grant_id).await;
+    state.metrics.record_support_write(
+        "revoke",
+        support_write_outcome(result.as_ref().err()),
+        started.elapsed(),
+    );
+    match result {
         Ok(grant) => Json(SupportGrantResponse::from(&grant)).into_response(),
         Err(error) => app_error(error, &correlation.0),
     }
 }
 
-/// The target user on the support-grant check.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckQuery {
-    /// The user whose metadata the read covers.
-    pub user_id: String,
-}
-
-/// WF7: verify a grant on the Account metadata read path.
-pub async fn check_support_grant(
+/// W4: the grant holder reads the target's closed metadata projection.
+pub async fn support_grant_metadata(
     State(state): State<AppState>,
     Extension(correlation): Extension<CorrelationId>,
-    Extension(ServicePrincipal(_service)): Extension<ServicePrincipal>,
+    Extension(ValidatedClaims(claims)): Extension<ValidatedClaims>,
     Path(grant_id): Path<String>,
-    Query(query): Query<CheckQuery>,
 ) -> Response {
     let grant_id = match SupportGrantId::parse(&grant_id) {
         Ok(id) => id,
-        Err(_) => {
-            return validation(
-                &correlation.0,
-                vec![FieldError::new("grantId", "is not a UUID")],
-            )
-            .into_response();
+        Err(_) => return bad_request(&correlation.0, "invalid-grant-id").into_response(),
+    };
+    let caller = match caller_of(&state, claims, &correlation.0).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    let started = std::time::Instant::now();
+    let result = state.support.metadata(&caller, grant_id).await;
+    state.metrics.record_support_read(
+        support_read_outcome(result.as_ref().err()),
+        started.elapsed(),
+    );
+    if let Err(error) = &result {
+        match error {
+            AppError::Unavailable(detail) if detail == "audit-unavailable" => {
+                state.metrics.record_support_audit_write_failure("read");
+            }
+            AppError::Internal(_) => state.metrics.record_support_grant_decision_error("lookup"),
+            _ => {}
         }
-    };
-    let user_id = match parse_user_id(&query.user_id) {
-        Ok(id) => id,
-        Err(error) => return validation(&correlation.0, vec![error]).into_response(),
-    };
-    match state.support.check(grant_id, user_id, &correlation.0).await {
-        Ok(grant) => Json(SupportCheckResponse::from_grant(&grant)).into_response(),
+    }
+    match result {
+        Ok(metadata) => Json(SupportMetadataResponse::from(&metadata)).into_response(),
         Err(error) => app_error(error, &correlation.0),
     }
 }
@@ -872,18 +1019,96 @@ pub struct AdminUsersQuery {
 }
 
 /// U1: an admin looks a user up by exact email (BR1.9).
-pub async fn admin_lookup(
+///
+/// U10/W1 (D-S1): the address arrives in the body of `POST
+/// /v1/admin/users/lookup`, and the answer carries the role the provider
+/// currently reports.
+pub async fn lookup_admin_user(
     State(state): State<AppState>,
     Extension(correlation): Extension<CorrelationId>,
     Extension(ValidatedClaims(claims)): Extension<ValidatedClaims>,
-    Query(query): Query<AdminUsersQuery>,
+    payload: Result<Json<AdminLookupRequest>, JsonRejection>,
+) -> Response {
+    let Json(request) = match payload {
+        Ok(payload) => payload,
+        Err(rejection) => {
+            return validation(
+                &correlation.0,
+                vec![FieldError::new("body", rejection.body_text())],
+            )
+            .into_response();
+        }
+    };
+    let caller = match caller_of(&state, claims, &correlation.0).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    match state
+        .user_registry
+        .by_email_admin(&caller, &request.email)
+        .await
+    {
+        Ok(view) => Json(AdminUserResponse::from(view)).into_response(),
+        Err(error) => app_error(error, &correlation.0),
+    }
+}
+
+/// The `status` query on the pending-grant list.
+#[derive(Debug, Deserialize)]
+pub struct PendingGrantsQuery {
+    /// The only accepted value is `pending_approval`.
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+/// U10/W5: an admin lists the grants awaiting approval.
+pub async fn list_pending_grants(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ValidatedClaims(claims)): Extension<ValidatedClaims>,
+    Query(query): Query<PendingGrantsQuery>,
+) -> Response {
+    if query.status.as_deref() != Some("pending_approval") {
+        return validation(
+            &correlation.0,
+            vec![FieldError::new("status", "must be 'pending_approval'")],
+        )
+        .into_response();
+    }
+    let caller = match caller_of(&state, claims, &correlation.0).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    match state.support.pending_grants(&caller).await {
+        Ok(grants) => Json(
+            grants
+                .iter()
+                .map(PendingGrantResponse::from)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => app_error(error, &correlation.0),
+    }
+}
+
+/// S2: a support agent reads their own grants, newest first, at most twenty.
+pub async fn my_support_grants(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ValidatedClaims(claims)): Extension<ValidatedClaims>,
 ) -> Response {
     let caller = match caller_of(&state, claims, &correlation.0).await {
         Ok(caller) => caller,
         Err(response) => return response,
     };
-    match state.user_registry.by_email(&caller, &query.email).await {
-        Ok(record) => Json(UserResponse::from(record)).into_response(),
+    match state.support.my_grants(&caller).await {
+        Ok(grants) => Json(
+            grants
+                .iter()
+                .map(PendingGrantResponse::from)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
         Err(error) => app_error(error, &correlation.0),
     }
 }

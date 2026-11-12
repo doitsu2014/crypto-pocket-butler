@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ApiError,
-  GatewayClient,
-  NetworkError,
-  PAGE_SIZE,
-  resolveAsset,
-} from "./client";
+import { ApiError, GatewayClient, NetworkError, PAGE_SIZE, resolveAsset } from "./client";
 
 const asset = {
   id: "asset-usdc",
@@ -91,11 +85,17 @@ describe("gateway client", () => {
 
   it("maps 401, 403, 409, 422 and 500 problems without losing the correlation id", async () => {
     for (const status of [401, 403, 409, 422, 500]) {
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({ type: "about:blank", title: `status ${status}`, status, correlationId: `c-${status}` }, status),
-        );
+      const fetchMock = vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            type: "about:blank",
+            title: `status ${status}`,
+            status,
+            correlationId: `c-${status}`,
+          },
+          status,
+        ),
+      );
       await expect(client(fetchMock).listPortfolios()).rejects.toMatchObject({
         name: "ApiError",
         problem: { status, correlationId: `c-${status}` },
@@ -112,7 +112,9 @@ describe("gateway client", () => {
       },
     } as unknown as Response);
 
-    const error = await client(fetchMock).listPortfolios().catch((caught: unknown) => caught);
+    const error = await client(fetchMock)
+      .listPortfolios()
+      .catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).problem.correlationId).toMatch(/[0-9a-f-]{8,}/);
   });
@@ -164,7 +166,7 @@ describe("gateway client", () => {
       },
     } as unknown as Response);
 
-    await expect(client(fetchMock).revokeSession("session-1")).resolves.toBeUndefined();
+    await expect(client(fetchMock).postConsent([])).resolves.toBeUndefined();
   });
 
   it("binds to the configured gateway base and refuses to build another origin", () => {

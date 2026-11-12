@@ -267,6 +267,19 @@ pub trait RoleWriter: Send + Sync {
     async fn set_role(&self, subject: &str, role: Role) -> Result<(), ExternalError>;
 }
 
+/// Reads `app_metadata.role` for one provider user (U10 admin lookup).
+///
+/// One attempt, like the writer: a failed read is surfaced so the boundary can
+/// answer `503` rather than show a record with a guessed or stored role.
+#[async_trait]
+pub trait RoleReader: Send + Sync {
+    /// Reads the role claim.
+    ///
+    /// # Errors
+    /// Returns [`ExternalError`] when the provider refuses or is unreachable.
+    async fn read_role(&self, subject: &str) -> Result<Role, ExternalError>;
+}
+
 /// Records the `authorisation_*` metrics. Implemented at the HTTP boundary,
 /// where the metrics registry lives, so infrastructure never imports `http`.
 pub trait ObservationSink: Send + Sync {

@@ -1,5 +1,6 @@
 //! Declared path patterns. A pattern is a sequence of literal and parameter
-//! segments; a parameter matches exactly one non-empty segment.
+//! segments; a parameter matches exactly one non-empty segment. `as_str` returns
+//! the declared form, which keys the per-route rate-limit bucket (NFR11.1).
 
 use crate::error::GatewayError;
 
@@ -12,10 +13,17 @@ enum Segment {
 /// A path pattern such as `/v1/assets/{assetId}/price`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathPattern {
+    raw: String,
     segments: Vec<Segment>,
 }
 
 impl PathPattern {
+    /// The pattern as declared, for use as a route label.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.raw
+    }
+
     /// Parses a pattern.
     ///
     /// # Errors
@@ -30,6 +38,7 @@ impl PathPattern {
         };
         if rest.is_empty() {
             return Ok(Self {
+                raw: trimmed.to_string(),
                 segments: Vec::new(),
             });
         }
@@ -54,7 +63,10 @@ impl PathPattern {
                 segments.push(Segment::Literal(raw_segment.to_string()));
             }
         }
-        Ok(Self { segments })
+        Ok(Self {
+            raw: trimmed.to_string(),
+            segments,
+        })
     }
 
     /// Whether a concrete request path matches.

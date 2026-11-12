@@ -10,7 +10,7 @@ use axum::http::{header, HeaderMap, Method as AxumMethod, Request, StatusCode};
 use chrono::{TimeZone, Utc};
 use common::fakes::{FakeAudit, FakeUpstream, FakeValidator, FixedClock, Ready};
 use gateway_application::authorize::AuthorizeAndRoute;
-use gateway_application::ports::{Clock, UpstreamError};
+use gateway_application::ports::{Clock, Principal, UpstreamError};
 use gateway_domain::{Method, RouteTable};
 use gateway_http::metrics::Metrics;
 use gateway_http::rate_limit::RateLimiter;
@@ -124,6 +124,111 @@ async fn a_u4_me_route_is_proxied_to_identity() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["ok"], true);
     assert_eq!(upstream.calls(), 1);
+}
+
+#[tokio::test]
+async fn every_settings_route_is_proxied_to_identity_instead_of_404() {
+    let upstream = Arc::new(FakeUpstream::ok());
+    let state = state(
+        FakeValidator::user(),
+        upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        1_000,
+    );
+    let export_id = "11111111-1111-4111-8111-111111111111";
+    let cases = [
+        (AxumMethod::GET, "/v1/me/account-status".to_string(), None),
+        (AxumMethod::GET, "/v1/me/profile".to_string(), None),
+        (
+            AxumMethod::PATCH,
+            "/v1/me/profile".to_string(),
+            Some("{\"displayName\":\"Mai Anh\"}"),
+        ),
+        (AxumMethod::GET, "/v1/me/deletion-request".to_string(), None),
+        (
+            AxumMethod::DELETE,
+            "/v1/me/deletion-request".to_string(),
+            None,
+        ),
+        (
+            AxumMethod::POST,
+            "/v1/privacy/deletions".to_string(),
+            Some("{\"reason\":\"leaving\"}"),
+        ),
+        (AxumMethod::POST, "/v1/exports".to_string(), Some("{}")),
+        (AxumMethod::GET, format!("/v1/exports/{export_id}"), None),
+    ];
+
+    for (method, uri, body) in cases {
+        let (status, _, _) = send(
+            &state,
+            method.clone(),
+            &uri,
+            Some("valid-user-token"),
+            None,
+            body,
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{method:?} {uri} resolves to Identity instead of 404"
+        );
+    }
+    assert_eq!(
+        upstream.calls(),
+        8,
+        "every settings path reaches the Identity upstream"
+    );
+}
+
+#[tokio::test]
+async fn the_sixth_deletion_request_in_a_minute_is_rate_limited() {
+    let upstream = Arc::new(FakeUpstream::ok());
+    let state = state(
+        FakeValidator::user(),
+        upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        1_000,
+    );
+
+    for attempt in 1..=5 {
+        let (status, _, _) = send(
+            &state,
+            AxumMethod::POST,
+            "/v1/privacy/deletions",
+            Some("valid-user-token"),
+            None,
+            Some("{\"reason\":\"leaving\"}"),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "deletion request {attempt} is inside the 5/min budget"
+        );
+    }
+
+    let (status, headers, body) = send(
+        &state,
+        AxumMethod::POST,
+        "/v1/privacy/deletions",
+        Some("valid-user-token"),
+        None,
+        Some("{\"reason\":\"leaving\"}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["status"], 429);
+    assert!(
+        headers.contains_key("retry-after"),
+        "a 429 carries Retry-After"
+    );
+    assert_eq!(
+        upstream.calls(),
+        5,
+        "the sixth request never reaches Identity"
+    );
 }
 
 #[tokio::test]
@@ -257,6 +362,234 @@ async fn the_admin_role_change_is_reachable_through_the_gateway() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(admin_upstream.calls(), 1);
+}
+
+#[tokio::test]
+async fn the_admin_user_lookup_is_a_body_carrying_post_through_the_gateway() {
+    let user_state = state(
+        FakeValidator::user(),
+        Arc::new(FakeUpstream::ok()),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+    let (status, _, _) = send(
+        &user_state,
+        AxumMethod::POST,
+        "/v1/admin/users/lookup",
+        Some("valid-user-token"),
+        None,
+        Some(r#"{"email":"ada@example.com"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let admin_upstream = Arc::new(FakeUpstream::ok());
+    let admin_state = state(
+        FakeValidator::admin(),
+        admin_upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+    let (status, _, _) = send(
+        &admin_state,
+        AxumMethod::POST,
+        "/v1/admin/users/lookup",
+        Some("valid-admin-token"),
+        None,
+        Some(r#"{"email":"ada@example.com"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(admin_upstream.calls(), 1);
+}
+
+#[tokio::test]
+async fn the_admin_disable_and_restore_are_reachable_through_the_gateway() {
+    let user_state = state(
+        FakeValidator::user(),
+        Arc::new(FakeUpstream::ok()),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+    for action in ["disable", "restore"] {
+        let (status, _, _) = send(
+            &user_state,
+            AxumMethod::POST,
+            &format!("/v1/admin/users/11111111-1111-4111-8111-111111111111/{action}"),
+            Some("valid-user-token"),
+            None,
+            Some(r#"{"reason":"policy"}"#),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{action} is admin-only");
+    }
+
+    let admin_upstream = Arc::new(FakeUpstream::ok());
+    let admin_state = state(
+        FakeValidator::admin(),
+        admin_upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+    for action in ["disable", "restore"] {
+        let (status, _, _) = send(
+            &admin_state,
+            AxumMethod::POST,
+            &format!("/v1/admin/users/11111111-1111-4111-8111-111111111111/{action}"),
+            Some("valid-admin-token"),
+            None,
+            Some(r#"{"reason":"policy"}"#),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{action} is proxied");
+    }
+    assert_eq!(admin_upstream.calls(), 2);
+}
+
+#[tokio::test]
+async fn the_pending_grant_list_is_reachable_through_the_gateway() {
+    let user_state = state(
+        FakeValidator::user(),
+        Arc::new(FakeUpstream::ok()),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+    let (status, _, _) = send(
+        &user_state,
+        AxumMethod::GET,
+        "/v1/support-grants?status=pending_approval",
+        Some("valid-user-token"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let admin_upstream = Arc::new(FakeUpstream::ok());
+    let admin_state = state(
+        FakeValidator::admin(),
+        admin_upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+    let (status, _, _) = send(
+        &admin_state,
+        AxumMethod::GET,
+        "/v1/support-grants?status=pending_approval",
+        Some("valid-admin-token"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(admin_upstream.calls(), 1);
+}
+
+#[tokio::test]
+async fn the_mine_route_is_proxied_to_identity_with_the_jwt_unchanged() {
+    let upstream = Arc::new(FakeUpstream::ok());
+    let state = state(
+        FakeValidator::with_token(
+            "valid-support-token",
+            Principal {
+                subject: "support-1".to_string(),
+                role: gateway_domain::Role::Support,
+            },
+        ),
+        upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        100,
+    );
+
+    let (status, _, body) = send(
+        &state,
+        AxumMethod::GET,
+        "/v1/support-grants/mine",
+        Some("valid-support-token"),
+        Some("corr-mine"),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ok"], true);
+    assert_eq!(upstream.calls(), 1, "the mine path reaches Identity");
+    let forwarded = upstream.last_request();
+    assert_eq!(forwarded.service.as_str(), "identity");
+    assert_eq!(forwarded.path_and_query, "/v1/support-grants/mine");
+    assert_eq!(
+        forwarded.header("authorization"),
+        Some("Bearer valid-support-token"),
+        "the user JWT is forwarded unchanged"
+    );
+
+    // A sibling GET the table does not declare stays denied.
+    let (status, _, _) = send(
+        &state,
+        AxumMethod::GET,
+        "/v1/support-grants/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        Some("valid-support-token"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        upstream.calls(),
+        1,
+        "the undeclared sibling never reaches Identity"
+    );
+}
+
+#[tokio::test]
+async fn the_21st_role_change_in_a_minute_is_rate_limited() {
+    // The global per-IP budget is high, so only the route's own 20/min budget
+    // can produce the 429.
+    let upstream = Arc::new(FakeUpstream::ok());
+    let state = state(
+        FakeValidator::admin(),
+        upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        1_000,
+    );
+
+    for attempt in 1..=20 {
+        let (status, _, _) = send(
+            &state,
+            AxumMethod::PUT,
+            "/v1/admin/users/11111111-1111-4111-8111-111111111111/role",
+            Some("valid-admin-token"),
+            None,
+            Some(r#"{"newRole":"support","reason":"rotation"}"#),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "role change {attempt} is inside the 20/min budget"
+        );
+    }
+
+    let (status, headers, body) = send(
+        &state,
+        AxumMethod::PUT,
+        "/v1/admin/users/11111111-1111-4111-8111-111111111111/role",
+        Some("valid-admin-token"),
+        None,
+        Some(r#"{"newRole":"support","reason":"rotation"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["status"], 429);
+    assert!(
+        headers.contains_key("retry-after"),
+        "a 429 carries Retry-After"
+    );
+    assert_eq!(
+        upstream.calls(),
+        20,
+        "the 21st change never reaches Identity"
+    );
 }
 
 #[tokio::test]
@@ -519,5 +852,181 @@ async fn client_ip_never_forwards_a_caller_supplied_value() {
         probe_client_ip(malformed).await,
         "none",
         "a malformed edge header never reaches downstream"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// U3 — per-route budgets for the support triggers (NFR11.1)
+// ---------------------------------------------------------------------------
+
+fn principals(tokens: &[&str], subject: &str) -> FakeValidator {
+    let mut map = std::collections::HashMap::new();
+    for token in tokens {
+        map.insert(
+            (*token).to_string(),
+            Ok(gateway_application::ports::Principal {
+                subject: subject.to_string(),
+                role: gateway_domain::Role::User,
+            }),
+        );
+    }
+    FakeValidator {
+        principals: std::sync::Mutex::new(map),
+    }
+}
+
+fn upstream_with(capacity: usize) -> Arc<FakeUpstream> {
+    let response = gateway_application::ports::UpstreamResponse {
+        status: 200,
+        headers: Vec::new(),
+        body: br#"{"ok":true}"#.to_vec(),
+        content_type: Some("application/json".to_string()),
+    };
+    Arc::new(FakeUpstream::with_responses(vec![Ok(response); capacity]))
+}
+
+#[tokio::test]
+async fn the_21st_creation_for_one_token_is_rate_limited_and_another_token_passes() {
+    let upstream = upstream_with(40);
+    let state = state(
+        principals(&["support-token-a", "support-token-b"], "support-1"),
+        upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        1_000,
+    );
+
+    for attempt in 1..=20 {
+        let (status, _, _) = send(
+            &state,
+            AxumMethod::POST,
+            "/v1/support-grants",
+            Some("support-token-a"),
+            None,
+            Some("{\"userId\":\"x\",\"reason\":\"y\"}"),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "creation {attempt} is inside budget"
+        );
+    }
+
+    let (status, headers, body) = send(
+        &state,
+        AxumMethod::POST,
+        "/v1/support-grants",
+        Some("support-token-a"),
+        None,
+        Some("{\"userId\":\"x\",\"reason\":\"y\"}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["status"], 429);
+    assert!(
+        headers.contains_key("retry-after"),
+        "a 429 carries Retry-After"
+    );
+    assert_eq!(
+        upstream.calls(),
+        20,
+        "the 21st request never reaches Identity"
+    );
+
+    let (status, _, _) = send(
+        &state,
+        AxumMethod::POST,
+        "/v1/support-grants",
+        Some("support-token-b"),
+        None,
+        Some("{\"userId\":\"x\",\"reason\":\"y\"}"),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a second token with the same subject has its own bucket"
+    );
+}
+
+#[tokio::test]
+async fn a_flood_of_distinct_tokens_from_one_address_still_hits_the_ip_budget() {
+    let tokens = [
+        "flood-token-1",
+        "flood-token-2",
+        "flood-token-3",
+        "flood-token-4",
+        "flood-token-5",
+        "flood-token-6",
+        "flood-token-7",
+    ];
+    let upstream = upstream_with(10);
+    let state = state(
+        principals(&tokens, "flood-subject"),
+        upstream.clone(),
+        Arc::new(FakeAudit::default()),
+        5,
+    );
+
+    for token in tokens.iter().take(5) {
+        let (status, _, _) = send(
+            &state,
+            AxumMethod::GET,
+            "/v1/assets/resolve",
+            Some(token),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{token} is inside the IP budget");
+    }
+
+    let (status, headers, _) = send(
+        &state,
+        AxumMethod::GET,
+        "/v1/assets/resolve",
+        Some(tokens[5]),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::TOO_MANY_REQUESTS,
+        "a fresh token does not reset the per-IP window"
+    );
+    assert!(headers.contains_key("retry-after"));
+    assert_eq!(upstream.calls(), 5);
+}
+
+#[test]
+fn the_route_bucket_is_keyed_on_the_token_not_the_subject() {
+    let limiter = RateLimiter::new(1_000, 1_000);
+
+    assert!(limiter
+        .check_route("/v1/support-grants", "token-a", 1)
+        .is_ok());
+    match limiter.check_route("/v1/support-grants", "token-a", 1) {
+        Err(retry_after) => assert!(
+            (1..=60).contains(&retry_after),
+            "Retry-After names the rest of the window: {retry_after}"
+        ),
+        Ok(()) => panic!("the route bucket is exhausted"),
+    }
+    assert!(
+        limiter
+            .check_route("/v1/support-grants", "token-b", 1)
+            .is_ok(),
+        "another token gets its own bucket even with the same subject"
+    );
+    assert!(
+        limiter
+            .check_route("/v1/support-grants/{id}/metadata", "token-a", 1)
+            .is_ok(),
+        "a different route has its own bucket"
+    );
+    assert!(
+        limiter.check("192.0.2.10", true).is_ok(),
+        "the route bucket never consumes the IP window"
     );
 }

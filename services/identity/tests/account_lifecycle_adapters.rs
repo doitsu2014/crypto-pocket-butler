@@ -118,6 +118,15 @@ async fn the_down_migration_refuses_while_a_request_is_open() {
     .await
     .expect("seed an open request");
 
+    // 0008 and 0007 ship above 0006, so a rollback reaches 0006 by reverting
+    // them first.
+    identity_infrastructure::migrations::revert(&pool)
+        .await
+        .expect("the own-grant index down migration applies");
+    identity_infrastructure::migrations::revert(&pool)
+        .await
+        .expect("the support-access down migration applies");
+
     let refused = identity_infrastructure::migrations::revert(&pool).await;
     assert!(
         refused.is_err(),
@@ -147,6 +156,15 @@ async fn the_down_migration_reverses_the_shape_once_no_request_is_open() {
     .execute(&pool)
     .await
     .expect("seed a closed request");
+
+    // 0008 and 0007 ship above 0006, so a rollback reaches 0006 by reverting
+    // them first.
+    identity_infrastructure::migrations::revert(&pool)
+        .await
+        .expect("the own-grant index down migration applies");
+    identity_infrastructure::migrations::revert(&pool)
+        .await
+        .expect("the support-access down migration applies");
 
     identity_infrastructure::migrations::revert(&pool)
         .await

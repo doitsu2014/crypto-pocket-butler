@@ -1,5 +1,8 @@
 //! Request and response DTOs. They live only at the HTTP boundary and map to and
 //! from domain and application types here; no DTO type reaches inward.
+//!
+//! The support-access DTOs carry the closed metadata allowlist (FR16.5, BR3.9)
+//! and the grant shape (FR16.3–FR16.6).
 
 use chrono::{DateTime, Utc};
 use identity_application::account_lifecycle::AccountStatusView;
@@ -8,12 +11,14 @@ use identity_application::jurisdiction::{
     CheckResult, PublishEntry, PublishRequest, PublishedList,
 };
 use identity_application::ports::GateGrant;
-use identity_application::user_registry::UserRecordView;
+use identity_application::profile::ProfileView;
+use identity_application::support::SupportMetadata;
+use identity_application::user_registry::{AdminUserView, UserRecordView};
 use identity_domain::{
     parse_iana_timezone, AssuranceLevel, BaseCurrency, BaseCurrencyCode, ConsentPurpose,
     ConsentRecord, ConsentSource, ConsentView, DeletionRequest, DeviceSession, DomainError,
     EffectivePreferences, ExportRequest, Locale, PreferenceUpdate, Preferences, Role,
-    SupportAccessGrant, TimeZone, User, VerifiedClaims,
+    SupportAccessGrant, TimeZone, User, UserStatus, VerifiedClaims,
 };
 use serde::{Deserialize, Serialize};
 
@@ -110,6 +115,60 @@ impl From<UserRecordView> for UserResponse {
             status: view.status().as_str().to_string(),
             created_at: view.created_at(),
             updated_at: view.updated_at(),
+        }
+    }
+}
+
+/// `POST /v1/admin/users/lookup` body (security design D-S1).
+///
+/// The address travels in the body, never in the path or a query string, so it
+/// never reaches a proxy access log.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminLookupRequest {
+    /// The exact address to look up.
+    #[serde(default)]
+    pub email: String,
+}
+
+/// The U10 admin lookup answer: the U1 record plus the provider's role.
+///
+/// The provider subject is never serialized here.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminUserResponse {
+    /// The internal user identifier.
+    pub id: String,
+    /// The display name, when one is stored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    /// The stored address, when one is stored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// Whether the stored address is confirmed.
+    pub email_verified: bool,
+    /// The lifecycle state.
+    pub status: String,
+    /// When the record was created.
+    pub created_at: DateTime<Utc>,
+    /// When the record last changed.
+    pub updated_at: DateTime<Utc>,
+    /// The role the provider currently reports (`owner`, `admin`, `support`).
+    pub role: String,
+}
+
+impl From<AdminUserView> for AdminUserResponse {
+    fn from(view: AdminUserView) -> Self {
+        let record = view.record();
+        Self {
+            id: record.user_id().to_string(),
+            display_name: record.display_name().map(ToString::to_string),
+            email: record.email().map(ToString::to_string),
+            email_verified: record.email_verified(),
+            status: record.status().as_str().to_string(),
+            created_at: record.created_at(),
+            updated_at: record.updated_at(),
+            role: view.role().provider_value().to_string(),
         }
     }
 }
@@ -689,33 +748,124 @@ impl From<&SupportAccessGrant> for SupportGrantResponse {
     }
 }
 
-/// `GET /v1/internal/support-grants/{grantId}/check` response.
+/// One entry of the pending-grant list (`GET /v1/support-grants`, W5) and of
+/// the support agent's own bare-array read (`GET /v1/support-grants/mine`, S2).
+///
+/// The C5 grant shape: the grant id, the target, the requester and the
+/// timestamps the console's approvals panel reads. `requestedBy` is the agent
+/// who asked, so an own-grant row is attributable without the caller echoing
+/// their own id.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SupportCheckResponse {
+pub struct PendingGrantResponse {
     /// The grant identifier.
-    pub grant_id: String,
+    pub id: String,
     /// The target user.
     pub user_id: String,
-    /// The effective state.
+    /// The support agent who requested the grant.
+    pub requested_by: String,
+    /// The recorded reason.
+    pub reason: String,
+    /// The lifecycle state.
     pub status: String,
-    /// The support agent the read is attributed to.
-    pub support_agent_id: String,
+    /// When the grant was requested.
+    pub requested_at: DateTime<Utc>,
+    /// The distinct approver.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approved_by: Option<String>,
+    /// When the grant was approved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approved_at: Option<DateTime<Utc>>,
     /// When the window ends.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-impl SupportCheckResponse {
-    /// Maps an active grant.
-    #[must_use]
-    pub fn from_grant(grant: &SupportAccessGrant) -> Self {
+impl From<&SupportAccessGrant> for PendingGrantResponse {
+    fn from(grant: &SupportAccessGrant) -> Self {
         Self {
-            grant_id: grant.id().to_string(),
+            id: grant.id().to_string(),
             user_id: grant.user_id().to_string(),
+            requested_by: grant.support_agent_id().to_string(),
+            reason: grant.reason().to_string(),
             status: grant.status().as_str().to_string(),
-            support_agent_id: grant.support_agent_id().to_string(),
+            requested_at: grant.requested_at(),
+            approved_by: grant.approved_by().map(|id| id.to_string()),
+            approved_at: grant.approved_at(),
             expires_at: grant.expires_at(),
+        }
+    }
+}
+
+/// The closed support-metadata projection the grant holder reads (FR16.5,
+/// BR3.9). Every field here is on the allowlist; an omitted field is omitted by
+/// construction, not filtered at render time.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportMetadataResponse {
+    /// The user record the grant names.
+    pub user_id: String,
+    /// The display name, serialized as `null` when genuinely absent.
+    pub display_name: Option<String>,
+    /// Verification status only — never the email address.
+    pub email_verified: bool,
+    /// The allowlisted account summaries.
+    pub accounts: Vec<SupportAccountDto>,
+    /// The allowlisted portfolio summaries.
+    pub portfolios: Vec<SupportPortfolioDto>,
+}
+
+/// One allowlisted account summary (FR16.5, BR3.9).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportAccountDto {
+    /// The account identifier.
+    pub id: String,
+    /// The account label.
+    pub label: String,
+    /// `exchange`, `wallet`, `walletconnect`, or `csv`.
+    pub source_type: String,
+    /// `active`, `syncing`, `error`, or `disconnected`.
+    pub sync_status: String,
+    /// When the account last synced; `null` when it never has.
+    pub last_synced_at: Option<DateTime<Utc>>,
+}
+
+/// One allowlisted portfolio summary (FR16.5, BR3.9).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportPortfolioDto {
+    /// The portfolio identifier.
+    pub id: String,
+    /// The portfolio label.
+    pub label: String,
+}
+
+impl From<&SupportMetadata> for SupportMetadataResponse {
+    fn from(metadata: &SupportMetadata) -> Self {
+        Self {
+            user_id: metadata.user_id.to_string(),
+            display_name: metadata.display_name.clone(),
+            email_verified: metadata.email_verified,
+            accounts: metadata
+                .accounts
+                .iter()
+                .map(|account| SupportAccountDto {
+                    id: account.id.to_string(),
+                    label: account.label.clone(),
+                    source_type: account.source_type.clone(),
+                    sync_status: account.sync_status.clone(),
+                    last_synced_at: account.last_synced_at,
+                })
+                .collect(),
+            portfolios: metadata
+                .portfolios
+                .iter()
+                .map(|portfolio| SupportPortfolioDto {
+                    id: portfolio.id.to_string(),
+                    label: portfolio.label.clone(),
+                })
+                .collect(),
         }
     }
 }
@@ -844,6 +994,100 @@ impl JurisdictionPublishResponse {
             version: list.version().to_string(),
             entry_count: list.entry_count(),
             checksum: list.checksum().to_string(),
+        }
+    }
+}
+
+/// `GET /v1/me/account-status` (D0) response: the caller's own status and
+/// nothing else.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountStatusReadResponse {
+    /// The lifecycle state.
+    pub status: String,
+}
+
+impl From<UserStatus> for AccountStatusReadResponse {
+    fn from(status: UserStatus) -> Self {
+        Self {
+            status: status.as_str().to_string(),
+        }
+    }
+}
+
+/// `GET /v1/me/profile` and `PATCH /v1/me/profile` (P1/P2) response.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileResponse {
+    /// The internal user identifier.
+    pub user_id: String,
+    /// The name the product shows.
+    pub display_name: Option<String>,
+    /// Whether the name came from the user rather than the provider.
+    pub display_name_overridden: bool,
+    /// The name the provider sent in this request's claim.
+    pub provider_display_name: Option<String>,
+    /// The stored address, read-only on this surface.
+    pub email: Option<String>,
+    /// Whether the provider has verified the address.
+    pub email_verified: bool,
+    /// The lifecycle state.
+    pub status: String,
+}
+
+impl From<&ProfileView> for ProfileResponse {
+    fn from(view: &ProfileView) -> Self {
+        Self {
+            user_id: view.user_id().to_string(),
+            display_name: view.display_name().map(ToString::to_string),
+            display_name_overridden: view.display_name_overridden(),
+            provider_display_name: view.provider_display_name().map(ToString::to_string),
+            email: view.email().map(ToString::to_string),
+            email_verified: view.email_verified(),
+            status: view.status().as_str().to_string(),
+        }
+    }
+}
+
+/// `PATCH /v1/me/profile` (P2) body: exactly one of the two actions.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileUpdateRequest {
+    /// The user-supplied display name (W1).
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// Adopt the provider-supplied name again (W2); must be `true` when present.
+    #[serde(default)]
+    pub use_provider_name: Option<bool>,
+}
+
+/// Why a `PATCH /v1/me/profile` body was refused before any lookup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProfileAction {
+    /// Save the supplied display name.
+    DisplayName(String),
+    /// Adopt the provider-supplied name.
+    UseProviderName,
+}
+
+impl ProfileUpdateRequest {
+    /// Resolves the body to exactly one action.
+    ///
+    /// # Errors
+    /// Returns the field problems for both-or-neither and for
+    /// `useProviderName: false`, which asks for nothing.
+    pub fn action(self) -> Result<ProfileAction, Vec<FieldError>> {
+        match (self.display_name, self.use_provider_name) {
+            (Some(name), None) => Ok(ProfileAction::DisplayName(name)),
+            (None, Some(true)) => Ok(ProfileAction::UseProviderName),
+            (None, Some(false)) => Err(vec![FieldError::new(
+                "useProviderName",
+                "must be true when supplied",
+            )]),
+            _ => Err(vec![FieldError::new(
+                "request",
+                "exactly one of displayName or useProviderName must be supplied",
+            )]),
         }
     }
 }

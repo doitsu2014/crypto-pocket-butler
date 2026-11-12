@@ -287,6 +287,22 @@ impl User {
         Ok(())
     }
 
+    /// Adopts the provider-supplied display name and clears the user override
+    /// (BR3.2).
+    ///
+    /// Returns `false` and leaves the record unchanged when the claim carries no
+    /// usable name: an absent, blank, or over-long claim cannot be adopted, and
+    /// clearing the flag alone would not change what the person sees.
+    pub fn adopt_provider_name(&mut self, display_name: Option<&str>, now: DateTime<Utc>) -> bool {
+        let Some(display_name) = normalized_display_name(display_name) else {
+            return false;
+        };
+        self.display_name = Some(display_name);
+        self.display_name_overridden = false;
+        self.updated_at = now;
+        true
+    }
+
     /// Applies a validated preference change (BR3.3).
     pub fn update_preferences(&mut self, preferences: Preferences, now: DateTime<Utc>) {
         self.locale = preferences.locale;

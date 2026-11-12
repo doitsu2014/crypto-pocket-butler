@@ -1,5 +1,8 @@
 //! Route handlers. Every refusal is an RFC 7807 problem carrying the correlation
 //! id; a validation refusal names the field paths and never the values.
+//!
+//! `support_metadata` is the internal Identity-only path that serves the closed
+//! portfolio projection for a support grant (BR3.9, contract C1/C2).
 
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{Extension, Path, Query, Request, State};
@@ -9,15 +12,15 @@ use axum::Json;
 use chrono::{DateTime, Utc};
 use portfolio_application::common::{AppError, Caller, FieldError, ServiceCaller};
 use portfolio_application::ports::RegisteredService;
-use portfolio_domain::{AccountId, OrderIntentId, PortfolioId, UserId};
+use portfolio_domain::{AccountId, Operation, OrderIntentId, PortfolioId, UserId};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::dto::{
     AnonymiseRequest, AnonymiseResponse, CreatePortfolioRequest, OrderIntentDto,
     OrderIntentPreviewDto, OrderIntentRequestDto, PortfolioDto, PortfolioValuationDto,
-    PrivacyExportDto, RecordedTradeDto, SnapshotDetailDto, SnapshotDto, TargetPreviewDto,
-    TargetSetRequest, TradeRequestDto,
+    PrivacyExportDto, RecordedTradeDto, SnapshotDetailDto, SnapshotDto, SupportMetadataDto,
+    TargetPreviewDto, TargetSetRequest, TradeRequestDto,
 };
 use crate::middleware::{CorrelationId, ServicePrincipal, ValidatedClaims};
 use crate::problem::{from_app_error, validation, ProblemDetails};
@@ -611,6 +614,30 @@ pub async fn privacy_export(
     let caller = service_caller(&principal, &correlation.0);
     match state.privacy.export(&caller, user_id).await {
         Ok(export) => Json(PrivacyExportDto::from(export)).into_response(),
+        Err(error) => app_error(error, &correlation.0),
+    }
+}
+
+/// C8/C2: Identity reads one user's allowlisted portfolio projection for a
+/// support grant (BR3.9). Only the Identity service carrying `support_metadata`
+/// may call it; a missing user answers an empty projection rather than leaking
+/// existence.
+pub async fn support_metadata(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ServicePrincipal(principal)): Extension<ServicePrincipal>,
+    Path(user_id): Path<String>,
+) -> Response {
+    let user_id = match parse_user_id(&user_id) {
+        Ok(id) => id,
+        Err(error) => return validation(&correlation.0, vec![error]).into_response(),
+    };
+    let caller = service_caller(&principal, &correlation.0);
+    if let Err(error) = caller.require_operation(Operation::SupportMetadata) {
+        return app_error(error, &correlation.0);
+    }
+    match state.portfolios.list_for_user(user_id).await {
+        Ok(portfolios) => Json(SupportMetadataDto::from(portfolios)).into_response(),
         Err(error) => app_error(error, &correlation.0),
     }
 }

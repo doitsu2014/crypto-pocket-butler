@@ -1,6 +1,10 @@
 //! Minimal Prometheus text metrics: request classes by route, error rate, the
 //! workflow status counts the runbook alerts read, and the `authorisation_*`
 //! family the decision emits.
+//!
+//! The `support_*` family serves the support-access rules (BR3.9–BR3.13,
+//! FR16.3–FR16.6) and the monitoring design (NFR1.8, NFR17.1): every series is
+//! rendered zero-initialised so an alert query answers before the first event.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
@@ -14,6 +18,9 @@ use identity_application::authorisation::ports::{
 use identity_application::consent::ports::{
     DeliveryOutcome, DrainerObservation, ObservationSink as ConsentObservationSink,
     PreferenceWriteOutcome, StateQueryOutcome, WithdrawalRollbackCause,
+};
+use identity_application::ports::{
+    SupportDrainDelivery, SupportDrainObservation, SupportSourceFailureSink,
 };
 use identity_domain::{ConsentAction, ConsentKind, DenialReason, OperationClass, UserStatus};
 
@@ -92,6 +99,17 @@ pub struct Metrics {
     status_outbox_deliveries: Mutex<BTreeMap<String, u64>>,
     status_outbox_pending: AtomicI64,
     status_outbox_oldest_age: AtomicI64,
+    support_grants: Mutex<BTreeMap<(String, String), u64>>,
+    support_reads: Mutex<BTreeMap<String, u64>>,
+    support_read_durations: Mutex<DurationSamples>,
+    support_write_durations: Mutex<DurationSamples>,
+    support_metadata_source_errors: Mutex<BTreeMap<(String, String), u64>>,
+    support_audit_write_failures: Mutex<BTreeMap<String, u64>>,
+    support_grant_decision_errors: Mutex<BTreeMap<String, u64>>,
+    support_outbox_deliveries: Mutex<BTreeMap<String, u64>>,
+    support_outbox_pending: AtomicI64,
+    support_outbox_oldest_age: AtomicI64,
+    support_outbox_last_pass: AtomicI64,
     status_transitions: Mutex<BTreeMap<(String, String, String), u64>>,
     status_refusals: Mutex<BTreeMap<String, u64>>,
     deletion_events: Mutex<BTreeMap<String, u64>>,
@@ -565,6 +583,176 @@ impl Metrics {
             self.status_outbox_oldest_age.load(Ordering::Relaxed)
         ));
 
+        // U3: support access (monitoring design, NFR1.8, NFR17.1). Every series
+        // is rendered zero-initialised so a dashboard query answers before the
+        // first event, and so an absent series means a misconfiguration rather
+        // than silence.
+        push_counter_family_seeded(
+            &mut output,
+            "support_grants_total",
+            "Support-grant writes, by operation and outcome.",
+            &self.support_grants,
+            ("operation", "outcome"),
+            &[
+                ("request", "accepted"),
+                ("request", "refused"),
+                ("request", "failed"),
+                ("approve", "accepted"),
+                ("approve", "refused"),
+                ("approve", "failed"),
+                ("revoke", "accepted"),
+                ("revoke", "refused"),
+                ("revoke", "failed"),
+            ],
+        );
+        push_counter_family_with_zeroes(
+            &mut output,
+            "support_reads_total",
+            "Support-metadata reads, by outcome.",
+            &self.support_reads,
+            "outcome",
+            &["served", "refused", "unavailable", "failed"],
+        );
+        output.push_str(
+            "# HELP support_read_duration_seconds Support-metadata read duration.\n\
+             # TYPE support_read_duration_seconds histogram\n",
+        );
+        let read_durations = self
+            .support_read_durations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if read_durations.count == 0 {
+            for bound in DURATION_BUCKETS {
+                output.push_str(&format!(
+                    "support_read_duration_seconds_bucket{{le=\"{bound}\"}} 0\n"
+                ));
+            }
+            output.push_str("support_read_duration_seconds_bucket{le=\"+Inf\"} 0\n");
+            output.push_str("support_read_duration_seconds_sum 0\n");
+            output.push_str("support_read_duration_seconds_count 0\n");
+        } else {
+            let mut cumulative = 0;
+            for (index, bound) in DURATION_BUCKETS.iter().enumerate() {
+                cumulative += read_durations.buckets[index];
+                output.push_str(&format!(
+                    "support_read_duration_seconds_bucket{{le=\"{bound}\"}} {cumulative}\n"
+                ));
+            }
+            cumulative += read_durations.buckets[DURATION_BUCKETS.len()];
+            output.push_str(&format!(
+                "support_read_duration_seconds_bucket{{le=\"+Inf\"}} {cumulative}\n"
+            ));
+            output.push_str(&format!(
+                "support_read_duration_seconds_sum {}\n",
+                read_durations.sum_seconds
+            ));
+            output.push_str(&format!(
+                "support_read_duration_seconds_count {}\n",
+                read_durations.count
+            ));
+        }
+        output.push_str(
+            "# HELP support_write_duration_seconds Support-grant write duration.\n\
+             # TYPE support_write_duration_seconds histogram\n",
+        );
+        let write_durations = self
+            .support_write_durations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if write_durations.count == 0 {
+            for bound in DURATION_BUCKETS {
+                output.push_str(&format!(
+                    "support_write_duration_seconds_bucket{{le=\"{bound}\"}} 0\n"
+                ));
+            }
+            output.push_str("support_write_duration_seconds_bucket{le=\"+Inf\"} 0\n");
+            output.push_str("support_write_duration_seconds_sum 0\n");
+            output.push_str("support_write_duration_seconds_count 0\n");
+        } else {
+            let mut cumulative = 0;
+            for (index, bound) in DURATION_BUCKETS.iter().enumerate() {
+                cumulative += write_durations.buckets[index];
+                output.push_str(&format!(
+                    "support_write_duration_seconds_bucket{{le=\"{bound}\"}} {cumulative}\n"
+                ));
+            }
+            cumulative += write_durations.buckets[DURATION_BUCKETS.len()];
+            output.push_str(&format!(
+                "support_write_duration_seconds_bucket{{le=\"+Inf\"}} {cumulative}\n"
+            ));
+            output.push_str(&format!(
+                "support_write_duration_seconds_sum {}\n",
+                write_durations.sum_seconds
+            ));
+            output.push_str(&format!(
+                "support_write_duration_seconds_count {}\n",
+                write_durations.count
+            ));
+        }
+        push_counter_family_seeded(
+            &mut output,
+            "support_metadata_source_errors_total",
+            "Owner metadata source failures, by source and cause.",
+            &self.support_metadata_source_errors,
+            ("source", "cause"),
+            &[
+                ("account", "unreachable"),
+                ("account", "timeout"),
+                ("portfolio", "unreachable"),
+                ("portfolio", "timeout"),
+            ],
+        );
+        push_counter_family_with_zeroes(
+            &mut output,
+            "support_audit_write_failures_total",
+            "Fail-closed support audit appends, by cause.",
+            &self.support_audit_write_failures,
+            "cause",
+            &["read"],
+        );
+        push_counter_family_with_zeroes(
+            &mut output,
+            "support_grant_decision_errors_total",
+            "Failing grant lookups inside the support read, by cause.",
+            &self.support_grant_decision_errors,
+            "cause",
+            &["lookup"],
+        );
+        push_counter_family_with_zeroes(
+            &mut output,
+            "support_outbox_deliveries_total",
+            "Support audit-outbox deliveries, by outcome.",
+            &self.support_outbox_deliveries,
+            "outcome",
+            &["delivered", "retryable", "dead"],
+        );
+        output.push_str(
+            "# HELP support_outbox_pending Undelivered support audit rows.\n\
+             # TYPE support_outbox_pending gauge\n",
+        );
+        output.push_str(&format!(
+            "support_outbox_pending {}\n",
+            self.support_outbox_pending.load(Ordering::Relaxed)
+        ));
+        output.push_str(
+            "# HELP support_outbox_oldest_age_seconds The age of the oldest pending support audit row.\n\
+             # TYPE support_outbox_oldest_age_seconds gauge\n",
+        );
+        output.push_str(&format!(
+            "support_outbox_oldest_age_seconds {}\n",
+            self.support_outbox_oldest_age.load(Ordering::Relaxed)
+        ));
+        output.push_str(
+            "# HELP support_outbox_last_pass_timestamp_seconds When the support drainer last finished a pass.\n\
+             # TYPE support_outbox_last_pass_timestamp_seconds gauge\n",
+        );
+        output.push_str(&format!(
+            "support_outbox_last_pass_timestamp_seconds {}\n",
+            self.support_outbox_last_pass.load(Ordering::Relaxed)
+        ));
+
         output.push_str(
             "# HELP service_up 1 while the process is running.\n\
              # TYPE service_up gauge\n",
@@ -591,6 +779,71 @@ fn push_counter_family(
     }
     for (key, value) in counters {
         output.push_str(&format!("{name}{{{label}=\"{key}\"}} {value}\n"));
+    }
+}
+
+/// Renders a one-label counter family with the known label values present at
+/// zero, so a rate query answers before the first event.
+fn push_counter_family_with_zeroes(
+    output: &mut String,
+    name: &str,
+    help: &str,
+    counters: &Mutex<BTreeMap<String, u64>>,
+    label: &str,
+    defaults: &[&str],
+) {
+    output.push_str(&format!("# HELP {name} {help}\n# TYPE {name} counter\n"));
+    let counters = counters
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    for value in defaults {
+        let count = counters.get(*value).copied().unwrap_or(0);
+        output.push_str(&format!("{name}{{{label}=\"{value}\"}} {count}\n"));
+    }
+    for (key, count) in counters {
+        if defaults.contains(&key.as_str()) {
+            continue;
+        }
+        output.push_str(&format!("{name}{{{label}=\"{key}\"}} {count}\n"));
+    }
+}
+
+/// Renders a two-label counter family with the known label pairs present at
+/// zero.
+fn push_counter_family_seeded(
+    output: &mut String,
+    name: &str,
+    help: &str,
+    counters: &Mutex<BTreeMap<(String, String), u64>>,
+    labels: (&str, &str),
+    defaults: &[(&str, &str)],
+) {
+    output.push_str(&format!("# HELP {name} {help}\n# TYPE {name} counter\n"));
+    let counters = counters
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let (first, second) = labels;
+    for (left, right) in defaults {
+        let count = counters
+            .get(&((*left).to_string(), (*right).to_string()))
+            .copied()
+            .unwrap_or(0);
+        output.push_str(&format!(
+            "{name}{{{first}=\"{left}\",{second}=\"{right}\"}} {count}\n"
+        ));
+    }
+    for ((left, right), count) in counters {
+        if defaults
+            .iter()
+            .any(|(known_left, known_right)| *known_left == left && *known_right == right)
+        {
+            continue;
+        }
+        output.push_str(&format!(
+            "{name}{{{first}=\"{left}\",{second}=\"{right}\"}} {count}\n"
+        ));
     }
 }
 
@@ -640,6 +893,75 @@ impl Metrics {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         *counters.entry(key.to_string()).or_default() += 1;
+    }
+
+    /// U3: one support-grant write, by operation and outcome (FR16.3–16.6).
+    pub fn record_support_grant(&self, operation: &str, outcome: &str) {
+        let mut grants = self
+            .support_grants
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *grants
+            .entry((operation.to_string(), outcome.to_string()))
+            .or_default() += 1;
+    }
+
+    /// U3: one support-grant write, its outcome and the time it took
+    /// (FR16.3–FR16.6, NFR17.1). The histogram is separate from the read one
+    /// because the write SLO and the read SLO are different budgets.
+    pub fn record_support_write(&self, operation: &str, outcome: &str, elapsed: Duration) {
+        self.record_support_grant(operation, outcome);
+        self.support_write_durations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .observe(elapsed);
+    }
+
+    /// U3: one metadata read, its outcome, and the composed latency.
+    pub fn record_support_read(&self, outcome: &str, elapsed: Duration) {
+        self.bump(&self.support_reads, outcome);
+        self.support_read_durations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .observe(elapsed);
+    }
+
+    /// U3: one owner source failure, naming the owner that could not answer.
+    pub fn record_support_metadata_source_error(&self, source: &str, cause: &str) {
+        let mut errors = self
+            .support_metadata_source_errors
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *errors
+            .entry((source.to_string(), cause.to_string()))
+            .or_default() += 1;
+    }
+
+    /// U3: one fail-closed support audit append.
+    pub fn record_support_audit_write_failure(&self, cause: &str) {
+        self.bump(&self.support_audit_write_failures, cause);
+    }
+
+    /// U3: one failing grant lookup inside the support read.
+    pub fn record_support_grant_decision_error(&self, cause: &str) {
+        self.bump(&self.support_grant_decision_errors, cause);
+    }
+
+    /// U3: the drainer finished a pass; the gauges are read at scrape time.
+    pub fn record_support_outbox_pass(&self, pending: u64, oldest_age_seconds: i64) {
+        self.support_outbox_pending.store(
+            i64::try_from(pending).unwrap_or(i64::MAX),
+            Ordering::Relaxed,
+        );
+        self.support_outbox_oldest_age
+            .store(oldest_age_seconds, Ordering::Relaxed);
+        self.support_outbox_last_pass
+            .store(chrono::Utc::now().timestamp(), Ordering::Relaxed);
+    }
+
+    /// U3: one support audit-outbox delivery outcome.
+    pub fn record_support_outbox_delivery(&self, outcome: &str) {
+        self.bump(&self.support_outbox_deliveries, outcome);
     }
 }
 
@@ -752,5 +1074,26 @@ impl AccountObservation for Metrics {
 
     fn record_erasure_failure(&self, step: &str) {
         self.bump(&self.erasure_failures, step);
+    }
+}
+
+impl SupportSourceFailureSink for Metrics {
+    fn source_failure(&self, source: &str, cause: &str) {
+        self.record_support_metadata_source_error(source, cause);
+    }
+}
+
+impl SupportDrainObservation for Metrics {
+    fn record_delivery(&self, outcome: SupportDrainDelivery) {
+        let outcome = match outcome {
+            SupportDrainDelivery::Delivered => "delivered",
+            SupportDrainDelivery::Retryable => "retryable",
+            SupportDrainDelivery::Dead => "dead",
+        };
+        self.record_support_outbox_delivery(outcome);
+    }
+
+    fn record_pass(&self, pending: u64, oldest_age_seconds: i64) {
+        self.record_support_outbox_pass(pending, oldest_age_seconds);
     }
 }

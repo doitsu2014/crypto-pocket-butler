@@ -3,9 +3,14 @@
 //!
 //! It wires infrastructure adapters into application use cases. The four Clean
 //! Architecture crates never import each other outward.
+//!
+//! `identity-api` also hosts the support audit-outbox drainer and gives the
+//! support observation its metrics sink (BR3.13, NFR1.8), so a support-access
+//! audit event reaches C10 without a separate deployable.
 
 pub mod config;
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,7 +19,7 @@ use identity_application::account_lifecycle::AccountLifecycleService;
 use identity_application::authorisation::catalogue::OperationCatalogue;
 use identity_application::authorisation::decision::AuthorisationDecision;
 use identity_application::authorisation::ports::{
-    AuditSink as AuthorisationAuditPort, ObservationSink, RoleWriter, StatusReader,
+    AuditSink as AuthorisationAuditPort, ObservationSink, RoleReader, RoleWriter, StatusReader,
 };
 use identity_application::authorisation::role_change::RoleChange;
 use identity_application::consent::ports::{
@@ -29,14 +34,16 @@ use identity_application::export::{ExportService, ExportWorker};
 use identity_application::jurisdiction::{AuditSink, CheckJurisdiction, GeoLocator, PublishList};
 use identity_application::ports::{
     AuditClient, AuthAdmin, Clock, ContributorGateway, ErasureStore, ExportStore, GateTokenIssuer,
-    JurisdictionGate, ReadinessProbe, ServiceTokenRegistry, TokenValidator, UserRepository,
-    WakeTransport,
+    JurisdictionGate, ReadinessProbe, ServiceTokenRegistry, SupportAccountsSource,
+    SupportDrainObservation, SupportObservation, SupportOutbox, SupportPortfoliosSource,
+    TokenValidator, UserRepository, WakeTransport,
 };
 use identity_application::preferences::ports::{PreferencesRepository, UserLookup};
 use identity_application::preferences::read::ReadUserPreferences;
 use identity_application::preferences::write::WriteUserPreferences;
 use identity_application::preferences::PreferencesService;
 use identity_application::principal::PrincipalService;
+use identity_application::profile::ProfileService;
 use identity_application::sessions::SessionService;
 use identity_application::signup_gate::SignupGateService;
 use identity_application::support::SupportService;
@@ -70,12 +77,17 @@ use identity_infrastructure::repositories::{
     PgStatusTransitionStore, PgSupportGrantRepository, PgUserRepository,
 };
 use identity_infrastructure::service_token::FileServiceTokens;
+use identity_infrastructure::support::drainer::SupportOutboxDrainer;
+use identity_infrastructure::support::observation::AuditSupportObservation;
+use identity_infrastructure::support::outbox::SupportOutboxStore;
+use identity_infrastructure::support::sources::{HttpSupportAccounts, HttpSupportPortfolios};
 use identity_infrastructure::wake::HttpWake;
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use tracing_subscriber::EnvFilter;
 
 pub use config::{ApiConfig, WorkerConfig};
+pub use identity_http::routes::router;
 
 /// The API service identifier.
 pub const SERVICE_NAME: &str = "identity-api";
@@ -92,12 +104,14 @@ pub fn service_name() -> &'static str {
     SERVICE_NAME
 }
 
-/// The API's built state and the background drainer the composition root starts.
+/// The API's built state and the background drainers the composition root starts.
 pub struct ApiRuntime {
     /// The router state.
     pub state: AppState,
     /// The U4 audit-outbox drainer.
     pub drainer: Arc<AuditOutboxDrainer>,
+    /// The U3 support audit-outbox drainer.
+    pub support_drainer: Arc<SupportOutboxDrainer>,
 }
 
 /// Builds the API application state from configuration.
@@ -145,10 +159,12 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<ApiRuntime> {
     let authorisation_audit: Arc<dyn AuthorisationAuditPort> = Arc::new(
         AuthorisationAuditSink::new(config.audit_url.clone(), outbound_token.clone()),
     );
-    let role_writer: Arc<dyn RoleWriter> = Arc::new(SupabaseRoleWriter::new(
+    let role_provider = Arc::new(SupabaseRoleWriter::new(
         config.supabase_auth_url.clone(),
         config.service_role_key.clone(),
     ));
+    let role_writer: Arc<dyn RoleWriter> = role_provider.clone();
+    let role_reader: Arc<dyn RoleReader> = role_provider;
     let authorisation = Arc::new(AuthorisationDecision::new(
         OperationCatalogue::new(),
         status_reader,
@@ -176,7 +192,7 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<ApiRuntime> {
         config.jurisdiction_provider_url.clone(),
         config.jurisdiction_provider_key.clone(),
     ));
-    let trail = Arc::new(Trail::new(audit, clock.clone()));
+    let trail = Arc::new(Trail::new(audit.clone(), clock.clone()));
 
     let token_validator: Arc<dyn TokenValidator> = Arc::new(JwksValidator::new(
         Arc::new(HttpJwksSource::new(config.jwks_url.clone())),
@@ -213,7 +229,7 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<ApiRuntime> {
         gate,
         clock.clone(),
     ));
-    let user_registry = Arc::new(AdminLookup::new(users.clone(), trail.clone()));
+    let user_registry = Arc::new(AdminLookup::new(users.clone(), role_reader, trail.clone()));
     let consent_service = Arc::new(ConsentService::new(consent, trail.clone(), clock.clone()));
     let consent_observation: Arc<dyn ConsentObservationSink> = metrics.clone();
     let consent_state = Arc::new(ConsentStateQuery::new(
@@ -252,10 +268,25 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<ApiRuntime> {
         trail.clone(),
         clock.clone(),
     ));
+    let support_outbox: Arc<dyn SupportOutbox> = Arc::new(SupportOutboxStore::new(pool.clone()));
+    let support_accounts: Arc<dyn SupportAccountsSource> = Arc::new(HttpSupportAccounts::new(
+        config.account_url.clone(),
+        outbound_token.clone(),
+    ));
+    let support_portfolios: Arc<dyn SupportPortfoliosSource> = Arc::new(
+        HttpSupportPortfolios::new(config.portfolio_url.clone(), outbound_token.clone()),
+    );
+    let support_observation: Arc<dyn SupportObservation> = Arc::new(
+        AuditSupportObservation::new(audit.clone(), clock.clone())
+            .with_source_failures(metrics.clone()),
+    );
     let support = Arc::new(SupportService::new(
         grants,
         users.clone(),
-        trail.clone(),
+        support_outbox,
+        support_accounts,
+        support_portfolios,
+        support_observation,
         clock.clone(),
     ));
     let signup_gate = Arc::new(SignupGateService::new(
@@ -277,6 +308,11 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<ApiRuntime> {
         clock.clone(),
     ));
     let deletion_service = Arc::new(DeletionService::new(deletions.clone(), trail.clone()));
+    let profile = Arc::new(ProfileService::new(
+        users.clone(),
+        trail.clone(),
+        clock.clone(),
+    ));
     let transitions = Arc::new(PgStatusTransitionStore::new(pool.clone()));
     let account_observation: Arc<dyn identity_application::account_lifecycle::AccountObservation> =
         metrics.clone();
@@ -291,8 +327,16 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<ApiRuntime> {
     let drainer = Arc::new(AuditOutboxDrainer::new(
         pool.clone(),
         config.audit_url.clone(),
-        outbound_token,
+        outbound_token.clone(),
         metrics.clone(),
+        Duration::from_secs(config.drainer_interval_seconds),
+    ));
+    let support_drainer_observation: Arc<dyn SupportDrainObservation> = metrics.clone();
+    let support_drainer = Arc::new(SupportOutboxDrainer::new(
+        pool.clone(),
+        config.audit_url.clone(),
+        outbound_token,
+        support_drainer_observation,
         Duration::from_secs(config.drainer_interval_seconds),
     ));
     let readiness: Arc<dyn ReadinessProbe> = Arc::new(PgReadinessProbe::new(pool));
@@ -308,6 +352,7 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<ApiRuntime> {
         consent_services: Arc::new(config.consent_services.clone()),
         consent_observation,
         preferences,
+        profile,
         preferences_read,
         preferences_write,
         sessions: sessions_service,
@@ -330,7 +375,11 @@ pub async fn build_api_state(config: &ApiConfig) -> anyhow::Result<ApiRuntime> {
         readiness,
         metrics,
     };
-    Ok(ApiRuntime { state, drainer })
+    Ok(ApiRuntime {
+        state,
+        drainer,
+        support_drainer,
+    })
 }
 
 /// Runs the API until shutdown.
@@ -348,18 +397,34 @@ pub async fn run(config: ApiConfig) -> anyhow::Result<()> {
     );
     let drainer = runtime.drainer.clone();
     let drainer_handle = tokio::spawn(async move { drainer.run_forever().await });
+    let support_drainer = runtime.support_drainer.clone();
+    let support_drainer_handle = tokio::spawn(async move { support_drainer.run_forever().await });
     identity_http::server::serve(listener, runtime.state).await?;
     drainer_handle.abort();
+    support_drainer_handle.abort();
     tracing::info!(service = SERVICE_NAME, "service stopped");
     Ok(())
 }
 
-/// Runs the privacy worker until shutdown.
+/// The worker's built state and the inputs its supervisor needs. Kept separate
+/// from [`run_worker`] so the wiring is exercisable without binding a port.
+pub struct WorkerRuntime {
+    /// The HTTP state: the probes and the wake endpoint.
+    pub state: WorkerState,
+    /// The combined export and deletion worker.
+    pub worker: Arc<PrivacyWorker>,
+    /// The wake notifier the supervisor waits on.
+    pub notifier: Arc<Notify>,
+    /// The configured port to bind.
+    pub port: u16,
+}
+
+/// Builds the privacy worker from configuration.
 ///
 /// # Errors
-/// Returns an error when the database is unreachable or the listener cannot bind.
-pub async fn run_worker(config: WorkerConfig) -> anyhow::Result<()> {
-    init_tracing();
+/// Returns an error when either database is unreachable, the service-token
+/// registry is unreadable, or it has no outbound token.
+pub async fn build_worker_runtime(config: &WorkerConfig) -> anyhow::Result<WorkerRuntime> {
     let pool = connect(&config.database_url, config.pool_connections).await?;
 
     let users = Arc::new(PgUserRepository::new(pool.clone()));
@@ -432,19 +497,33 @@ pub async fn run_worker(config: WorkerConfig) -> anyhow::Result<()> {
         readiness,
         metrics: worker_metrics,
     };
+    Ok(WorkerRuntime {
+        state,
+        worker,
+        notifier,
+        port: config.port,
+    })
+}
 
-    let listener = TcpListener::bind(("0.0.0.0", config.port)).await?;
+/// Runs the privacy worker until shutdown.
+///
+/// # Errors
+/// Returns an error when the worker cannot be built or the listener cannot bind.
+pub async fn run_worker(config: WorkerConfig) -> anyhow::Result<()> {
+    init_tracing();
+    let runtime = build_worker_runtime(&config).await?;
+    let listener = TcpListener::bind(("0.0.0.0", runtime.port)).await?;
     tracing::info!(
         service = WORKER_SERVICE_NAME,
-        port = config.port,
+        port = runtime.port,
         "worker listening"
     );
     let supervisor = tokio::spawn(supervisor_loop(
-        worker,
-        notifier,
+        runtime.worker,
+        runtime.notifier,
         config.sweep_interval_seconds,
     ));
-    identity_http::server::serve_worker(listener, state).await?;
+    identity_http::server::serve_worker(listener, runtime.state).await?;
     supervisor.abort();
     tracing::info!(service = WORKER_SERVICE_NAME, "worker stopped");
     Ok(())
@@ -463,7 +542,7 @@ async fn supervisor_loop(worker: Arc<PrivacyWorker>, notifier: Arc<Notify>, inte
                 "privacy sweep processed work"
             );
         }
-        write_heartbeat();
+        write_heartbeat(Path::new(WORKER_HEARTBEAT_PATH));
         tokio::select! {
             () = tokio::time::sleep(Duration::from_secs(interval)) => {}
             () = notifier.notified() => {}
@@ -474,9 +553,12 @@ async fn supervisor_loop(worker: Arc<PrivacyWorker>, notifier: Arc<Notify>, inte
 
 /// The worker has an inbound listener, but the heartbeat lets a container health
 /// check distinguish a live process from a wedged supervisor.
-fn write_heartbeat() {
+///
+/// The path is a parameter so the write can be exercised without touching the
+/// running container's marker file.
+pub fn write_heartbeat(path: &Path) {
     let now = chrono::Utc::now().to_rfc3339();
-    if let Err(error) = std::fs::write(WORKER_HEARTBEAT_PATH, now) {
+    if let Err(error) = std::fs::write(path, now) {
         tracing::warn!(%error, "failed to write the worker heartbeat");
     }
 }
@@ -510,5 +592,18 @@ async fn shutdown_signal() {
     tokio::select! {
         () = ctrl_c => {},
         () = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_service_identifier_and_the_tracing_subscriber_are_wired() {
+        assert_eq!(service_name(), SERVICE_NAME);
+        init_tracing();
+        // A second initialisation is refused by the global subscriber, never fatal.
+        init_tracing();
     }
 }

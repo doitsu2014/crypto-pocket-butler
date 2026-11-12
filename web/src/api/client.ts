@@ -1,6 +1,7 @@
 import { getAccessToken } from "../auth/session";
 import type {
   Account,
+  AccountStatusView,
   AddExchangeAccountInput,
   AddWalletConnectInput,
   AddWalletInput,
@@ -8,9 +9,12 @@ import type {
   Brief,
   ClientErrorEvent,
   ConsentDecision,
-  ConsentRecord,
+  ConsentDecisionView,
+  ConsentHistoryView,
+  ConsentStateView,
   CorrectionInput,
-  DeletionRequest,
+  DeletionView,
+  EffectivePreferences,
   ExportJob,
   GateResponse,
   ImportBatch,
@@ -23,12 +27,13 @@ import type {
   Portfolio,
   PortfolioValuation,
   Preferences,
+  PreferencesPatch,
   Principal,
   ProblemDetails,
   Profile,
+  ProfileView,
   RecoveryCodes,
   ResolveAssetInput,
-  SessionInfo,
   SignupGateState,
   SignupGatesPayload,
   Snapshot,
@@ -515,16 +520,8 @@ export class GatewayClient {
     });
   }
 
-  getConsent(): Promise<ConsentRecord[]> {
-    return this.request<ConsentRecord[]>("/consent");
-  }
-
   postConsent(decisions: ConsentDecision[]): Promise<void> {
     return this.request<void>("/consent", { method: "POST", body: { decisions } });
-  }
-
-  getPreferences(): Promise<Preferences> {
-    return this.request<Preferences>("/preferences");
   }
 
   updatePreferences(preferences: Preferences): Promise<Preferences> {
@@ -536,20 +533,6 @@ export class GatewayClient {
 
   getProfile(): Promise<Profile> {
     return this.request<Profile>("/users/me");
-  }
-
-  updateProfile(patch: Partial<Pick<Profile, "displayName">>): Promise<Profile> {
-    return this.request<Profile>("/users/me", { method: "PATCH", body: patch });
-  }
-
-  listSessions(): Promise<SessionInfo[]> {
-    return this.request<SessionInfo[]>("/sessions");
-  }
-
-  revokeSession(sessionId: string): Promise<void> {
-    return this.request<void>(`/sessions/${encodeURIComponent(sessionId)}`, {
-      method: "DELETE",
-    });
   }
 
   enrolMfa(): Promise<{ secret: string; otpauthUrl: string }> {
@@ -779,8 +762,94 @@ export class GatewayClient {
     return this.request<ExportJob>(`/exports/${encodeURIComponent(exportId)}`);
   }
 
-  requestDeletion(): Promise<DeletionRequest> {
-    return this.request<DeletionRequest>("/privacy/deletions", { method: "POST" });
+  requestDeletion(): Promise<DeletionView> {
+    return this.request<DeletionView>("/privacy/deletions", { method: "POST" });
+  }
+
+  // ── Settings (U7) ────────────────────────────────────────────────────────
+
+  /** D0: the caller's own status; answers for a denied account too. */
+  getAccountStatus(): Promise<AccountStatusView> {
+    return this.request<AccountStatusView>("/me/account-status");
+  }
+
+  /** P1: the served profile view. */
+  getProfileView(): Promise<ProfileView> {
+    return this.request<ProfileView>("/me/profile");
+  }
+
+  /** P2 (W1): save the person's own display name; the answer is the new view. */
+  saveDisplayName(displayName: string): Promise<ProfileView> {
+    return this.request<ProfileView>("/me/profile", {
+      method: "PATCH",
+      body: { displayName },
+    });
+  }
+
+  /** P2 (W2): adopt the provider-supplied name again. */
+  useProviderName(): Promise<ProfileView> {
+    return this.request<ProfileView>("/me/profile", {
+      method: "PATCH",
+      body: { useProviderName: true },
+    });
+  }
+
+  /**
+   * D1: the open deletion request. A `404` is the designed "no request" answer
+   * only when it carries the pinned no-record type; every other refusal throws.
+   */
+  async getOpenDeletion(): Promise<DeletionView | null> {
+    try {
+      return await this.request<DeletionView>("/me/deletion-request");
+    } catch (error) {
+      if (error instanceof ApiError && isNoRecordProblem(error.problem)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /** D2: restore the account inside its recovery window. */
+  cancelDeletion(): Promise<DeletionView> {
+    return this.request<DeletionView>("/me/deletion-request", { method: "DELETE" });
+  }
+
+  /** X2: the effective preferences with their sources. */
+  readPreferences(): Promise<EffectivePreferences> {
+    return this.request<EffectivePreferences>("/me/preferences");
+  }
+
+  /** X2: write only the changed fields. */
+  savePreferences(patch: PreferencesPatch): Promise<EffectivePreferences> {
+    return this.request<EffectivePreferences>("/me/preferences", {
+      method: "PUT",
+      body: patch,
+    });
+  }
+
+  /** X3: the consent state per kind plus the required kinds still missing. */
+  getConsentState(): Promise<ConsentStateView> {
+    return this.request<ConsentStateView>("/me/consent/state");
+  }
+
+  /** X4: the consent history, newest first. */
+  getConsentHistory(): Promise<ConsentHistoryView> {
+    return this.request<ConsentHistoryView>("/me/consent");
+  }
+
+  /** X5: record a grant with the policy version the person acted on. */
+  grantConsent(kind: string, policyVersion: string): Promise<ConsentDecisionView> {
+    return this.request<ConsentDecisionView>("/me/consent", {
+      method: "POST",
+      body: { kind, policyVersion },
+    });
+  }
+
+  /** X6: withdraw a kind. */
+  withdrawConsent(kind: string): Promise<ConsentDecisionView> {
+    return this.request<ConsentDecisionView>(`/me/consent/${encodeURIComponent(kind)}/withdraw`, {
+      method: "POST",
+    });
   }
 
   // ── Help and status (U1/U3) ──────────────────────────────────────────────

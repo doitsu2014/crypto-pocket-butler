@@ -101,24 +101,91 @@ Extend the existing Identity service user registry: profile override markers, th
 
 ## Steps
 
-1. [x] **Skeleton/configuration** — modules: `domain/src/user_registry.rs` additions (status enum, overrides), `application/src/user_registry.rs` (ProvisionUser, ResolvePrincipal, AdminLookup), `infrastructure/src/repositories/users.rs` additions, `http` handlers/routes/dto.
-2. [x] **Verify runner** — `cargo test -p identity-domain -- --list`; record the unit commands.
-3. [x] **Data model — Red** — failing status/override tests.
-4. [x] **Data model — Green** — implement.
-5. [x] **Data model — Refactor**.
-6. [x] **Repository — Red** — `#[ignore]` tests: provision transaction, unique subject hash, override skip, admin email index.
-7. [x] **Repository — Green** — `0004` migration pair (status check widened, override columns, partial email index, down maps new statuses back before narrowing), `PgUserRepository` extensions, migrate binary + Dockerfile.
-8. [x] **Repository — Refactor**.
-9. [x] **Business logic — Red** — provisioning with gate (in-process) and email-verified status; resolve with status denial; admin lookup boundary; hash-collision fail-closed; no role event.
-10. [x] **Business logic — Green** — use cases behind ports.
-11. [x] **Business logic — Refactor**.
-12. [x] **API — Red** — HTTP tests for `/v1/principals`, C3 routes, admin search (403/404), gate-denied 422.
-13. [x] **API — Green** — handlers, DTOs, gateway route declarations (`/v1/principals`, `/v1/admin/users`), metrics.
-14. [x] **API — Refactor**.
-15. [x] **Frontend** — not applicable.
-16. [x] **Deployment** — `identity-migrate` service, migrator DSN secret, `identity_smoke_token`; no replica change.
-17. [x] **Environment/build** — config for the migrator DSN and smoke token.
-18. [x] **Documentation/traceability** — `code-summary.md`, `source-manifest.json`, `traceability.json`.
+1. [ ] **Skeleton/configuration** — modules: `domain/src/user_registry.rs` additions (status enum, overrides), `application/src/user_registry.rs` (ProvisionUser, ResolvePrincipal, AdminLookup), `infrastructure/src/repositories/users.rs` additions, `http` handlers/routes/dto.
+2. [ ] **Verify runner** — `cargo test -p identity-domain -- --list`; record the unit commands.
+3. [ ] **Data model — Red** — failing status/override tests.
+4. [ ] **Data model — Green** — implement.
+5. [ ] **Data model — Refactor**.
+6. [ ] **Repository — Red** — `#[ignore]` tests: provision transaction, unique subject hash, override skip, admin email index.
+7. [ ] **Repository — Green** — `0004` migration pair (status check widened, override columns, partial email index, down maps new statuses back before narrowing), `PgUserRepository` extensions, migrate binary + Dockerfile.
+8. [ ] **Repository — Refactor**.
+9. [ ] **Business logic — Red** — provisioning with gate (in-process) and email-verified status; resolve with status denial; admin lookup boundary; hash-collision fail-closed; no role event.
+10. [ ] **Business logic — Green** — use cases behind ports.
+11. [ ] **Business logic — Refactor**.
+12. [ ] **API — Red** — HTTP tests for `/v1/principals`, C3 routes, admin search (403/404), gate-denied 422.
+13. [ ] **API — Green** — handlers, DTOs, gateway route declarations (`/v1/principals`, `/v1/admin/users`), metrics.
+14. [ ] **API — Refactor**.
+15. [ ] **Frontend** — not applicable.
+16. [ ] **Deployment** — `identity-migrate` service, migrator DSN secret, `identity_smoke_token`; no replica change.
+17. [ ] **Environment/build** — config for the migrator DSN and smoke token.
+18. [ ] **Documentation/traceability** — `code-summary.md`, `source-manifest.json`, `traceability.json`.
+
+### Loop-back 1 repair (Build and Test, 2026-11-12)
+
+Build and Test reopened this Unit for F2a (a stale seam test) and F6 (crate coverage). The repair
+below is the only work this replay adds; steps 1–18 are kept as they stand.
+
+19. [x] **Repair — seam test (F2a), Red then Green** — in
+    `services/identity/tests/repositories.rs`, the test
+    `a_user_is_found_by_the_hashed_subject_and_the_subject_is_protected_at_rest` stores an
+    **active** user and then calls `anonymise`, which the erasure guard from U5 deliberately
+    refuses. Red: add a case asserting that `anonymise` on an active user is refused with
+    `Conflict`, and move the existing at-rest assertions onto a leg that first drives the stored
+    user to `pending_deletion` through `User::transition` plus `UserRepository::update`. Green:
+    the seam test passes against a disposable Postgres, and the at-rest protection assertions are
+    unchanged in substance.
+20. [x] **Repair — coverage of this Unit's adapters (F6)** — add tests for the error and retry
+    branches of `PgUserRepository` and `PgShreddingKeyRepository` (provision rollback, hash
+    collision fail-closed path, `reveal_auth_subject` on a missing row, key destruction on an
+    unknown key), inside the existing `#[ignore]` suites. These raise
+    `identity-infrastructure`, whose floor is judged per crate and re-measured after u3 adds its
+    support-adapter cases; any remaining shortfall is reported, never lowered.
+21. [x] **Repair — coverage of the composition root (F6)** — move the parts of
+    `services/identity/src/` that can be exercised without binding a port (configuration parsing,
+    router and middleware assembly, health/readiness wiring) behind testable entry points and
+    cover them, so the `identity` crate is no longer 0.00 %.
+22. [x] **Repair — record** — update `code-summary.md`, `source-manifest.json` and
+    `traceability.json` with the repair and its evidence.
+
+Not in this Unit's repair: F2b (the destroyed pgsodium key still decrypts) is left failing — no
+code change can make that assertion true on pgsodium 3.1.8, and the guarantee's wording is a
+separate decision.
+
+## Loop-back 1, second pass — `identity-infrastructure` (Build and Test, 2026-11-12)
+
+Step 20's adapter cases lifted `identity-infrastructure` from 53.63 % to **1 716 / 2 642 lines,
+64.95 %**, still under the 80 % floor. Step 20 recorded that a shortfall would be reported, never
+lowered, and Build and Test's reviewer reopened the point at R-04. This pass closes it with tests
+only; steps 1–22 stand as they are.
+
+The uncovered surface, from the coverage export, is concentrated in adapter modules that no test
+constructs:
+
+| Module | Covered / lines |
+|---|---|
+| `infrastructure/src/support/drainer.rs` | 23 / 113 |
+| `infrastructure/src/support/sources.rs` | 21 / 110 |
+| `infrastructure/src/support/observation.rs` | 11 / 53 |
+| the remaining adapter modules (audit client, geo locator, the repositories' error arms, JWKS) | the balance of the 926 uncovered lines |
+
+23. [ ] **Baseline.** Re-measure the crate alone and record the exact per-file numbers in
+    `code-summary.md` as this pass's before-picture:
+    `cargo llvm-cov -p identity-infrastructure -p identity --include-ignored --ignore-run-fail --json target/coverage.json`
+    (paired with the `identity` package, which carries the test binaries; adjust the flag form to
+    the tool's accepted syntax and record the command actually used).
+24. [ ] **Support adapters — Red/Green.** Extend the existing `#[ignore]` adapter suite with cases
+    that construct and drive the three support modules directly: the drainer pass (one delivered,
+    one transient retry, one dead-lettered, one missing-token row) against the outbox store, and
+    the Account/Portfolio HTTP sources (success, non-2xx, malformed projection) with a stub
+    server. Assert the observable outcome — the row's state, the request the stub received, the
+    audit event written — not that a line ran. *Trace:* BR3.7–BR3.13, R-04.
+25. [ ] **Remaining adapter arms — Red/Green.** Cover the audit client, the geo locator, the JWKS
+    adapter and the repository error arms that the export shows as uncovered, asserting the error
+    mapping each produces. Skip any arm that cannot be reached without a live external system and
+    name it as a gap. *Trace:* F6.
+26. [ ] **Record.** Re-run step 23's command, put the after-picture beside the before-picture, name
+    every path still uncovered and why, update `code-summary.md`, `source-manifest.json` and
+    `traceability.json`, and re-run `aidlc engine sensor-traceability --stage build-and-test`.
 
 ## Story-to-step traceability
 

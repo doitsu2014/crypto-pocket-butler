@@ -1,6 +1,4 @@
 import type {
-  AccountMetadata,
-  AccountSearchResult,
   GrantStatus,
   Incident,
   IncidentNotification,
@@ -8,6 +6,9 @@ import type {
   IncidentStatus,
   NotificationState,
   SupportAccessGrant,
+  SupportMetadata,
+  SupportMetadataAccount,
+  SupportMetadataPortfolio,
   TicketMetadata,
 } from "../api/types";
 
@@ -16,13 +17,12 @@ import type {
  * over-sends, a credential, holding, valuation, or portfolio field can never
  * reach the component tree.
  */
-export const ACCOUNT_METADATA_FIELDS = [
-  "id",
-  "kind",
-  "label",
-  "venue",
-  "status",
-  "lastSyncedAt",
+export const SUPPORT_METADATA_FIELDS = [
+  "userId",
+  "displayName",
+  "emailVerified",
+  "accounts",
+  "portfolios",
 ] as const;
 
 export const TICKET_METADATA_FIELDS = [
@@ -77,24 +77,56 @@ function requireString(record: Record<string, unknown>, key: string): string {
   return value;
 }
 
-export function pickAccountMetadata(raw: unknown): AccountMetadata {
-  const record = asRecord(raw);
-  const metadata: AccountMetadata = {
-    id: requireString(record, "id"),
-    kind: requireString(record, "kind"),
-    label: requireString(record, "label"),
-    status: requireString(record, "status"),
-  };
+function requireBoolean(record: Record<string, unknown>, key: string): boolean {
+  const value = record[key];
+  if (typeof value !== "boolean") {
+    throw new Error(`The support API returned incomplete metadata (missing ${key}).`);
+  }
+  return value;
+}
 
-  const venue = readString(record, "venue");
-  if (venue !== undefined) {
-    metadata.venue = venue;
+function requireArray(record: Record<string, unknown>, key: string, label: string): unknown[] {
+  const value = record[key];
+  if (!Array.isArray(value)) {
+    throw new Error(`The support API returned an invalid ${label}.`);
   }
-  const lastSyncedAt = readString(record, "lastSyncedAt");
-  if (lastSyncedAt !== undefined) {
-    metadata.lastSyncedAt = lastSyncedAt;
-  }
-  return metadata;
+  return value;
+}
+
+function pickSupportAccount(raw: unknown): SupportMetadataAccount {
+  const record = asRecord(raw);
+  return {
+    id: requireString(record, "id"),
+    label: requireString(record, "label"),
+    sourceType: requireString(record, "sourceType"),
+    syncStatus: requireString(record, "syncStatus"),
+    lastSyncedAt: readNullableString(record, "lastSyncedAt") ?? null,
+  };
+}
+
+function pickSupportPortfolio(raw: unknown): SupportMetadataPortfolio {
+  const record = asRecord(raw);
+  return {
+    id: requireString(record, "id"),
+    label: requireString(record, "label"),
+  };
+}
+
+/**
+ * W3: narrows the grant metadata projection to its whitelist. A malformed
+ * projection throws rather than rendering a partial one.
+ */
+export function pickSupportMetadata(raw: unknown): SupportMetadata {
+  const record = asRecord(raw);
+  return {
+    userId: requireString(record, "userId"),
+    displayName: readNullableString(record, "displayName") ?? null,
+    emailVerified: requireBoolean(record, "emailVerified"),
+    accounts: requireArray(record, "accounts", "metadata account list").map(pickSupportAccount),
+    portfolios: requireArray(record, "portfolios", "metadata portfolio list").map(
+      pickSupportPortfolio,
+    ),
+  };
 }
 
 export function pickTicketMetadata(raw: unknown): TicketMetadata {
@@ -111,19 +143,6 @@ export function pickTicketMetadata(raw: unknown): TicketMetadata {
     ticket.requesterRef = requesterRef;
   }
   return ticket;
-}
-
-export function pickAccountSearchResult(raw: unknown): AccountSearchResult {
-  const record = asRecord(raw);
-  if (!Array.isArray(record.items)) {
-    throw new Error("The support API returned an invalid metadata search payload.");
-  }
-
-  const nextCursor = readString(record, "nextCursor");
-  return {
-    items: record.items.map(pickAccountMetadata),
-    nextCursor: nextCursor ?? null,
-  };
 }
 
 export function pickTicketList(raw: unknown): { items: TicketMetadata[] } {
@@ -145,8 +164,13 @@ const NOTIFICATION_STATES = ["sent", "pending", "failed"] as const;
  */
 export function pickSupportGrant(raw: unknown): SupportAccessGrant {
   const record = asRecord(raw);
+  // The gateway answers with `grantId`; a bare `id` is accepted too.
+  const id = readString(record, "grantId") ?? readString(record, "id");
+  if (!id) {
+    throw new Error("The support API returned incomplete metadata (missing id).");
+  }
   const grant: SupportAccessGrant = {
-    id: requireString(record, "id"),
+    id,
     userId: requireString(record, "userId"),
     reason: requireString(record, "reason"),
     requestedAt: requireString(record, "requestedAt"),

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   canReadWithGrant,
+  formatRemainingMinutes,
   GRANT_CLOCK_INTERVAL_MS,
   grantStatusAt,
   grantStatusPresentation,
   hasGrantRequestErrors,
-  MAX_GRANT_MINUTES,
-  MIN_REASON_LENGTH,
+  MAX_REASON_LENGTH,
   validateGrantRequest,
 } from "./grants";
 import { activeGrant, expiredGrant, pendingGrant } from "../test/fixtures";
@@ -48,11 +48,8 @@ describe("grant state", () => {
 
 describe("validateGrantRequest", () => {
   const valid = {
-    requesterId: "agent-1",
     targetUserId: "user-1",
     reason: "Investigating a reported sync failure",
-    durationMinutes: 60,
-    approverId: "agent-2",
   };
 
   it("accepts a complete request", () => {
@@ -60,42 +57,25 @@ describe("validateGrantRequest", () => {
     expect(hasGrantRequestErrors(validateGrantRequest(valid))).toBe(false);
   });
 
-  it("requires a target user", () => {
+  it("requires a target user id after trimming", () => {
     const errors = validateGrantRequest({ ...valid, targetUserId: "   " });
     expect(errors.targetUserId).toMatch(/target user/i);
     expect(hasGrantRequestErrors(errors)).toBe(true);
   });
 
-  it("requires a reason of at least 20 characters after trimming", () => {
-    expect(validateGrantRequest({ ...valid, reason: "short reason" }).reason).toMatch(/20/);
+  it("accepts a reason from one to 500 characters after trimming", () => {
+    expect(validateGrantRequest({ ...valid, reason: " a " }).reason).toBeUndefined();
     expect(
-      validateGrantRequest({ ...valid, reason: `  ${"a".repeat(MIN_REASON_LENGTH - 1)}  ` }).reason,
-    ).toMatch(/20/);
-    expect(
-      validateGrantRequest({ ...valid, reason: `  ${"a".repeat(MIN_REASON_LENGTH)}  ` }).reason,
+      validateGrantRequest({ ...valid, reason: `  ${"a".repeat(MAX_REASON_LENGTH)}  ` }).reason,
     ).toBeUndefined();
   });
 
-  it("accepts only whole minutes from 1 to 480", () => {
-    expect(validateGrantRequest({ ...valid, durationMinutes: 0 }).durationMinutes).toMatch(/1/);
+  it("requires a reason and refuses one longer than 500 characters", () => {
+    expect(validateGrantRequest({ ...valid, reason: "   " }).reason).toMatch(/enter a reason/i);
     expect(
-      validateGrantRequest({ ...valid, durationMinutes: MAX_GRANT_MINUTES + 1 }).durationMinutes,
-    ).toMatch(/480/);
-    expect(validateGrantRequest({ ...valid, durationMinutes: 12.5 }).durationMinutes).toMatch(
-      /whole/i,
-    );
-    expect(validateGrantRequest({ ...valid, durationMinutes: 1 }).durationMinutes).toBeUndefined();
-    expect(
-      validateGrantRequest({ ...valid, durationMinutes: MAX_GRANT_MINUTES }).durationMinutes,
-    ).toBeUndefined();
-  });
-
-  it("requires a second approver who is not the requester", () => {
-    expect(validateGrantRequest({ ...valid, approverId: "" }).approverId).toMatch(/required/i);
-    expect(
-      validateGrantRequest({ ...valid, approverId: " AGENT-1 " }).approverId,
-    ).toMatch(/differ from the requester/i);
-    expect(validateGrantRequest({ ...valid, approverId: "agent-3" }).approverId).toBeUndefined();
+      validateGrantRequest({ ...valid, reason: "a".repeat(MAX_REASON_LENGTH + 1) }).reason,
+    ).toMatch(/500 characters or fewer/i);
+    expect(MAX_REASON_LENGTH).toBe(500);
   });
 });
 
@@ -116,5 +96,11 @@ describe("grant presentation", () => {
 
   it("pins the expiry poll interval at 30 seconds", () => {
     expect(GRANT_CLOCK_INTERVAL_MS).toBe(30_000);
+  });
+
+  it("renders remaining time as whole minutes and never zero", () => {
+    expect(formatRemainingMinutes(42)).toBe("42 minutes left");
+    expect(formatRemainingMinutes(1)).toBe("1 minute left");
+    expect(formatRemainingMinutes(0)).toBe("less than a minute left");
   });
 });

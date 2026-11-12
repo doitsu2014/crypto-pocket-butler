@@ -3,6 +3,7 @@ import { ApiError, approveSupportGrant, NetworkError, revokeSupportGrant } from 
 import type { SupportAccessGrant } from "../api/types";
 import type { SupportRole } from "../auth/session";
 import { grantStatusPresentation } from "../domain/grants";
+import { GATEWAY_UNREACHABLE_MESSAGE } from "../domain/presentation";
 import { StatusBadge } from "./StatusBadge";
 import {
   alertClass,
@@ -55,6 +56,8 @@ export function GrantApprovalQueue({
         <ul className="mt-4 flex flex-col gap-3">
           {grants.map((grant) => {
             const isOwnRequest = grant.requestedBy === currentUserId;
+            const canApprove =
+              role === "admin" && !isOwnRequest && grant.status === "pending_approval";
             return (
               <li
                 key={grant.id}
@@ -69,9 +72,12 @@ export function GrantApprovalQueue({
                   Target user <span className="font-mono text-ink">{grant.userId}</span>
                 </p>
                 <p className="text-small text-ink-2">
-                  Requested by <span className="font-mono text-ink">{grant.requestedBy ?? "—"}</span>
+                  Requested by{" "}
+                  <span className="font-mono text-ink">{grant.requestedBy ?? "—"}</span>
                 </p>
-                {isOwnRequest ? (
+                {role !== "admin" ? (
+                  <p className="text-small text-meta">Only an administrator can approve a grant.</p>
+                ) : isOwnRequest ? (
                   <p className="text-small text-meta">
                     You cannot approve your own request. A second approver is required.
                   </p>
@@ -80,7 +86,7 @@ export function GrantApprovalQueue({
                   <button
                     type="button"
                     data-testid={`grant-approval-approve-${grant.id}`}
-                    disabled={isOwnRequest || approve.isPending || grant.status !== "pending_approval"}
+                    disabled={!canApprove || approve.isPending}
                     onClick={() => approve.mutate(grant.id)}
                     className={primaryButtonClass}
                   >
@@ -107,7 +113,7 @@ export function GrantApprovalQueue({
       {error ? (
         <p role="alert" className={`${alertClass} mt-4`}>
           {error instanceof NetworkError
-            ? "Could not reach the gateway. Check your connection and try again."
+            ? GATEWAY_UNREACHABLE_MESSAGE
             : (problem?.title ?? error.message)}
           {problem ? (
             <span className="ml-2 font-mono text-meta">Correlation ID {problem.correlationId}</span>

@@ -11,7 +11,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::Router;
 use chrono::{TimeZone, Utc};
-use identity_application::authorisation::ports::{AuditSink, AuthorisationEvent, RoleWriter};
+use identity_application::authorisation::ports::{
+    AuditSink, AuthorisationEvent, RoleReader, RoleWriter,
+};
 use identity_application::ports::{ExternalError, RepositoryError};
 use identity_domain::{AuditOutcome, DenialReason, Role};
 use identity_infrastructure::authorisation::audit::AuthorisationAuditSink;
@@ -117,6 +119,81 @@ async fn serve(stub: Arc<Stub>) -> String {
 
 fn now() -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 10, 9, 0, 0).unwrap()
+}
+
+#[tokio::test]
+async fn the_role_reader_returns_the_provider_role_and_keeps_the_response_read_only() {
+    let stub = Arc::new(Stub::default());
+    *stub.metadata.lock().unwrap() = json!({
+        "app_metadata": {
+            "role": "support",
+            "has_exchange_credentials": true
+        }
+    })
+    .to_string();
+    let reader = SupabaseRoleWriter::new(serve(stub.clone()).await, "service-role-key");
+
+    assert_eq!(reader.read_role("subject-1").await.unwrap(), Role::Support);
+
+    let requests = stub.requests();
+    assert_eq!(requests.len(), 1, "a role read is one GET, never a write");
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(requests[0].path, "/admin/users/subject-1");
+    assert_eq!(
+        requests[0].headers.get("authorization").map(String::as_str),
+        Some("Bearer service-role-key")
+    );
+    assert!(requests[0].body.is_empty());
+}
+
+#[tokio::test]
+async fn the_role_reader_applies_the_claim_mapping() {
+    let stub = Arc::new(Stub::default());
+    let reader = SupabaseRoleWriter::new(serve(stub.clone()).await, "service-role-key");
+
+    for (provider_value, expected) in [
+        (Some("admin"), Role::Admin),
+        (Some("support"), Role::Support),
+        (Some("owner"), Role::User),
+        // Legacy and unknown values read back as the regular user, exactly as
+        // `Role::from_claim` defines; an absent claim is the regular user too.
+        (Some("user"), Role::User),
+        (Some("root"), Role::User),
+        (None, Role::User),
+    ] {
+        let metadata = match provider_value {
+            Some(role) => json!({ "app_metadata": { "role": role } }),
+            None => json!({ "app_metadata": {} }),
+        };
+        *stub.metadata.lock().unwrap() = metadata.to_string();
+        assert_eq!(
+            reader.read_role("subject-1").await.unwrap(),
+            expected,
+            "provider value {provider_value:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_role_reader_surfaces_a_refused_and_an_unavailable_provider() {
+    let stub = Arc::new(Stub::default());
+    let reader = SupabaseRoleWriter::new(serve(stub.clone()).await, "service-role-key");
+
+    // One attempt: an unknown subject is a surfaced refusal, not an empty role.
+    stub.get_status.store(404, Ordering::Relaxed);
+    assert!(matches!(
+        reader.read_role("subject-1").await,
+        Err(ExternalError::Refused(_))
+    ));
+
+    stub.get_status.store(500, Ordering::Relaxed);
+    assert!(matches!(
+        reader.read_role("subject-1").await,
+        Err(ExternalError::Unavailable(_))
+    ));
+
+    let counts = stub.requests().len();
+    assert_eq!(counts, 2, "each failure is a single attempt, never a retry");
 }
 
 #[tokio::test]

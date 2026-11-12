@@ -1,4 +1,7 @@
 //! Identity infrastructure adapters.
+//!
+//! The migrations under `../migrations` are embedded by `sqlx::migrate!`; the
+//! macro is re-read whenever this crate is rebuilt.
 
 pub mod audit_client;
 pub mod auth;
@@ -17,6 +20,7 @@ pub mod preferences;
 pub mod readiness;
 pub mod repositories;
 pub mod service_token;
+pub mod support;
 pub mod wake;
 
 pub use audit_client::{HttpAuditClient, HttpDecisionAudit};

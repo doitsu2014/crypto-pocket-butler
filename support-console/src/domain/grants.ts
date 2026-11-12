@@ -1,8 +1,7 @@
-import type { GrantRequestValues, GrantStatus, SupportAccessGrant } from "../api/types";
+import type { GrantStatus, SupportAccessGrant } from "../api/types";
 import type { StatusPresentation } from "./presentation";
 
-export const MIN_REASON_LENGTH = 20;
-export const MAX_GRANT_MINUTES = 480;
+export const MAX_REASON_LENGTH = 500;
 export const GRANT_CLOCK_INTERVAL_MS = 30_000;
 
 /**
@@ -25,6 +24,18 @@ export function canReadWithGrant(grant: SupportAccessGrant, nowMs: number): bool
   return grantStatusAt(grant, nowMs) === "active";
 }
 
+/**
+ * Remaining time is shown as whole minutes and never as "0 minutes": zero or
+ * less reads as "less than a minute left" (functional spec §6).
+ */
+export function formatRemainingMinutes(minutes: number): string {
+  const whole = Math.max(0, Math.floor(minutes));
+  if (whole < 1) {
+    return "less than a minute left";
+  }
+  return whole === 1 ? "1 minute left" : `${whole} minutes left`;
+}
+
 export function grantStatusPresentation(status: GrantStatus): StatusPresentation {
   switch (status) {
     case "pending_approval":
@@ -41,11 +52,13 @@ export function grantStatusPresentation(status: GrantStatus): StatusPresentation
 export interface GrantRequestErrors {
   targetUserId?: string;
   reason?: string;
-  durationMinutes?: string;
-  approverId?: string;
 }
 
-export function validateGrantRequest(values: GrantRequestValues): GrantRequestErrors {
+/** W1: a request carries a target user id and a reason of 1–500 characters. */
+export function validateGrantRequest(values: {
+  targetUserId: string;
+  reason: string;
+}): GrantRequestErrors {
   const errors: GrantRequestErrors = {};
 
   if (!values.targetUserId?.trim()) {
@@ -53,24 +66,10 @@ export function validateGrantRequest(values: GrantRequestValues): GrantRequestEr
   }
 
   const reason = values.reason?.trim() ?? "";
-  if (reason.length < MIN_REASON_LENGTH) {
-    errors.reason = `The reason must be at least ${MIN_REASON_LENGTH} characters.`;
-  }
-
-  if (
-    !Number.isInteger(values.durationMinutes) ||
-    values.durationMinutes < 1 ||
-    values.durationMinutes > MAX_GRANT_MINUTES
-  ) {
-    errors.durationMinutes = `Choose a whole number of minutes between 1 and ${MAX_GRANT_MINUTES}.`;
-  }
-
-  const approver = values.approverId?.trim() ?? "";
-  const requester = values.requesterId?.trim() ?? "";
-  if (!approver) {
-    errors.approverId = "A second approver is required.";
-  } else if (approver.toLowerCase() === requester.toLowerCase()) {
-    errors.approverId = "The approver must differ from the requester.";
+  if (!reason) {
+    errors.reason = "Enter a reason.";
+  } else if (reason.length > MAX_REASON_LENGTH) {
+    errors.reason = `Use ${MAX_REASON_LENGTH} characters or fewer.`;
   }
 
   return errors;

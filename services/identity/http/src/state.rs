@@ -19,6 +19,7 @@ use identity_application::preferences::read::ReadUserPreferences;
 use identity_application::preferences::write::WriteUserPreferences;
 use identity_application::preferences::PreferencesService;
 use identity_application::principal::PrincipalService;
+use identity_application::profile::ProfileService;
 use identity_application::sessions::SessionService;
 use identity_application::signup_gate::SignupGateService;
 use identity_application::support::SupportService;
@@ -50,6 +51,8 @@ pub struct AppState {
     pub consent_observation: Arc<dyn ConsentObservationSink>,
     /// Preference updates.
     pub preferences: Arc<PreferencesService>,
+    /// U7: the profile read and the two profile writes.
+    pub profile: Arc<ProfileService>,
     /// U4: the effective preference read.
     pub preferences_read: Arc<ReadUserPreferences>,
     /// U4: the partial preference write.

@@ -1,6 +1,9 @@
 //! The Identity router. Every authenticated path names its identity: the
 //! forwarded Supabase JWT for the user surface, and a per-caller service token
 //! for each internal path. A path with no rule is not served.
+//!
+//! The four support-access paths (FR16.3–FR16.6, BR3.10) sit on the user
+//! surface: request, approve, revoke and read the metadata of a live grant.
 
 use axum::extract::DefaultBodyLimit;
 use axum::middleware;
@@ -17,17 +20,18 @@ use crate::consent::{
     write_preferences,
 };
 use crate::handlers::{
-    admin_lookup, approve_support_grant, cancel_deletion, check_jurisdiction, check_support_grant,
+    approve_support_grant, cancel_deletion, cancel_my_deletion_request, check_jurisdiction,
     disable_account, fallback, get_consent, get_contact, get_deletion, get_due_users, get_export,
     get_user, health, internal_get_by_subject, internal_get_user, internal_lookup,
-    internal_provision, list_sessions, metrics, publish_jurisdiction, ready, request_deletion,
-    request_export, request_support_grant, resolve_principal, restore_account, revoke_session,
-    revoke_support_grant, run_privacy_sweep, signup_gate, update_preferences,
+    internal_provision, list_pending_grants, list_sessions, lookup_admin_user, metrics,
+    my_account_status, my_deletion_request, my_profile, my_support_grants, publish_jurisdiction,
+    ready, request_deletion, request_export, request_support_grant, resolve_principal,
+    restore_account, revoke_session, revoke_support_grant, run_privacy_sweep, signup_gate,
+    support_grant_metadata, update_my_profile, update_preferences,
 };
 use crate::middleware::{
     correlation_id, record_metrics, require_contact, require_due_users, require_jurisdiction_check,
-    require_jwt, require_registry_read, require_registry_write, require_run, require_support_check,
-    security_headers,
+    require_jwt, require_registry_read, require_registry_write, require_run, security_headers,
 };
 use crate::state::AppState;
 
@@ -53,30 +57,41 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/exports/{exportId}", get(get_export))
         .route("/v1/privacy/deletions", post(request_deletion))
         .route("/v1/privacy/deletions/{deletionId}", get(get_deletion))
-        .route("/v1/support-grants", post(request_support_grant))
+        .route(
+            "/v1/support-grants",
+            get(list_pending_grants).post(request_support_grant),
+        )
+        .route("/v1/support-grants/mine", get(my_support_grants))
         .route(
             "/v1/support-grants/{grantId}/approve",
             post(approve_support_grant),
         )
         .route("/v1/support-grants/{grantId}", delete(revoke_support_grant))
+        .route(
+            "/v1/support-grants/{grantId}/metadata",
+            get(support_grant_metadata),
+        )
         .route_layer(middleware::from_fn_with_state(state.clone(), require_jwt));
 
-    // U1: the user record read (owner or admin) and the admin exact-email
-    // search. Both authenticate with the forwarded JWT; the admin role comes
-    // from that token.
+    // U1: the user record read (owner or admin) and the U10 admin exact-email
+    // lookup. Both authenticate with the forwarded JWT; the admin role comes
+    // from that token. D-S1: the lookup address travels in the body.
     let user_registry = Router::new()
         .route("/v1/users/{userId}", get(get_user))
-        .route("/v1/admin/users", get(admin_lookup))
+        .route("/v1/admin/users/lookup", post(lookup_admin_user))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_jwt));
 
-    // U2: the admin role change on the gateway's user surface. The gateway
-    // requires the admin role at the edge and Identity re-checks it from the
-    // same forwarded JWT.
-    let admin_role_change = Router::new()
+    // U2/U10: the gateway-facing admin surface. The gateway requires the admin
+    // role at the edge and Identity re-checks it from the same forwarded JWT.
+    // The status paths reuse the C7 handlers; their internal service-token
+    // routes stay in place above.
+    let admin_surface = Router::new()
         .route(
             "/v1/admin/users/{userId}/role",
             put(change_role_for_gateway),
         )
+        .route("/v1/admin/users/{userId}/disable", post(disable_account))
+        .route("/v1/admin/users/{userId}/restore", post(restore_account))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_jwt));
 
     // C3: the internal registry reads. The gateway reads for the admin surface;
@@ -126,16 +141,6 @@ pub fn router(state: AppState) -> Router {
         )
         .route_layer(middleware::from_fn_with_state(state.clone(), require_run));
 
-    let support_check = Router::new()
-        .route(
-            "/v1/internal/support-grants/{grantId}/check",
-            get(check_support_grant),
-        )
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            require_support_check,
-        ));
-
     // C8: the jurisdiction gate. The check names its trusted callers; publish is
     // an administrator action validated from the forwarded JWT.
     let jurisdiction_check = Router::new()
@@ -174,6 +179,15 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/me/consent/state", get(my_consent_state))
         .route("/v1/me/consent", get(consent_history).post(grant_consent))
         .route("/v1/me/consent/{kind}/withdraw", post(withdraw_consent))
+        // U7: the settings surface's self-scoped reads and writes. D0, D1 and
+        // D2 resolve the caller by auth subject so a denied account can still
+        // read its own status and restore itself.
+        .route("/v1/me/account-status", get(my_account_status))
+        .route("/v1/me/profile", get(my_profile).patch(update_my_profile))
+        .route(
+            "/v1/me/deletion-request",
+            get(my_deletion_request).delete(cancel_my_deletion_request),
+        )
         .route_layer(middleware::from_fn_with_state(state.clone(), require_jwt));
 
     // C6: the source-connection path asks for the token's own user. The
@@ -219,13 +233,12 @@ pub fn router(state: AppState) -> Router {
         .merge(me)
         .merge(internal_consent)
         .merge(user_registry)
-        .merge(admin_role_change)
+        .merge(admin_surface)
         .merge(registry_read)
         .merge(registry_write)
         .merge(contact)
         .merge(due)
         .merge(runs)
-        .merge(support_check)
         .merge(jurisdiction_check)
         .merge(jurisdiction_publish)
         .merge(internal_authorisation)

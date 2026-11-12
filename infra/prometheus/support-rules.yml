@@ -1,0 +1,131 @@
+# Support-access alert rules (U3, FR16.3–FR16.6, NFR1.8, NFR17.1).
+#
+# Every series below is rendered zero-initialised by
+# `services/identity/http/src/metrics.rs` on `identity-api`. There is no
+# Prometheus scrape configuration in this repository, so these rules assume the
+# platform targets `identity-api`; where it does not, the series are uncollected
+# and no alert can fire. That gap is a platform task, recorded in
+# `construction/u3-support-access/infrastructure-design/monitoring-design.md`.
+#
+# The audit-outbox drainer runs inside `identity-api` (3 replicas), so every
+# counter arrives as three series: rates are summed and the heartbeat is read
+# with `max()` (the freshest successful pass anywhere).
+#
+# `support_write_duration_seconds` is measured inside the write handler, around
+# the use case — the repository has no HTTP-level latency histogram, so this is
+# the closest real signal to the design's "HTTP p95 on the write routes".
+
+groups:
+  - name: support-access
+    rules:
+      - alert: SupportMetadataSourceErrors
+        expr: |
+          sum by (source) (rate(support_metadata_source_errors_total[5m]))
+            / on() group_left sum(rate(support_reads_total[5m])) > 0.002
+        for: 10m
+        labels:
+          severity: P2
+          service: identity
+        annotations:
+          summary: "An owner metadata source is failing more than 0.2% of reads"
+          runbook: "Read the `source` label and page that owner's on-call (account or portfolio), copying Identity. Check the owner's /readyz and its support-metadata route before assuming Identity is at fault."
+
+      - alert: SupportReadUnavailable
+        expr: |
+          sum(rate(support_reads_total{outcome="unavailable"}[5m]))
+            / sum(rate(support_reads_total[5m])) > 0.003
+        for: 30m
+        labels:
+          severity: P2
+          service: identity
+        annotations:
+          summary: "Support metadata reads are answering 503 for more than 0.3% of requests"
+          runbook: "The composed read budget is being spent. Split by cause: `support_metadata_source_errors_total` (an owner is down), `support_audit_write_failures_total` (audit is down), or `support_grant_decision_errors_total` (the grant lookup is failing). The audit path fails closed by design."
+
+      - alert: SupportWriteFailures
+        expr: |
+          sum(rate(support_grants_total{outcome="failed"}[5m]))
+            / sum(rate(support_grants_total[5m])) > 0.0005
+        for: 30m
+        labels:
+          severity: P2
+          service: identity
+        annotations:
+          summary: "Support-grant writes are answering 503 above the write error budget"
+          runbook: "A `failed` outcome is a 503 that is neither the caller's fault nor a refusal. Check the Identity database and the support audit path; a refusal (`refused`) is a normal 403/404/409 and is not this alert."
+
+      - alert: SupportGrantDecisionErrors
+        expr: |
+          sum(rate(support_grant_decision_errors_total[10m]))
+            / sum(rate(support_reads_total[10m])) > 0.001
+        for: 10m
+        labels:
+          severity: P3
+          service: identity
+        annotations:
+          summary: "The support-grant lookup is failing inside the metadata read"
+          runbook: "`cause=\"lookup\"` counts internal failures while deciding a grant, not refusals. Check the support_grants table and its indexes, and the Identity database connection pool."
+
+      - alert: SupportAuditFailingClosed
+        expr: sum(increase(support_audit_write_failures_total[5m])) > 0
+        labels:
+          severity: P1
+          service: identity
+        annotations:
+          summary: "A support read or refusal failed closed because its audit record could not be written"
+          runbook: "This is the fail-closed path: the request was refused rather than served without a record. Check the audit service and the support outbox; do not relax the fail-closed behaviour while investigating."
+
+      - alert: SupportOutboxBacklog
+        expr: max(support_outbox_pending) > 100
+        for: 15m
+        labels:
+          severity: P2
+          service: identity
+        annotations:
+          summary: "More than 100 support audit rows are waiting for delivery"
+          runbook: "The drainer inside `identity-api` is not keeping up. Check `support_outbox_last_pass_timestamp_seconds` first: a fresh heartbeat with a growing backlog points at the audit endpoint, a stale one points at the drainer."
+
+      - alert: SupportOutboxStalled
+        expr: |
+          max(support_outbox_oldest_age_seconds) > 900
+            or time() - max(support_outbox_last_pass_timestamp_seconds) > 300
+            or absent(support_outbox_last_pass_timestamp_seconds)
+        for: 5m
+        labels:
+          severity: P2
+          service: identity
+        annotations:
+          summary: "The support audit drainer is stalled or has not finished a pass"
+          runbook: "The drainer runs inside `identity-api`, not `identity-worker`. Check the audit endpoint URL, the outbound service token, and the `identity-api` logs for a panicked task; restart nothing until the oldest undelivered row is recorded."
+
+      - alert: SupportOutboxDeadRows
+        expr: sum(increase(support_outbox_deliveries_total{outcome="dead"}[15m])) > 0
+        labels:
+          severity: P2
+          service: identity
+        annotations:
+          summary: "A support audit row dead-lettered after its attempts"
+          runbook: "A dead row is the one class no retry will recover. Read the audit endpoint's error for that row, fix the cause, then replay with the NFR1.5 statement before the 24-hour retention window deletes it."
+
+      - alert: SupportReadLatency
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(support_read_duration_seconds_bucket[5m]))) > 0.15
+            or histogram_quantile(0.99, sum by (le) (rate(support_read_duration_seconds_bucket[5m]))) > 0.3
+        for: 10m
+        labels:
+          severity: P3
+          service: identity
+        annotations:
+          summary: "Support metadata reads are slower than the read budget (p95 > 150 ms or p99 > 300 ms)"
+          runbook: "The read composes the grant lookup, two owner calls and the audit append. Compare with `support_metadata_source_errors_total` and the owner services' own latency before touching Identity."
+
+      - alert: SupportWriteLatency
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(support_write_duration_seconds_bucket[5m]))) > 0.08
+        for: 10m
+        labels:
+          severity: P3
+          service: identity
+        annotations:
+          summary: "Support-grant writes are slower than 80 ms at p95"
+          runbook: "The metric times the write use case inside the handler. Check the support_grants insert, the live-pair index, and the audit append; a slow write path is usually a database problem, not a caller one."

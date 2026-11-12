@@ -14,6 +14,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { gateRetryDelay, gatewayClient, isAutoRetryableGateError } from "../../api/client";
+import { useAccountStatus } from "../../api/settingsQueries";
 import type { Principal, SignupGateState } from "../../api/types";
 import { useSession } from "../../auth/session";
 import { deriveGateStatus, type GateStatus } from "./gateStatus";
@@ -60,6 +61,10 @@ export function useGateStatus(options: UseGateStatusOptions = {}): GateStatus {
   const client: GateReader = options.client ?? gatewayClient;
   const enabled = Boolean(sessionUserId);
 
+  // D0 answers for every status, including the three the principal read
+  // refuses, so it is the first routing row (functional-spec §2.1).
+  const accountQuery = useAccountStatus(enabled);
+
   const principalQuery = useQuery({
     queryKey: principalKey(sessionUserId),
     queryFn: () => client.getPrincipalReadOnly(),
@@ -83,10 +88,15 @@ export function useGateStatus(options: UseGateStatusOptions = {}): GateStatus {
       deriveGateStatus({
         principal: principalQuery.data,
         gateState: gateStateQuery.data,
-        error: principalQuery.error ?? gateStateQuery.error,
-        isLoading: principalQuery.isPending || gateStateQuery.isPending,
+        accountStatus: accountQuery.data?.status,
+        error: principalQuery.error ?? gateStateQuery.error ?? accountQuery.error,
+        isLoading:
+          principalQuery.isPending || gateStateQuery.isPending || accountQuery.isPending,
       }),
     [
+      accountQuery.data,
+      accountQuery.error,
+      accountQuery.isPending,
       principalQuery.data,
       principalQuery.error,
       principalQuery.isPending,

@@ -1,0 +1,21 @@
+{
+  "stage": "functional-design",
+  "unit": "u10-admin-users-ui",
+  "upstream_ids": [
+    "AC7.1.1",
+    "AC7.1.2"
+  ],
+  "coverage": [
+    {
+      "id": "AC7.1.1",
+      "status": "N/A",
+      "target": "N/A — an acceptance criterion, not a record rule. U10 is a UI unit embedded in the support console and this stage produces no entities.md or rules.md for it, so there is no BRx.y record target to carry the criterion. The spec satisfies it in functional-spec.md: the exact-email lookup and record view in functional-spec.md §3.1-§3.2, the role change with our previous->new role and audited statement in functional-spec.md §3.3, disable in functional-spec.md §3.4, and the two record additions it needs (role on the admin answer, W1; and the gateway-facing disable route, W2) in functional-spec.md §4 and §8. The lookup rule itself belongs to U1 (identity.admin.user_lookup); the role write to U2 (RoleChangeService); the status transition to U5 (AccountLifecycle)."
+    },
+    {
+      "id": "AC7.1.2",
+      "status": "N/A",
+      "target": "N/A — an acceptance criterion, not a record rule, and this UI unit has no rules.md. The spec satisfies it in functional-spec.md §3.2 (the metadata boundary: no entitlement field, control, or call on the record) and §4 W4 (no entitlement path is added to the gateway, to Identity, or to the console, so an undeclared request is a 404 before any service is reached)."
+    }
+  ],
+  "reverse": []
+}

@@ -6,6 +6,30 @@
   "contracts": ["C8", "C9"],
   "coverage": [
     {
+      "id": "AC6.4.1",
+      "status": "OK",
+      "target": "services/identity/application/src/principal.rs",
+      "code": [
+        "services/identity/application/src/principal.rs"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs"
+      ],
+      "note": "Principal::provision resolves the jurisdiction gate before any user row, profile override or shredding key is written; a refusal stores nothing. Tests: services/identity/tests/application.rs::user_registry_gate_denial_refuses_provisioning_and_stores_nothing asserts users.len() == 0 after the refusal, and user_registry_gate_unavailable_is_a_retryable_refusal asserts the fail-closed path stores nothing."
+    },
+    {
+      "id": "AC6.4.2",
+      "status": "OK",
+      "target": "services/identity/application/src/principal.rs",
+      "code": [
+        "services/identity/application/src/principal.rs"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs"
+      ],
+      "note": "The refused sign-up is audited: services/identity/tests/application.rs::user_registry_gate_denial_refuses_provisioning_and_stores_nothing asserts the identity.user.provision_denied action."
+    },
+    {
       "id": "BR1.1",
       "status": "OK",
       "code": [
@@ -197,40 +221,55 @@
     {
       "id": "NFR23.1",
       "status": "OK",
+      "target": "services/identity/migrations/0003_jurisdiction_list.up.sql",
       "code": [
-        "services/identity/migrations/0003_jurisdiction_list.up.sql"
+        "services/identity/migrations/0003_jurisdiction_list.up.sql",
+        "services/identity/infrastructure/src/repositories/jurisdiction.rs"
       ],
       "tests": [
-        "services/identity/tests/repositories.rs::jurisdiction_a_published_list_version_round_trips_with_its_rules_and_checksum"
+        "services/identity/tests/repositories.rs"
       ],
-      "note": "Publish writes with the existing identity_app role, as the approved plan settles."
+      "note": "Least privilege: services/identity/infrastructure/src/repositories/jurisdiction.rs::PgJurisdictionListRepository reads the active list and publishes with the existing identity_app role, as the approved plan settles; publishing authorisation is the application-level admin JWT role, not a second Postgres role. Test: services/identity/tests/repositories.rs::jurisdiction_a_published_list_version_round_trips_with_its_rules_and_checksum."
     },
     {
       "id": "NFR23.2",
       "status": "OK",
+      "target": "services/identity/http/src/handlers.rs",
       "code": [
-        "services/identity/http/src/handlers.rs::publish_jurisdiction"
+        "services/identity/http/src/handlers.rs",
+        "services/identity/http/src/routes.rs"
       ],
       "tests": [
-        "services/identity/tests/http.rs::jurisdiction_publish_requires_the_admin_role_and_stores_a_new_version"
-      ]
+        "services/identity/tests/http.rs"
+      ],
+      "note": "Publish authentication: services/identity/http/src/handlers.rs::publish_jurisdiction behind the admin guard declared in services/identity/http/src/routes.rs::router. Test: services/identity/tests/http.rs::jurisdiction_publish_requires_the_admin_role_and_stores_a_new_version."
     },
     {
       "id": "NFR23.3",
       "status": "OK",
+      "target": "services/identity/http/src/middleware.rs",
       "code": [
-        "services/identity/http/src/handlers.rs::check_jurisdiction",
-        "services/identity/http/src/middleware.rs::require_jurisdiction_check",
-        "services/gateway/http/src/middleware.rs::client_ip",
-        "services/gateway/http/src/middleware.rs::rate_limit",
-        "services/gateway/http/src/server.rs::serve"
+        "services/identity/http/src/middleware.rs",
+        "services/gateway/http/src/middleware.rs",
+        "services/gateway/http/src/server.rs"
       ],
       "tests": [
-        "services/identity/tests/http.rs::jurisdiction_check_refuses_an_invalid_country_and_a_client_forwarded_ip",
-        "services/gateway/tests/http.rs::client_ip_strips_forwarded_for_and_uses_the_observed_peer",
-        "services/gateway/tests/http.rs::client_ip_uses_the_trusted_edge_header_when_no_peer_is_attached",
-        "services/gateway/tests/http.rs::client_ip_never_forwards_a_caller_supplied_value"
-      ]
+        "services/identity/tests/http.rs",
+        "services/gateway/tests/http.rs"
+      ],
+      "note": "IP trust boundary: services/identity/http/src/middleware.rs::require_jurisdiction_check; services/gateway/http/src/middleware.rs::client_ip and services/gateway/http/src/middleware.rs::rate_limit; services/gateway/http/src/server.rs::serve. Tests: services/identity/tests/http.rs::jurisdiction_check_refuses_an_invalid_country_and_a_client_forwarded_ip; services/gateway/tests/http.rs::client_ip_strips_forwarded_for_and_uses_the_observed_peer, services/gateway/tests/http.rs::client_ip_uses_the_trusted_edge_header_when_no_peer_is_attached, services/gateway/tests/http.rs::client_ip_never_forwards_a_caller_supplied_value."
+    },
+    {
+      "id": "NFR23.4",
+      "status": "OK",
+      "target": "services/identity/application/src/jurisdiction.rs",
+      "code": [
+        "services/identity/application/src/jurisdiction.rs"
+      ],
+      "tests": [
+        "services/identity/tests/application.rs"
+      ],
+      "note": "Fail closed: services/identity/application/src/jurisdiction.rs::CheckJurisdiction refuses with ServiceUnavailable when the provider or list is unavailable, including on continued-use checks. Tests: services/identity/tests/application.rs::jurisdiction_a_provider_failure_fails_closed_and_opens_the_circuit, services/identity/tests/application.rs::jurisdiction_a_country_absent_from_the_list_fails_closed, services/identity/tests/application.rs::jurisdiction_an_audit_failure_refuses_the_decision_and_the_retry_is_idempotent."
     },
     {
       "id": "C8",

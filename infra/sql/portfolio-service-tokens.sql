@@ -28,7 +28,7 @@
 INSERT INTO portfolio.service_token_registry (id, token_hash, caller, operations, active, created_at)
 VALUES
     (gen_random_uuid(), :'reporting_sha256', 'reporting', ARRAY['snapshots_read', 'portfolios_read', 'valuation_read'], true, now()),
-    (gen_random_uuid(), :'identity_sha256', 'identity', ARRAY['privacy_export', 'privacy_anonymise'], true, now()),
+    (gen_random_uuid(), :'identity_sha256', 'identity', ARRAY['privacy_export', 'privacy_anonymise', 'support_metadata'], true, now()),
     (gen_random_uuid(), :'run_sha256', 'job-orchestration', ARRAY['run_valuation'], true, now()),
     (gen_random_uuid(), :'smoke_sha256', 'smoke-reader', ARRAY['snapshots_read'], true, now())
 ON CONFLICT (token_hash) DO NOTHING;

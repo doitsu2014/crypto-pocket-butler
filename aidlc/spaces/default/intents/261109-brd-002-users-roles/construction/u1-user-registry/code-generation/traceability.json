@@ -293,5 +293,27 @@
       "status": "N/A",
       "target": "extends NFR22 within this unit: the subject is persisted only as a hash and deterministic ciphertext"
     }
+  ],
+  "repairs": [
+    {
+      "loop_back": 1,
+      "date": "2026-11-12",
+      "finding": "F2a",
+      "summary": "the seam test no longer erases an active user; the refusal is asserted deliberately and the at-rest assertions run on a pending_deletion leg, with the tombstone contract asserted after erasure",
+      "evidence": "services/identity/tests/repositories.rs::a_user_is_found_by_the_hashed_subject_and_the_subject_is_protected_at_rest and ::the_erasure_guard_refuses_an_account_that_is_not_pending_deletion",
+      "command": "TEST_DATABASE_URL=... cargo test -p identity --test repositories -- --ignored --test-threads=1",
+      "result": "35 passed; 1 failed (F2b, out of scope); 3 filtered out",
+      "ids": ["AC1.1.2", "AC4.1.2", "BR1.1", "BR1.10"]
+    },
+    {
+      "loop_back": 1,
+      "date": "2026-11-12",
+      "finding": "F6",
+      "summary": "adapter error and retry branches are covered, and the composition root moved behind testable entry points and is covered",
+      "evidence": "services/identity/tests/repositories.rs (5 new cases plus the extended collision case), services/identity/src/config.rs (injected lookup and unit tests), services/identity/src/lib.rs (build_worker_runtime, router re-export, path-taking heartbeat), services/identity/tests/composition.rs",
+      "command": "TEST_DATABASE_URL=... cargo llvm-cov -p identity -p identity-infrastructure --ignore-run-fail --json --output-path target/coverage-loopback.json -- --include-ignored --test-threads=1",
+      "result": "identity-infrastructure 1716/2642 = 64.95 % (below the 80 % floor; shortfall reported, floor not lowered); identity 623/703 = 88.62 % (was 0.00 %)",
+      "ids": ["NFR2.1", "NFR2.3", "BR1.8", "BR1.10"]
+    }
   ]
 }

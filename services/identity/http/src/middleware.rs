@@ -1,5 +1,8 @@
 //! Correlation ids, security headers, request metrics, JWT validation, and the
 //! internal service-token check.
+//!
+//! The request-metric route labels include the four support-access paths
+//! (FR16.3–FR16.6, NFR17.1) so the write routes are visible individually.
 
 use axum::extract::{Request, State};
 use axum::http::{header, HeaderValue};
@@ -112,9 +115,30 @@ fn route_label(path: &str) -> &'static str {
         "/v1/me/preferences" => "me.preferences",
         "/v1/me/consent/state" => "me.consent.state",
         "/v1/me/consent" => "me.consent",
+        "/v1/me/account-status" => "me.account-status",
+        "/v1/me/profile" => "me.profile",
+        "/v1/me/deletion-request" => "me.deletion.request",
+        "/v1/privacy/deletions" => "privacy.deletions",
+        "/v1/support-grants" => "support.grants",
+        "/v1/support-grants/mine" => "support.grants.mine",
+        "/v1/admin/users/lookup" => "admin.users.lookup",
+        _ if path.starts_with("/v1/admin/users/") && path.ends_with("/role") => "admin.users.role",
+        _ if path.starts_with("/v1/admin/users/") && path.ends_with("/disable") => {
+            "admin.users.disable"
+        }
+        _ if path.starts_with("/v1/admin/users/") && path.ends_with("/restore") => {
+            "admin.users.restore"
+        }
         _ if path.starts_with("/v1/me/consent/") && path.ends_with("/withdraw") => {
             "me.consent.withdraw"
         }
+        _ if path.starts_with("/v1/support-grants/") && path.ends_with("/approve") => {
+            "support.grants.approve"
+        }
+        _ if path.starts_with("/v1/support-grants/") && path.ends_with("/metadata") => {
+            "support.grants.metadata"
+        }
+        _ if path.starts_with("/v1/support-grants/") => "support.grants.revoke",
         _ if path.starts_with("/internal/users/") && path.ends_with("/consent/state") => {
             "internal.consent.state"
         }
@@ -309,22 +333,6 @@ pub async fn require_run(State(state): State<AppState>, request: Request, next: 
         next,
         &["job-orchestration"],
         "only Job Orchestration may invoke a run endpoint",
-    )
-    .await
-}
-
-/// C2/C3: only the API Gateway may check a support grant on the metadata path.
-pub async fn require_support_check(
-    State(state): State<AppState>,
-    request: Request,
-    next: Next,
-) -> Response {
-    require_caller(
-        state,
-        request,
-        next,
-        &["gateway"],
-        "only the API Gateway may check a support grant",
     )
     .await
 }

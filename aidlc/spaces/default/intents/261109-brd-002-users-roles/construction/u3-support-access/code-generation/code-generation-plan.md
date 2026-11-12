@@ -296,3 +296,52 @@ reliability, scalability, observability, logical-components),
   production release job that runs it is still an open platform item.
 - `X-Support-Reason` is forwarded by the gateway today and is not evidence of anything; the read
   path uses the grant's own reason. No change to the header's forwarding is made here.
+
+## Loop-back 1 repair (Build and Test, 2026-11-12)
+
+Build and Test reopened this Unit for **F6 only** — the 80 % per-crate line floor. The behaviour
+this Unit builds is already in place and reviewed; the repair adds the tests that exercise the
+code paths the floor counts and none of them reach today. Steps 1–18 stand as they are. This is a
+test-first change: every test is written and seen to fail first where it can fail, and a test is
+never added just to touch a line — a path that cannot be asserted meaningfully is reported as a
+gap instead of covered by a hollow assertion.
+
+The five crates below the floor after the last Build and Test run, and what this Unit owns of them:
+
+| Crate | Coverage at the reopen | Lines to reach 80 % | Owned here |
+|---|---|---|---|
+| `account-http` | 780 / 983 — 79.35 % | +7 | yes |
+| `portfolio-http` | 629 / 1 386 — 45.38 % | +480 | yes |
+| `gateway-infrastructure` | 145 / 211 — 68.72 % | +24 | yes |
+| `gateway` (composition root) | 3 / 93 — 3.23 % | +72 | yes |
+
+`identity-infrastructure` (64.95 %) belongs to `u1-user-registry` and is not in this repair.
+
+19. [x] **Baseline.** Re-measure the four crates with the project's command and record the exact
+    output before any test is added:
+    `cargo llvm-cov -p account-http -p portfolio-http -p gateway-infrastructure -p gateway --ignore-run-fail --json`.
+    Record the per-crate numbers in `code-summary.md` as the before-picture.
+20. [x] **`portfolio-http` — Red.** Add router-level tests in `services/portfolio/tests/` that
+    drive every route the crate serves — the portfolio CRUD and valuation-inclusion handlers, the
+    problem-path branches (unknown portfolio, wrong owner, bad payload), and the support-metadata
+    route — asserting status codes and RFC 7807 bodies, not just that a handler returns. Record
+    the failing run first (a `404` from a route that is not wired yet, or a compile error on a
+    test helper). *Trace:* FR17.x support seam, F6.
+21. [x] **`portfolio-http` — Green/Refactor.** Nothing should need implementing; where a test
+    exposes a real defect, fix it test-first in the same change and say so in the summary. Re-run
+    the crate's suite and the coverage command until the crate clears 80 % or the residual gap is
+    reported honestly.
+22. [x] **`account-http` — Red/Green.** Extend `services/account/tests/` to reach the remaining
+    uncovered handler branches (the reopen leaves seven lines short). Same rule: assert behaviour,
+    never the line.
+23. [x] **`gateway-infrastructure` — Red/Green.** Add tests for the `upstream` client the gateway
+    uses to forward to each service: success, the service-unavailable branch, and the timeout or
+    error-mapping branch. *Trace:* NFR2.x budgets, F6.
+24. [x] **`gateway` composition root — Red/Green.** Add tests for `services/gateway/src/config.rs`
+    and `services/gateway/src/lib.rs` — configuration parsing with and without each required
+    variable, and the wiring path that assembles the router. *Trace:* infrastructure-specification,
+    F6.
+25. [x] **Record.** Re-run step 19's command, put the after-picture beside the before-picture in
+    `code-summary.md` with any crate still under the floor and why, update `source-manifest.json`
+    and `traceability.json` with the new test files, and re-run
+    `aidlc engine sensor-traceability --stage build-and-test`.

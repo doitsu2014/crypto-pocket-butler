@@ -1,12 +1,13 @@
-//! The Supabase Auth admin write of `app_metadata.role` (BR2.10).
+//! The Supabase Auth admin read and write of `app_metadata.role` (BR2.10).
 //!
-//! One attempt: a duplicate privileged change is worse than a surfaced failure,
-//! so this adapter never retries. The service-role key comes from a secret file.
+//! One attempt each: a duplicate privileged change is worse than a surfaced
+//! failure, so this adapter never retries. The service-role key comes from a
+//! secret file.
 
 use std::time::Duration;
 
 use async_trait::async_trait;
-use identity_application::authorisation::ports::RoleWriter;
+use identity_application::authorisation::ports::{RoleReader, RoleWriter};
 use identity_application::ports::ExternalError;
 use identity_domain::Role;
 use serde_json::json;
@@ -71,6 +72,18 @@ impl RoleWriter for SupabaseRoleWriter {
                 "supabase auth is unreachable: {error}"
             ))),
         }
+    }
+}
+
+#[async_trait]
+impl RoleReader for SupabaseRoleWriter {
+    async fn read_role(&self, subject: &str) -> Result<Role, ExternalError> {
+        let app_metadata = self.read_app_metadata(subject).await?;
+        // The same mapping the claim path uses: only `admin` and `support` are
+        // recognised, and a missing or unknown value is the regular user.
+        Ok(Role::from_claim(
+            app_metadata.get("role").and_then(serde_json::Value::as_str),
+        ))
     }
 }
 

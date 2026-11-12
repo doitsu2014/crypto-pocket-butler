@@ -291,6 +291,206 @@ pub trait SupportGrantRepository: Send + Sync {
 
     /// Persists a state change.
     async fn update(&self, grant: &SupportAccessGrant) -> Result<(), RepositoryError>;
+
+    /// Finds the one `pending_approval` or `active` grant for the pair
+    /// (BR3.3). A terminal row is history and is not returned.
+    async fn find_live_by_agent_and_user(
+        &self,
+        agent_id: UserId,
+        user_id: UserId,
+    ) -> Result<Option<SupportAccessGrant>, RepositoryError>;
+
+    /// The bounded list of grants in one status, newest first (U10, FR20.1).
+    /// Reads only this service's own table; the caller passes the bound.
+    async fn list_by_status(
+        &self,
+        status: identity_domain::SupportGrantStatus,
+        limit: usize,
+    ) -> Result<Vec<SupportAccessGrant>, RepositoryError>;
+
+    /// One support agent's own grants, newest first, at most `limit` rows
+    /// (S2, NFR2.3). Reads only this service's own table, with no status
+    /// filter, so it uses the recency index rather than the live-pair one.
+    async fn list_by_support_agent(
+        &self,
+        agent_id: UserId,
+        limit: usize,
+    ) -> Result<Vec<SupportAccessGrant>, RepositoryError>;
+
+    /// Inserts the grant and writes its audit intent in one transaction
+    /// (BR3.13, NFR19.2).
+    async fn insert_with_event(
+        &self,
+        grant: &SupportAccessGrant,
+        record: &AuditRecord,
+        correlation_id: &str,
+    ) -> Result<(), RepositoryError>;
+
+    /// The conditional approval: `UPDATE ... WHERE id = $1 AND status =
+    /// 'pending_approval'`, plus its audit intent when the row moved
+    /// (BR3.4, NFR20.2). Returns the affected-row count.
+    #[allow(clippy::too_many_arguments)]
+    async fn approve_with_event(
+        &self,
+        id: identity_domain::SupportGrantId,
+        approved_by: UserId,
+        approved_at: chrono::DateTime<chrono::Utc>,
+        expires_at: chrono::DateTime<chrono::Utc>,
+        record: &AuditRecord,
+        correlation_id: &str,
+    ) -> Result<u64, RepositoryError>;
+
+    /// The conditional revocation: `UPDATE ... WHERE id = $1 AND status IN
+    /// ('pending_approval','active')`, plus its audit intent when the row moved
+    /// (BR3.12, NFR20.3). Returns the affected-row count.
+    async fn revoke_with_event(
+        &self,
+        id: identity_domain::SupportGrantId,
+        revoked_at: chrono::DateTime<chrono::Utc>,
+        record: &AuditRecord,
+        correlation_id: &str,
+    ) -> Result<u64, RepositoryError>;
+}
+
+/// Writes one support audit intent in its own transaction (BR3.13).
+///
+/// A refusal has no grant change to share, so its event is written by itself
+/// before the refusal is returned; a failed write refuses the request with
+/// `audit-unavailable` instead of returning the clean refusal.
+#[async_trait]
+pub trait SupportOutbox: Send + Sync {
+    /// Appends one audit intent stamped with the caller's clock.
+    async fn append(
+        &self,
+        record: &AuditRecord,
+        correlation_id: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), RepositoryError>;
+}
+
+/// One account's allowlisted metadata fields (BR3.9). The owner returns this
+/// shape and nothing else, so Identity never holds a richer account record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountSummary {
+    /// The account identifier.
+    pub id: uuid::Uuid,
+    /// The account label.
+    pub label: String,
+    /// `exchange`, `wallet`, `walletconnect`, or `csv`.
+    pub source_type: String,
+    /// `active`, `syncing`, `error`, or `disconnected`.
+    pub sync_status: String,
+    /// When the account last synced; null when it never has.
+    pub last_synced_at: Option<DateTime<Utc>>,
+}
+
+/// One portfolio's allowlisted metadata fields (BR3.9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortfolioSummary {
+    /// The portfolio identifier.
+    pub id: uuid::Uuid,
+    /// The portfolio label.
+    pub label: String,
+}
+
+/// Reads one owner's allowlisted account projection for a user (BR3.9).
+#[async_trait]
+pub trait SupportAccountsSource: Send + Sync {
+    /// Returns the user's accounts, or the owner's typed refusal. Identity
+    /// never asks the owner for anything outside [`AccountSummary`].
+    ///
+    /// # Errors
+    /// Returns [`ExternalError`] when the owner cannot answer.
+    async fn accounts(&self, user_id: UserId) -> Result<Vec<AccountSummary>, ExternalError>;
+}
+
+/// Reads one owner's allowlisted portfolio projection for a user (BR3.9).
+#[async_trait]
+pub trait SupportPortfoliosSource: Send + Sync {
+    /// Returns the user's portfolios, or the owner's typed refusal.
+    ///
+    /// # Errors
+    /// Returns [`ExternalError`] when the owner cannot answer.
+    async fn portfolios(&self, user_id: UserId) -> Result<Vec<PortfolioSummary>, ExternalError>;
+}
+
+/// Writes the read-path audit events inline (BR3.13, W4). A read event has no
+/// grant change to ride, so it is appended before the response and a failed
+/// append refuses the read.
+#[async_trait]
+pub trait SupportObservation: Send + Sync {
+    /// Records that the grant holder was served the target's projection.
+    ///
+    /// # Errors
+    /// Returns [`RepositoryError`] when the event cannot be appended.
+    async fn served(
+        &self,
+        actor: UserId,
+        target: UserId,
+        grant_id: identity_domain::SupportGrantId,
+        correlation_id: &str,
+    ) -> Result<(), RepositoryError>;
+
+    /// Records a denied read with its precise internal code, which the uniform
+    /// response never carries.
+    ///
+    /// # Errors
+    /// Returns [`RepositoryError`] when the event cannot be appended.
+    async fn denied(
+        &self,
+        actor: UserId,
+        target: String,
+        code: &str,
+        correlation_id: &str,
+    ) -> Result<(), RepositoryError>;
+
+    /// Records a read that failed at an integration boundary.
+    ///
+    /// # Errors
+    /// Returns [`RepositoryError`] when the event cannot be appended.
+    async fn failed(
+        &self,
+        actor: UserId,
+        target: UserId,
+        code: &str,
+        correlation_id: &str,
+    ) -> Result<(), RepositoryError>;
+
+    /// Names the owner that could not answer, for the monitoring series
+    /// (monitoring design, NFR1.8). The audit record itself keeps the uniform
+    /// `metadata-source-unavailable` code; this hook only feeds the metric, so
+    /// the default implementation is a no-op for sinks that have no metrics.
+    fn source_failure(&self, _source: &str, _cause: &str) {}
+}
+
+/// One support audit-outbox delivery outcome (monitoring design, NFR1.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupportDrainDelivery {
+    /// C10 accepted the event.
+    Delivered,
+    /// The row is scheduled for another attempt.
+    Retryable,
+    /// The row will not be retried.
+    Dead,
+}
+
+/// The drainer's monitoring sink. The composition root joins this with the
+/// `Metrics` type in the `http` crate; the default-free trait keeps the drainer
+/// testable without a metrics registry.
+pub trait SupportDrainObservation: Send + Sync {
+    /// One delivery outcome.
+    fn record_delivery(&self, outcome: SupportDrainDelivery);
+
+    /// One finished pass: the pending backlog and the oldest row's age.
+    fn record_pass(&self, pending: u64, oldest_age_seconds: i64);
+}
+
+/// The monitoring sink that names which owner failed a support metadata read
+/// (monitoring design, NFR1.8). Kept separate from the audit sink so the
+/// infrastructure adapter can forward it without depending on the `http` crate.
+pub trait SupportSourceFailureSink: Send + Sync {
+    /// One owner source failure.
+    fn source_failure(&self, source: &str, cause: &str);
 }
 
 /// Reads and writes the device-session view.

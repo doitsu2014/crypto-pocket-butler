@@ -14,13 +14,16 @@ use identity_application::ports::{
     Clock, DeletionRepository, DeviceSessionRepository, ExportRepository, ExternalError,
     RepositoryError, SupportGrantRepository,
 };
-use identity_domain::claims::{AssuranceLevel, NextStep};
+use identity_domain::claims::{AssuranceLevel, NextStep, Role};
 use identity_domain::consent::{ConsentPurpose, ConsentSource};
-use identity_domain::deletion::{DeletionStatus, RetainedCategory};
+use identity_domain::deletion::{
+    DeletionRequest, DeletionRequestId, DeletionStatus, RetainedCategory,
+};
 use identity_domain::export::{Contributor, ExportStatus};
 use identity_domain::jurisdiction::JurisdictionStatus;
 use identity_domain::preferences::{BaseCurrency, Locale, Preferences, TimeZone};
 use identity_domain::user::UserStatus;
+use identity_domain::AuditOutcome;
 use identity_domain::CountryCode;
 
 fn preferences() -> Preferences {
@@ -482,7 +485,7 @@ async fn a_non_admin_cannot_approve_or_revoke_and_an_expired_grant_is_refused() 
     harness.clock.set(fixed_now() + Duration::minutes(61));
     let error = harness
         .support
-        .check(grant.id(), target.id(), "corr-check")
+        .metadata(&support, grant.id())
         .await
         .expect_err("an expired grant serves nothing");
     assert!(matches!(error, AppError::Forbidden(_)));
@@ -525,19 +528,21 @@ async fn a_support_read_is_audited_before_the_answer_and_an_audit_failure_refuse
 
     harness
         .support
-        .check(grant.id(), target.id(), "corr-check")
+        .metadata(&support, grant.id())
         .await
         .expect("an active grant serves the read");
-    assert!(harness
-        .audit
-        .actions()
-        .iter()
-        .any(|action| action == "identity.support_read.served"));
+    assert_eq!(
+        harness.support_observation.served.lock().unwrap().len(),
+        1,
+        "the served event is written before the answer"
+    );
 
-    harness.audit.fail_next();
+    *harness.support_observation.failure.lock().unwrap() = Some(
+        identity_application::ports::RepositoryError::Unavailable("audit down".to_string()),
+    );
     let error = harness
         .support
-        .check(grant.id(), target.id(), "corr-check-2")
+        .metadata(&support, grant.id())
         .await
         .expect_err("an unrecorded read is refused");
     assert!(matches!(error, AppError::Unavailable(_)));
@@ -1374,6 +1379,136 @@ async fn user_registry_admin_lookup_is_admin_only_exact_and_audited() {
 }
 
 #[tokio::test]
+async fn user_registry_the_admin_lookup_returns_the_role_the_provider_holds() {
+    let harness = harness();
+    let target = user_with_status(UserStatus::Active);
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    harness.role_reader.set(USER_SUBJECT, Role::Support);
+
+    let admin = caller(target.clone(), admin_claims());
+    let view = harness
+        .user_registry
+        .by_email_admin(&admin, "user@example.com")
+        .await
+        .expect("an admin finds the exact address");
+    assert_eq!(view.user_id(), target.id());
+    assert_eq!(
+        view.role(),
+        Role::Support,
+        "the provider role is authoritative"
+    );
+    assert_eq!(view.display_name(), Some("Test User"));
+    assert_eq!(view.email(), Some("user@example.com"));
+    assert_eq!(view.status(), UserStatus::Active);
+
+    let lookup_events: Vec<_> = harness
+        .audit
+        .records
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(record, _)| record.action() == "identity.admin.user_lookup")
+        .map(|(record, _)| record.clone())
+        .collect();
+    assert_eq!(
+        lookup_events.len(),
+        1,
+        "a successful lookup records exactly one event, after the role read"
+    );
+    assert_eq!(lookup_events[0].outcome(), AuditOutcome::Success);
+}
+
+#[tokio::test]
+async fn user_registry_a_failed_role_read_is_a_503_and_is_audited_as_failed() {
+    let harness = harness();
+    let target = user_with_status(UserStatus::Active);
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    harness
+        .role_reader
+        .fail_next(ExternalError::Unavailable("provider timed out".to_string()));
+
+    let admin = caller(target.clone(), admin_claims());
+    let error = harness
+        .user_registry
+        .by_email_admin(&admin, "user@example.com")
+        .await
+        .expect_err("no record with a guessed role");
+    assert!(matches!(error, AppError::Unavailable(_)), "{error:?}");
+
+    let records = harness.audit.records.lock().unwrap().clone();
+    assert_eq!(records.len(), 1, "only the failed event is written");
+    let (record, _) = &records[0];
+    assert_eq!(record.action(), "identity.admin.user_lookup");
+    assert_eq!(
+        record.outcome(),
+        AuditOutcome::Failed,
+        "the trail never shows a successful lookup that answered 503"
+    );
+    assert_eq!(
+        record.context().get("reason").map(String::as_str),
+        Some("provider-unavailable")
+    );
+}
+
+#[tokio::test]
+async fn user_registry_the_widened_admin_lookup_is_admin_only_exact_and_audited() {
+    let harness = harness();
+    let target = user_with_status(UserStatus::Active);
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    harness.role_reader.set(USER_SUBJECT, Role::Admin);
+
+    let non_admin = caller(target.clone(), support_claims());
+    let error = harness
+        .user_registry
+        .by_email_admin(&non_admin, "user@example.com")
+        .await
+        .expect_err("a support operator may not search");
+    assert!(matches!(error, AppError::Forbidden(_)), "{error:?}");
+
+    let admin = caller(target.clone(), admin_claims());
+    assert!(matches!(
+        harness
+            .user_registry
+            .by_email_admin(&admin, "missing@example.com")
+            .await
+            .expect_err("an unknown address is not found"),
+        AppError::NotFound("user")
+    ));
+    assert!(matches!(
+        harness
+            .user_registry
+            .by_email_admin(&admin, "not-an-address")
+            .await
+            .expect_err("a malformed address is refused"),
+        AppError::Validation(_)
+    ));
+    let actions = harness.audit.actions();
+    assert!(actions
+        .iter()
+        .any(|action| action == "identity.admin.user_lookup"));
+}
+
+#[tokio::test]
+async fn user_registry_the_owner_read_keeps_its_shape_and_does_not_read_the_provider() {
+    let harness = harness();
+    let target = user_with_status(UserStatus::Active);
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    harness
+        .role_reader
+        .fail_next(ExternalError::Unavailable("provider down".to_string()));
+
+    let admin = caller(target.clone(), admin_claims());
+    // C3's shared record read is unchanged: it answers from the stored record
+    // and never touches the provider, so a provider outage cannot break it.
+    let view = harness
+        .user_registry
+        .by_email(&admin, "user@example.com")
+        .await
+        .expect("the owner read is provider-free");
+    assert_eq!(view.user_id(), target.id());
+}
+
+#[tokio::test]
 async fn user_registry_the_owner_or_an_admin_may_read_a_record() {
     let harness = harness();
     let target = user_with_status(UserStatus::Active);
@@ -1435,5 +1570,319 @@ async fn user_registry_a_role_refresh_does_not_emit_a_role_changed_event() {
             .iter()
             .any(|action| action == "identity.role.changed"),
         "role changes belong to the authorisation unit, not the registry"
+    );
+}
+
+// ── U7: the settings use cases (P1, W1–W4, D0) ─────────────────────────────
+
+#[tokio::test]
+async fn p1_the_profile_view_carries_both_names_flags_and_the_verified_email() {
+    let harness = harness();
+    let user = provision(&harness).await;
+    let caller = caller(user.clone(), claims());
+
+    let view = harness.profile.view(&caller);
+    assert_eq!(view.user_id(), user.id());
+    assert_eq!(view.display_name(), Some("Test User"));
+    assert!(!view.display_name_overridden());
+    assert_eq!(
+        view.provider_display_name(),
+        Some("Test User"),
+        "the provider name travels in the claim, never in a second column"
+    );
+    assert_eq!(view.email(), Some("user@example.com"));
+    assert!(view.email_verified());
+    assert_eq!(view.status(), UserStatus::Active);
+    assert!(
+        !harness
+            .audit
+            .actions()
+            .iter()
+            .any(|action| action == "identity.user.profile.updated"),
+        "a plain profile read writes no audit event"
+    );
+}
+
+#[tokio::test]
+async fn w1_a_display_name_save_trims_stores_the_override_and_audits_it() {
+    let harness = harness();
+    let user = provision(&harness).await;
+    let caller = caller(user.clone(), claims());
+
+    let view = harness
+        .profile
+        .update_display_name(&caller, "  Mai Anh  ")
+        .await
+        .expect("a valid name is stored");
+
+    assert_eq!(view.user_id(), user.id());
+    assert_eq!(view.display_name(), Some("Mai Anh"));
+    assert!(view.display_name_overridden());
+    assert_eq!(
+        view.provider_display_name(),
+        Some("Test User"),
+        "the provider name is still offered after an override"
+    );
+    assert_eq!(view.email(), Some("user@example.com"));
+    assert_eq!(view.status(), UserStatus::Active);
+
+    let stored = harness.users.get(user.id()).unwrap();
+    assert_eq!(stored.display_name(), Some("Mai Anh"));
+    assert!(stored.display_name_overridden());
+
+    let records = harness.audit.records.lock().unwrap();
+    let events: Vec<_> = records
+        .iter()
+        .filter(|(record, _)| record.action() == "identity.user.profile.updated")
+        .collect();
+    assert_eq!(events.len(), 1, "one save writes exactly one audit event");
+    let (record, correlation_id) = events[0];
+    assert_eq!(correlation_id, "corr-test");
+    assert_eq!(
+        record.context().get("field").map(String::as_str),
+        Some("displayName")
+    );
+    assert_eq!(
+        record.context().get("overridden").map(String::as_str),
+        Some("true")
+    );
+}
+
+#[tokio::test]
+async fn w1_an_empty_or_over_long_name_names_the_field_and_writes_nothing() {
+    let harness = harness();
+    let user = provision(&harness).await;
+    let caller = caller(user.clone(), claims());
+
+    for refused in ["   ".to_string(), "x".repeat(201)] {
+        match harness.profile.update_display_name(&caller, &refused).await {
+            Err(AppError::Validation(fields)) => {
+                assert_eq!(fields.len(), 1, "one offending field is named");
+                assert_eq!(fields[0].field, "displayName");
+            }
+            other => panic!("a refused name answers a field problem: {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        harness.users.get(user.id()).unwrap().display_name(),
+        Some("Test User"),
+        "a refused save leaves the stored name alone"
+    );
+    assert!(
+        !harness
+            .audit
+            .actions()
+            .iter()
+            .any(|action| action == "identity.user.profile.updated"),
+        "a refused save writes no audit event"
+    );
+}
+
+#[tokio::test]
+async fn w2_adopting_the_provider_name_clears_the_override_and_audits_it() {
+    let harness = harness();
+    let mut user = provision(&harness).await;
+    user.update_profile(Some("Mai Anh".to_string()), None, fixed_now())
+        .unwrap();
+    harness.users.seed(user.clone(), &claims().subject);
+    let caller = caller(user.clone(), claims());
+
+    let view = harness
+        .profile
+        .adopt_provider_name(&caller)
+        .await
+        .expect("the claim carries a provider name");
+
+    assert_eq!(view.display_name(), Some("Test User"));
+    assert!(!view.display_name_overridden());
+    assert_eq!(view.provider_display_name(), Some("Test User"));
+    assert_eq!(
+        harness.users.get(user.id()).unwrap().display_name(),
+        Some("Test User")
+    );
+
+    let records = harness.audit.records.lock().unwrap();
+    let events: Vec<_> = records
+        .iter()
+        .filter(|(record, _)| record.action() == "identity.user.profile.updated")
+        .collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].0.context().get("overridden").map(String::as_str),
+        Some("false")
+    );
+    assert_eq!(
+        events[0].0.context().get("field").map(String::as_str),
+        Some("displayName")
+    );
+}
+
+#[tokio::test]
+async fn w2_without_a_provider_name_the_adoption_conflicts_and_changes_nothing() {
+    let harness = harness();
+    let mut user = provision(&harness).await;
+    user.update_profile(Some("Mai Anh".to_string()), None, fixed_now())
+        .unwrap();
+    harness.users.seed(user.clone(), &claims().subject);
+    let mut nameless = claims();
+    nameless.display_name = None;
+    let caller = caller(user.clone(), nameless);
+
+    match harness.profile.adopt_provider_name(&caller).await {
+        Err(AppError::Conflict(_)) => {}
+        other => panic!("a missing provider name answers 409: {other:?}"),
+    }
+
+    let stored = harness.users.get(user.id()).unwrap();
+    assert_eq!(stored.display_name(), Some("Mai Anh"));
+    assert!(
+        stored.display_name_overridden(),
+        "the override is not cleared without a name to adopt"
+    );
+    assert!(!harness
+        .audit
+        .actions()
+        .iter()
+        .any(|action| action == "identity.user.profile.updated"));
+}
+
+#[tokio::test]
+async fn d0_every_status_is_answered_without_a_denial_or_an_audit_event() {
+    let harness = harness();
+    for status in [
+        UserStatus::Pending,
+        UserStatus::Active,
+        UserStatus::Disabled,
+        UserStatus::PendingDeletion,
+        UserStatus::Deleted,
+    ] {
+        let caller = caller(user_with_status(status), claims());
+        assert_eq!(
+            harness.profile.account_status(&caller),
+            status,
+            "D0 answers {} without the denial predicate",
+            status.as_str()
+        );
+    }
+    assert!(
+        harness.audit.actions().is_empty(),
+        "a status read is not an audited event"
+    );
+}
+
+#[tokio::test]
+async fn w3_the_open_request_is_read_without_an_audit_event_or_a_state_change() {
+    let harness = harness();
+    let user = provision(&harness).await;
+    let caller = caller(user.clone(), claims());
+    let request = DeletionRequest::request(DeletionRequestId::generate(), user.id(), fixed_now());
+    harness.deletions.insert(&request).await.unwrap();
+
+    let open = harness
+        .account_lifecycle
+        .open_deletion(&caller)
+        .await
+        .expect("the open request is read");
+
+    assert_eq!(open.id(), request.id());
+    assert_eq!(open.status(), DeletionStatus::Requested);
+    assert_eq!(
+        harness.users.get(user.id()).unwrap().status(),
+        UserStatus::Active,
+        "the read never opens the request or moves the account"
+    );
+    assert!(
+        !harness
+            .audit
+            .actions()
+            .iter()
+            .any(|action| action.starts_with("identity.deletion")),
+        "the read writes no audit event"
+    );
+}
+
+#[tokio::test]
+async fn w3_without_an_open_request_the_read_answers_not_found() {
+    let harness = harness();
+    let user = provision(&harness).await;
+    let caller = caller(user, claims());
+
+    match harness.account_lifecycle.open_deletion(&caller).await {
+        Err(AppError::NotFound(entity)) => assert_eq!(entity, "deletion"),
+        other => panic!("no open request is a not-found, never an error: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn w4_the_cancel_delegates_and_restores_the_account() {
+    let harness = harness();
+    let user = provision(&harness).await;
+    let caller = caller(user.clone(), claims());
+    let request = harness
+        .account_lifecycle
+        .request_deletion(&caller)
+        .await
+        .expect("the owner opens a request");
+
+    let cancelled = harness
+        .account_lifecycle
+        .cancel_deletion(&caller)
+        .await
+        .expect("the owner restores inside the window");
+
+    assert_eq!(cancelled.id(), request.id());
+    assert!(
+        cancelled.cancelled_at().is_some(),
+        "the request is cancelled, not erased"
+    );
+    assert_eq!(
+        harness.users.get(user.id()).unwrap().status(),
+        UserStatus::Active
+    );
+    assert!(harness
+        .account_observation
+        .deletion_events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|event| event == "cancelled"));
+}
+
+#[tokio::test]
+async fn w4_a_cancel_with_no_open_request_answers_conflict() {
+    let harness = harness();
+    let user = provision(&harness).await;
+    let caller = caller(user, claims());
+
+    match harness.account_lifecycle.cancel_deletion(&caller).await {
+        Err(AppError::Conflict(_)) => {}
+        other => panic!("no open request answers 409: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn w4_a_cancel_after_the_window_answers_gone() {
+    let harness = harness();
+    let user = provision(&harness).await;
+    let caller = caller(user.clone(), claims());
+    harness
+        .account_lifecycle
+        .request_deletion(&caller)
+        .await
+        .expect("the owner opens a request");
+
+    harness.clock.set(fixed_now() + Duration::days(31));
+    match harness.account_lifecycle.cancel_deletion(&caller).await {
+        Err(AppError::Gone(reason)) => assert!(
+            reason.contains("recovery window"),
+            "the refusal names the closed window: {reason}"
+        ),
+        other => panic!("a closed window answers 410: {other:?}"),
+    }
+    assert_eq!(
+        harness.users.get(user.id()).unwrap().status(),
+        UserStatus::PendingDeletion,
+        "a refused cancel leaves the account pending deletion"
     );
 }

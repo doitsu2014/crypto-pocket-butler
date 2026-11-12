@@ -29,9 +29,15 @@ const ActivityPage = lazy(() => import("../features/activity/ActivityPage"));
 const BriefsPage = lazy(() => import("../features/briefs/BriefsPage"));
 const BriefDetailPage = lazy(() => import("../features/briefs/BriefDetailPage"));
 const NotificationsPage = lazy(() => import("../features/notifications/NotificationsPage"));
-const SettingsPage = lazy(() => import("../features/settings/SettingsPage"));
+const SettingsLayout = lazy(() => import("../features/settings/SettingsLayout"));
+const ProfilePanel = lazy(() => import("../features/settings/ProfilePanel"));
+const PreferencesPanel = lazy(() => import("../features/settings/PreferencesPanel"));
+const ConsentPanel = lazy(() => import("../features/settings/ConsentPanel"));
+const PrivacyPanel = lazy(() => import("../features/settings/PrivacyPanel"));
+const DeleteAccountPage = lazy(() => import("../features/settings/DeleteAccountPage"));
 const MfaPage = lazy(() => import("../features/settings/MfaPage"));
-const PrivacyPage = lazy(() => import("../features/privacy/PrivacyPage"));
+const RestoreAccountPage = lazy(() => import("../features/account-status/RestoreAccountPage"));
+const AccountBlockedPage = lazy(() => import("../features/account-status/AccountBlockedPage"));
 const HelpPage = lazy(() => import("../features/help/HelpPage"));
 
 function page(node: ReactNode): ReactNode {
@@ -98,9 +104,22 @@ export const router = createBrowserRouter([
         path: "notifications",
         element: gatedPage(<NotificationsPage />),
       },
-      { path: "settings", element: gatedPage(<SettingsPage />) },
+      {
+        path: "settings",
+        element: gatedPage(<SettingsLayout />),
+        children: [
+          { index: true, element: <Navigate to="/settings/profile" replace /> },
+          { path: "profile", element: page(<ProfilePanel />) },
+          { path: "preferences", element: page(<PreferencesPanel />) },
+          { path: "consent", element: page(<ConsentPanel />) },
+          { path: "privacy", element: page(<PrivacyPanel />) },
+        ],
+      },
+      { path: "settings/delete", element: gatedPage(<DeleteAccountPage />) },
       { path: "settings/mfa", element: protectedPage(<MfaPage />) },
-      { path: "privacy", element: gatedPage(<PrivacyPage />) },
+      { path: "account/restore", element: protectedPage(<RestoreAccountPage />) },
+      { path: "account/blocked", element: protectedPage(<AccountBlockedPage />) },
+      { path: "privacy", element: <Navigate to="/settings/privacy" replace /> },
       { path: "help", element: gatedPage(<HelpPage />) },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

@@ -1,5 +1,4 @@
 import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { Route, Routes } from "react-router-dom";
 import { QueryClient } from "@tanstack/react-query";
@@ -101,29 +100,14 @@ describe("RequireGatesPassed", () => {
     }
   });
 
-  it("routes the registered owned-elsewhere destinations to their paths", async () => {
-    for (const destination of ["verify-email", "enrol-mfa"] as const) {
+  it("routes every owned-elsewhere destination to its registered path", async () => {
+    for (const destination of Object.keys(GATE_DESTINATIONS) as Array<
+      keyof typeof GATE_DESTINATIONS
+    >) {
       const rendered = renderGuard({ kind: "owned-elsewhere", destination });
       const path = GATE_DESTINATIONS[destination];
       expect(await screen.findByTestId(`destination:${path}`)).toBeInTheDocument();
       expect(screen.queryByTestId("product")).not.toBeInTheDocument();
-      rendered.unmount();
-    }
-  });
-
-  it("renders a terminal unavailable surface for account destinations instead of navigating", async () => {
-    for (const destination of ["restore-account", "account-blocked"] as const) {
-      const rendered = renderGuard({ kind: "owned-elsewhere", destination });
-
-      expect(await screen.findByTestId("gates-destination-unavailable")).toBeInTheDocument();
-      expect(
-        screen.queryByTestId(`destination:${GATE_DESTINATIONS[destination]}`),
-      ).not.toBeInTheDocument();
-      expect(screen.queryByTestId("product")).not.toBeInTheDocument();
-
-      await userEvent.click(screen.getByTestId("gates-signout"));
-      expect(session.signOut).toHaveBeenCalledTimes(1);
-      session.signOut.mockClear();
       rendered.unmount();
     }
   });

@@ -1,80 +1,79 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACCOUNT_METADATA_FIELDS,
   formatMetadataValue,
-  pickAccountMetadata,
-  pickAccountSearchResult,
   pickIncident,
   pickSupportGrant,
+  pickSupportMetadata,
   pickTicketMetadata,
+  SUPPORT_METADATA_FIELDS,
   TICKET_METADATA_FIELDS,
 } from "./metadata";
-import { activeGrant, activeIncident } from "../test/fixtures";
+import { activeGrant, activeIncident, supportMetadata } from "../test/fixtures";
 
-describe("account metadata minimisation", () => {
-  it("keeps only the metadata fields the console may show", () => {
+describe("support metadata minimisation", () => {
+  it("keeps only the whitelisted projection and drops every over-sent field", () => {
     const raw = {
-      id: "acct-1",
-      kind: "exchange",
-      label: "Main Binance",
-      venue: "binance",
-      status: "active",
-      lastSyncedAt: "2026-11-08T08:55:00.000Z",
-      credentials: { apiKey: "should-not-appear" },
+      ...supportMetadata(),
+      email: "customer@example.test",
+      credentials: { apiKey: "never-render" },
       holdings: [{ asset: "BTC", quantity: "1" }],
       valuation: "1000.00",
-      portfolio: { id: "p-1" },
-    };
-
-    const metadata = pickAccountMetadata(raw);
-
-    expect(metadata).toEqual({
-      id: "acct-1",
-      kind: "exchange",
-      label: "Main Binance",
-      venue: "binance",
-      status: "active",
-      lastSyncedAt: "2026-11-08T08:55:00.000Z",
-    });
-    expect(Object.keys(metadata).sort()).toEqual([...ACCOUNT_METADATA_FIELDS].sort());
-    expect(JSON.stringify(metadata)).not.toMatch(/credential|holding|valuation|portfolio/i);
-  });
-
-  it("leaves an absent optional field undefined", () => {
-    const metadata = pickAccountMetadata({ id: "acct-2", kind: "wallet", label: "Cold", status: "active" });
-    expect(metadata.lastSyncedAt).toBeUndefined();
-    expect(metadata.venue).toBeUndefined();
-  });
-
-  it("rejects a non-object payload instead of guessing", () => {
-    expect(() => pickAccountMetadata(null)).toThrow(/metadata/i);
-    expect(() => pickAccountMetadata("not-json")).toThrow(/metadata/i);
-  });
-
-  it("normalises a search response and strips every non-metadata field", () => {
-    const result = pickAccountSearchResult({
-      items: [
+      accounts: [
         {
           id: "acct-1",
-          kind: "exchange",
           label: "Main Binance",
-          status: "active",
-          credentials: { apiKey: "secret" },
+          sourceType: "exchange",
+          syncStatus: "active",
+          lastSyncedAt: "2026-11-08T08:55:00.000Z",
+          balance: "1000.00",
+          address: "0xdeadbeef",
         },
       ],
-      nextCursor: "cursor-2",
-      totalCount: 42,
-    });
+    };
 
-    expect(result.nextCursor).toBe("cursor-2");
-    expect(result.items).toHaveLength(1);
-    expect(Object.keys(result.items[0]).sort()).toEqual(
-      ["id", "kind", "label", "status"].sort(),
+    const metadata = pickSupportMetadata(raw);
+
+    expect(Object.keys(metadata).sort()).toEqual([...SUPPORT_METADATA_FIELDS].sort());
+    expect(metadata.accounts[0]).toEqual({
+      id: "acct-1",
+      label: "Main Binance",
+      sourceType: "exchange",
+      syncStatus: "active",
+      lastSyncedAt: "2026-11-08T08:55:00.000Z",
+    });
+    expect(JSON.stringify(metadata)).not.toMatch(
+      /credential|holding|valuation|balance|address|never-render|customer@example/i,
     );
   });
 
-  it("rejects a search payload without an items array", () => {
-    expect(() => pickAccountSearchResult({ accounts: [] })).toThrow(/metadata/i);
+  it("maps a missing display name to null rather than dropping the key", () => {
+    const withoutName = supportMetadata();
+    delete (withoutName as Partial<typeof withoutName>).displayName;
+
+    expect(pickSupportMetadata(withoutName).displayName).toBeNull();
+    expect(pickSupportMetadata({ ...supportMetadata(), displayName: null }).displayName).toBeNull();
+  });
+
+  it("keeps an empty projection as a legitimate answer", () => {
+    const metadata = pickSupportMetadata(
+      supportMetadata({ accounts: [], portfolios: [], displayName: null }),
+    );
+    expect(metadata.accounts).toEqual([]);
+    expect(metadata.portfolios).toEqual([]);
+    expect(metadata.displayName).toBeNull();
+  });
+
+  it("throws on a malformed projection instead of rendering a partial one", () => {
+    expect(() => pickSupportMetadata(null)).toThrow(/metadata/i);
+    expect(() => pickSupportMetadata({ ...supportMetadata(), accounts: "nope" })).toThrow(
+      /metadata/i,
+    );
+    expect(() => pickSupportMetadata({ ...supportMetadata(), emailVerified: "yes" })).toThrow(
+      /metadata/i,
+    );
+    expect(() => pickSupportMetadata({ ...supportMetadata(), portfolios: [{}] })).toThrow(
+      /metadata/i,
+    );
   });
 
   it("renders a missing value as an em dash, never as zero", () => {
@@ -108,7 +107,9 @@ describe("ticket metadata minimisation", () => {
       requesterRef: "userref-1",
     });
     expect(Object.keys(ticket).sort()).toEqual([...TICKET_METADATA_FIELDS].sort());
-    expect(JSON.stringify(ticket)).not.toMatch(/private|conversation|messages|requesterLabel|Customer A/i);
+    expect(JSON.stringify(ticket)).not.toMatch(
+      /private|conversation|messages|requesterLabel|Customer A/i,
+    );
   });
 
   it("rejects a non-object ticket payload", () => {
@@ -131,10 +132,20 @@ describe("grant and incident pickers", () => {
     expect(JSON.stringify(grant)).not.toMatch(/credential|portfolio|never-render/i);
   });
 
-  it("rejects a grant with an unknown status", () => {
+  it("accepts a grant answer keyed grantId as well as id", () => {
+    const { id, ...withoutId } = activeGrant({ id: "grant-1" });
+    const grant = pickSupportGrant({ ...withoutId, grantId: id });
+
+    expect(grant.id).toBe("grant-1");
+  });
+
+  it("rejects a grant with an unknown status or no identifier", () => {
     expect(() => pickSupportGrant({ ...activeGrant(), status: "escalated" })).toThrow(
       /grant status/i,
     );
+    const { id: droppedId, ...withoutId } = activeGrant();
+    expect(droppedId).toBe("grant-1");
+    expect(() => pickSupportGrant(withoutId)).toThrow(/missing id/i);
   });
 
   it("keeps only the incident fields, including the C9 outcome", () => {

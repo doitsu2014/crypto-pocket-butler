@@ -10,7 +10,7 @@
  */
 
 import { ApiError } from "../../api/client";
-import type { Principal, SignupGateState } from "../../api/types";
+import type { Principal, SignupGateState, UserStatus } from "../../api/types";
 
 /** The only items the server can name (G2 `missing`): the three consent kinds. */
 export type ServerMissing = "terms" | "risk" | "age";
@@ -48,10 +48,9 @@ export const FIELD_ORDER: readonly ClientMissing[] = ["country", "terms", "risk"
 
 /**
  * Where an `owned-elsewhere` visitor lands (plan decision 6). `verify-email`
- * and `settings/mfa` exist in the router; `account/restore` and
- * `account/blocked` are U7 screens the router does not register yet, so the
- * guard renders a terminal surface for those two instead of navigating (which
- * would loop through the catch-all).
+ * and `settings/mfa` exist in the router; U7 registers `/account/restore` and
+ * `/account/blocked` in the same change that routes on D0, so every destination
+ * is a real route.
  */
 export const GATE_DESTINATIONS: Record<GateDestination, string> = {
   "verify-email": "/verify-email",
@@ -71,6 +70,8 @@ export interface GateFormValues {
 export interface GateResolutionInput {
   principal: Principal | null | undefined;
   gateState: SignupGateState | null | undefined;
+  /** D0: the caller's own status, which answers even for a denied account. */
+  accountStatus?: UserStatus | null;
   /** A terminal read failure; the only road to the `error` state. */
   error?: unknown;
   isLoading: boolean;
@@ -88,9 +89,20 @@ function correlationIdOf(error: unknown): string | undefined {
 export function deriveGateStatus({
   principal,
   gateState,
+  accountStatus,
   error,
   isLoading,
 }: GateResolutionInput): GateStatus {
+  // Row 0 — D0 is the routing read (functional-spec §2.1): it answers for the
+  // three statuses the principal read refuses, and it decides before any gate
+  // screen. `active` and `pending` continue into the existing flow unchanged.
+  if (accountStatus === "pending_deletion") {
+    return { kind: "owned-elsewhere", destination: "restore-account" };
+  }
+  if (accountStatus === "disabled" || accountStatus === "deleted") {
+    return { kind: "owned-elsewhere", destination: "account-blocked" };
+  }
+
   // Row 1 — a failed entry read never routes into the app.
   if (error) {
     return { kind: "error", correlationId: correlationIdOf(error) };
@@ -116,12 +128,13 @@ export function deriveGateStatus({
     return { kind: "owned-elsewhere", destination: "restore-account" };
   }
 
-  // Rows 6–7 — a blocked or deleted account never sees the gate screen.
-  if (
-    principal.status === "disabled" ||
-    principal.status === "pending_deletion" ||
-    principal.status === "deleted"
-  ) {
+  // Rows 6–7 — a blocked, restoring or deleted account never sees the gate
+  // screen. A pending deletion must be able to restore (AC4.3.1), so it is not
+  // the terminal destination.
+  if (principal.status === "pending_deletion") {
+    return { kind: "owned-elsewhere", destination: "restore-account" };
+  }
+  if (principal.status === "disabled" || principal.status === "deleted") {
     return { kind: "owned-elsewhere", destination: "account-blocked" };
   }
 

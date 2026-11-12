@@ -387,7 +387,7 @@ services:
       IDENTITY_TOKEN_SERVICE: identity
       IDENTITY_API_POOL: "12"
       AUDIT_URL: http://audit-api:8084
-      ACCOUNT_URL: ${ACCOUNT_URL:-http://account:8091}
+      ACCOUNT_URL: ${ACCOUNT_URL:-http://account-api:8091}
       LEDGER_URL: ${LEDGER_URL:-http://ledger:8092}
       PORTFOLIO_URL: ${PORTFOLIO_URL:-http://portfolio:8101}
     secrets:
@@ -447,7 +447,7 @@ services:
       IDENTITY_WORKER_POOL: "8"
       IDENTITY_SWEEP_INTERVAL_SECONDS: "${IDENTITY_SWEEP_INTERVAL_SECONDS:-60}"
       AUDIT_URL: http://audit-api:8084
-      ACCOUNT_URL: ${ACCOUNT_URL:-http://account:8091}
+      ACCOUNT_URL: ${ACCOUNT_URL:-http://account-api:8091}
       LEDGER_URL: ${LEDGER_URL:-http://ledger:8092}
       PORTFOLIO_URL: ${PORTFOLIO_URL:-http://portfolio:8101}
     secrets:

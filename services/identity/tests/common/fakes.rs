@@ -4,15 +4,16 @@
 //! be made to fail once so error paths are exercised without a database.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, TimeZone as _, Utc};
 use identity_application::account_lifecycle::AccountObservation;
 use identity_application::authorisation::ports::{
-    AuditSink, AuditWriteContext, AuthorisationEvent, ObservationSink, RoleWriter, StatusFailure,
-    StatusReadError, StatusReader,
+    AuditSink, AuditWriteContext, AuthorisationEvent, ObservationSink, RoleReader, RoleWriter,
+    StatusFailure, StatusReadError, StatusReader,
 };
 use identity_application::consent::ports::{
     DeliveryOutcome, DrainerObservation, ObservationSink as ConsentObservationSink,
@@ -20,6 +21,10 @@ use identity_application::consent::ports::{
 };
 use identity_application::jurisdiction::{
     AuditSink as JurisdictionAuditSink, GeoLocator, ListRepository,
+};
+use identity_application::ports::{
+    AccountSummary, PortfolioSummary, SupportAccountsSource, SupportObservation, SupportOutbox,
+    SupportPortfoliosSource,
 };
 use identity_application::ports::{
     AuditClient, AuthAdmin, AuthError, Clock, ConsentRepository, ContributorGateway,
@@ -376,8 +381,17 @@ impl ConsentRepository for FakeConsent {
 pub struct FakeGrants {
     /// Stored grants.
     pub grants: Mutex<Vec<SupportAccessGrant>>,
+    /// Events written in the same transaction as a grant change.
+    pub events: Mutex<Vec<AuditRecord>>,
+    /// When set, the conditional approve/revoke move no row.
+    pub zero_rows: AtomicBool,
     /// One-shot repository failure.
     pub failure: Mutex<Option<RepositoryError>>,
+    /// `(status, limit)` for each list read, so a use case's bound is asserted.
+    pub list_calls: Mutex<Vec<(identity_domain::SupportGrantStatus, usize)>>,
+    /// `(agent, limit)` for each own-grant read, so its scope and bound are
+    /// asserted (S2).
+    pub mine_calls: Mutex<Vec<(UserId, usize)>>,
 }
 
 #[async_trait]
@@ -410,6 +424,315 @@ impl SupportGrantRepository for FakeGrants {
             .find(|existing| existing.id() == grant.id())
             .ok_or_else(|| RepositoryError::Conflict("grant not found".to_string()))?;
         *existing = grant.clone();
+        Ok(())
+    }
+
+    async fn find_live_by_agent_and_user(
+        &self,
+        agent_id: UserId,
+        user_id: UserId,
+    ) -> Result<Option<SupportAccessGrant>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        Ok(self
+            .grants
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|grant| {
+                grant.support_agent_id() == agent_id
+                    && grant.user_id() == user_id
+                    && matches!(
+                        grant.status(),
+                        identity_domain::support::SupportGrantStatus::PendingApproval
+                            | identity_domain::support::SupportGrantStatus::Active
+                    )
+            })
+            .max_by_key(|grant| (grant.requested_at(), grant.id().as_uuid()))
+            .cloned())
+    }
+
+    async fn list_by_status(
+        &self,
+        status: identity_domain::SupportGrantStatus,
+        limit: usize,
+    ) -> Result<Vec<SupportAccessGrant>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.list_calls.lock().unwrap().push((status, limit));
+        let mut rows: Vec<_> = self
+            .grants
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|grant| grant.status() == status)
+            .cloned()
+            .collect();
+        // Newest first, with the id as the stable tie-break the SQL uses.
+        rows.sort_by(|left, right| {
+            right
+                .requested_at()
+                .cmp(&left.requested_at())
+                .then_with(|| right.id().as_uuid().cmp(&left.id().as_uuid()))
+        });
+        rows.truncate(limit);
+        Ok(rows)
+    }
+
+    async fn list_by_support_agent(
+        &self,
+        agent_id: UserId,
+        limit: usize,
+    ) -> Result<Vec<SupportAccessGrant>, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.mine_calls.lock().unwrap().push((agent_id, limit));
+        let mut rows: Vec<_> = self
+            .grants
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|grant| grant.support_agent_id() == agent_id)
+            .cloned()
+            .collect();
+        // Newest first, with the id as the stable tie-break the SQL uses.
+        rows.sort_by(|left, right| {
+            right
+                .requested_at()
+                .cmp(&left.requested_at())
+                .then_with(|| right.id().as_uuid().cmp(&left.id().as_uuid()))
+        });
+        rows.truncate(limit);
+        Ok(rows)
+    }
+
+    async fn insert_with_event(
+        &self,
+        grant: &SupportAccessGrant,
+        record: &AuditRecord,
+        _correlation_id: &str,
+    ) -> Result<(), RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.grants.lock().unwrap().push(grant.clone());
+        self.events.lock().unwrap().push(record.clone());
+        Ok(())
+    }
+
+    async fn approve_with_event(
+        &self,
+        id: SupportGrantId,
+        approved_by: UserId,
+        approved_at: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+        record: &AuditRecord,
+        _correlation_id: &str,
+    ) -> Result<u64, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        if self.zero_rows.load(Ordering::SeqCst) {
+            return Ok(0);
+        }
+        let mut grants = self.grants.lock().unwrap();
+        let Some(existing) = grants.iter_mut().find(|grant| grant.id() == id) else {
+            return Ok(0);
+        };
+        if existing.status() != identity_domain::support::SupportGrantStatus::PendingApproval {
+            return Ok(0);
+        }
+        let next = SupportAccessGrant::from_stored(
+            existing.id(),
+            existing.user_id(),
+            existing.support_agent_id(),
+            existing.reason().to_string(),
+            identity_domain::support::SupportGrantStatus::Active,
+            existing.requested_at(),
+            Some(approved_by),
+            Some(approved_at),
+            Some(expires_at),
+            None,
+        );
+        *existing = next;
+        self.events.lock().unwrap().push(record.clone());
+        Ok(1)
+    }
+
+    async fn revoke_with_event(
+        &self,
+        id: SupportGrantId,
+        revoked_at: DateTime<Utc>,
+        record: &AuditRecord,
+        _correlation_id: &str,
+    ) -> Result<u64, RepositoryError> {
+        maybe_fail(&self.failure)?;
+        if self.zero_rows.load(Ordering::SeqCst) {
+            return Ok(0);
+        }
+        let mut grants = self.grants.lock().unwrap();
+        let Some(existing) = grants.iter_mut().find(|grant| grant.id() == id) else {
+            return Ok(0);
+        };
+        if !matches!(
+            existing.status(),
+            identity_domain::support::SupportGrantStatus::PendingApproval
+                | identity_domain::support::SupportGrantStatus::Active
+        ) {
+            return Ok(0);
+        }
+        let next = SupportAccessGrant::from_stored(
+            existing.id(),
+            existing.user_id(),
+            existing.support_agent_id(),
+            existing.reason().to_string(),
+            identity_domain::support::SupportGrantStatus::Revoked,
+            existing.requested_at(),
+            existing.approved_by(),
+            existing.approved_at(),
+            existing.expires_at(),
+            Some(revoked_at),
+        );
+        *existing = next;
+        self.events.lock().unwrap().push(record.clone());
+        Ok(1)
+    }
+}
+
+/// In-memory support audit intents written outside a grant change.
+#[derive(Default)]
+pub struct FakeSupportOutbox {
+    /// Refusal and failure events.
+    pub events: Mutex<Vec<AuditRecord>>,
+    /// One-shot append failure.
+    pub failure: Mutex<Option<RepositoryError>>,
+}
+
+#[async_trait]
+impl SupportOutbox for FakeSupportOutbox {
+    async fn append(
+        &self,
+        record: &AuditRecord,
+        _correlation_id: &str,
+        _now: DateTime<Utc>,
+    ) -> Result<(), RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.events.lock().unwrap().push(record.clone());
+        Ok(())
+    }
+}
+
+/// The account side of the support metadata fan-out.
+#[derive(Default)]
+pub struct FakeAccountsSource {
+    /// The answer.
+    pub accounts: Mutex<Vec<AccountSummary>>,
+    /// One-shot failure.
+    pub failure: Mutex<Option<ExternalError>>,
+    /// How long the call takes, in milliseconds.
+    pub delay_ms: AtomicI64,
+    /// When the call started, for the concurrency assertion.
+    pub started: Mutex<Option<Instant>>,
+    /// When the call returned.
+    pub finished: Mutex<Option<Instant>>,
+}
+
+#[async_trait]
+impl SupportAccountsSource for FakeAccountsSource {
+    async fn accounts(&self, _user_id: UserId) -> Result<Vec<AccountSummary>, ExternalError> {
+        *self.started.lock().unwrap() = Some(Instant::now());
+        let delay = self.delay_ms.load(Ordering::SeqCst);
+        if delay > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(delay as u64)).await;
+        }
+        let answer = match self.failure.lock().unwrap().take() {
+            Some(error) => Err(error),
+            None => Ok(self.accounts.lock().unwrap().clone()),
+        };
+        *self.finished.lock().unwrap() = Some(Instant::now());
+        answer
+    }
+}
+
+/// The portfolio side of the support metadata fan-out.
+#[derive(Default)]
+pub struct FakePortfoliosSource {
+    /// The answer.
+    pub portfolios: Mutex<Vec<PortfolioSummary>>,
+    /// One-shot failure.
+    pub failure: Mutex<Option<ExternalError>>,
+    /// How long the call takes, in milliseconds.
+    pub delay_ms: AtomicI64,
+    /// When the call started, for the concurrency assertion.
+    pub started: Mutex<Option<Instant>>,
+    /// When the call returned.
+    pub finished: Mutex<Option<Instant>>,
+}
+
+#[async_trait]
+impl SupportPortfoliosSource for FakePortfoliosSource {
+    async fn portfolios(&self, _user_id: UserId) -> Result<Vec<PortfolioSummary>, ExternalError> {
+        *self.started.lock().unwrap() = Some(Instant::now());
+        let delay = self.delay_ms.load(Ordering::SeqCst);
+        if delay > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(delay as u64)).await;
+        }
+        let answer = match self.failure.lock().unwrap().take() {
+            Some(error) => Err(error),
+            None => Ok(self.portfolios.lock().unwrap().clone()),
+        };
+        *self.finished.lock().unwrap() = Some(Instant::now());
+        answer
+    }
+}
+
+/// The inline read-audit sink.
+#[derive(Default)]
+pub struct FakeSupportObservation {
+    /// `identity.support_read.served` calls.
+    pub served: Mutex<Vec<(UserId, UserId, SupportGrantId)>>,
+    /// `identity.support_read.denied` calls.
+    pub denied: Mutex<Vec<(UserId, String, String)>>,
+    /// `identity.support_read.denied` calls with outcome `failed`.
+    pub failed: Mutex<Vec<(UserId, UserId, String)>>,
+    /// One-shot append failure.
+    pub failure: Mutex<Option<RepositoryError>>,
+}
+
+#[async_trait]
+impl SupportObservation for FakeSupportObservation {
+    async fn served(
+        &self,
+        actor: UserId,
+        target: UserId,
+        grant_id: SupportGrantId,
+        _correlation_id: &str,
+    ) -> Result<(), RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.served.lock().unwrap().push((actor, target, grant_id));
+        Ok(())
+    }
+
+    async fn denied(
+        &self,
+        actor: UserId,
+        target: String,
+        code: &str,
+        _correlation_id: &str,
+    ) -> Result<(), RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.denied
+            .lock()
+            .unwrap()
+            .push((actor, target, code.to_string()));
+        Ok(())
+    }
+
+    async fn failed(
+        &self,
+        actor: UserId,
+        target: UserId,
+        code: &str,
+        _correlation_id: &str,
+    ) -> Result<(), RepositoryError> {
+        maybe_fail(&self.failure)?;
+        self.failed
+            .lock()
+            .unwrap()
+            .push((actor, target, code.to_string()));
         Ok(())
     }
 }
@@ -1664,6 +1987,40 @@ impl RoleWriter for FakeRoleWriter {
             .unwrap()
             .push((subject.to_string(), role));
         Ok(())
+    }
+}
+
+/// A provider role reader that answers from memory (U10 admin lookup).
+#[derive(Default)]
+pub struct FakeRoleReader {
+    roles: Mutex<BTreeMap<String, Role>>,
+    failure: Mutex<Option<ExternalError>>,
+}
+
+impl FakeRoleReader {
+    /// Sets the role the provider reports for a subject.
+    pub fn set(&self, subject: &str, role: Role) {
+        self.roles.lock().unwrap().insert(subject.to_string(), role);
+    }
+
+    /// Makes the next read fail.
+    pub fn fail_next(&self, error: ExternalError) {
+        *self.failure.lock().unwrap() = Some(error);
+    }
+}
+
+#[async_trait]
+impl RoleReader for FakeRoleReader {
+    async fn read_role(&self, subject: &str) -> Result<Role, ExternalError> {
+        if let Some(error) = self.failure.lock().unwrap().take() {
+            return Err(error);
+        }
+        self.roles
+            .lock()
+            .unwrap()
+            .get(subject)
+            .copied()
+            .ok_or_else(|| ExternalError::Refused(format!("no provider user for {subject}")))
     }
 }
 

@@ -1,0 +1,43 @@
+{
+  "stage": "functional-design",
+  "unit": "u7-settings-ui",
+  "upstream_ids": ["AC1.4.1", "AC1.4.2", "AC4.3.1", "AC4.3.2", "AC4.3.3", "AC6.1.1", "AC6.1.2"],
+  "coverage": [
+    {
+      "id": "AC1.4.1",
+      "status": "N/A",
+      "target": "UI unit with no rules.md of its own: display name and read-only email, the Verified badge, and the save that marks the field overridden are specified in functional-spec.md §3.1 and §4 (W1); populating the profile from the provider claim is u1-user-registry's rule"
+    },
+    {
+      "id": "AC1.4.2",
+      "status": "N/A",
+      "target": "UI unit with no rules.md of its own: the editable locale and base currency and their server-reported source are specified in functional-spec.md §3.2; the no-overwrite-on-refresh rule is u1/user-registry and u4/preferences-consent's"
+    },
+    {
+      "id": "AC4.3.1",
+      "status": "N/A",
+      "target": "UI unit with no rules.md of its own: pending_deletion routing to the recovery surface, the exact recoveryEndsAt date, and Restore are specified in functional-spec.md §2.1, §3.6 and §4 (W3, W4); the 30-day window and the restore use case are u5-account-lifecycle's"
+    },
+    {
+      "id": "AC4.3.2",
+      "status": "N/A",
+      "target": "UI unit with no rules.md of its own: the 410 terminal state and the deleted-status screen are specified in functional-spec.md §3.6 and §3.7; the day-31 erasure itself is u5-account-lifecycle's"
+    },
+    {
+      "id": "AC4.3.3",
+      "status": "N/A",
+      "target": "UI unit with no rules.md of its own: the refusal itself is already enforced by UserStatus::denies_use (BR1.7) at PrincipalService, which u5-account-lifecycle records OK against BR5.7; U7 supplies the destination the refusal names (/account/restore) and routes to it by account status, as specified in functional-spec.md §1, §2.1, §3.6 and §12 open item 4"
+    },
+    {
+      "id": "AC6.1.1",
+      "status": "N/A",
+      "target": "UI unit with no rules.md of its own: the preferences panel that saves locale and base currency and sends no stored financial value is specified in functional-spec.md §3.2; the values-unchanged rule is u4-preferences-consent's"
+    },
+    {
+      "id": "AC6.1.2",
+      "status": "N/A",
+      "target": "UI unit with no rules.md of its own: the analytics withdrawal and the timestamped withdrawal date read back from history are specified in functional-spec.md §3.3 and §3.4; the recording itself is u4-preferences-consent's"
+    }
+  ],
+  "reverse": []
+}

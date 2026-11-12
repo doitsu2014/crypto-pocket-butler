@@ -76,12 +76,56 @@ paths:
       responses:
         "201": { description: Grant created, pending approval }
         "422": { description: Reason outside 1–500 characters }
+    get:
+      summary: List pending grants (admin) — C5 shape plus requestedAt
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [pending_approval] } }
+      responses:
+        "200": { description: Array of grants; requestedAt and approvedAt included for the console }
+        "403": { description: Caller is not an admin }
+        "422": { description: A status value other than pending_approval }
   /support-grants/{id}/approve:
     post:
       summary: Approve a support grant (admin, not the requester)
       responses:
         "200": { description: Grant active with expiresAt }
         "403": { description: Self-approval refused }
+  /support-grants/mine:
+    get:
+      summary: The caller's own support grants (support role; self-scoped from the JWT)
+      responses:
+        "200":
+          description: >
+            A bare array of Grant rows, no envelope. Each row carries requestedBy, the agent who
+            asked, so an own-grant row is attributable. Newest first, at most 20 rows.
+        "401": { description: Missing or invalid token }
+        "403": { description: Caller is not a support agent }
+  /support-grants/{id}/metadata:
+    get:
+      summary: Read the allowlisted metadata projection under a live grant (support role)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: The SupportMetadata projection — allowlisted fields only }
+        "403": { description: No live grant for this caller and target, or grant expired or revoked }
+        "404": { description: No such grant, or not disclosed }
+  /admin/users/lookup:
+    post:
+      summary: Exact-email admin lookup (admin; audited; address in the body — D-S1)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200": { description: Admin user record including role }
+        "403": { description: Caller is not an admin }
+        "404": { description: No user has that address }
+        "422": { description: Malformed body }
+        "503": { description: The provider role cannot be read }
   /admin/users/{id}/role:
     put:
       summary: Change a user's role (admin; audited)
@@ -98,7 +142,39 @@ paths:
         "200": { description: Role change applied and audited }
         "403": { description: Caller is not an admin }
         "422": { description: Blank reason or unknown role }
+  /admin/users/{id}/disable:
+    post:
+      summary: Disable an account without deleting history (admin; audited)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "200": { description: "{ userId, status, transitionId, occurredAt }" }
+        "403": { description: Caller is not an admin }
+        "404": { description: No such user }
+        "409": { description: Edge outside BR5.1 }
+        "422": { description: Reason outside 1–500 characters }
+        "503": { description: Audit write failed; nothing changed }
+  /admin/users/{id}/restore:
+    post:
+      summary: Restore a disabled account (admin; audited)
+      responses:
+        "200": { description: "{ userId, status, transitionId, occurredAt }" }
+        "403": { description: Caller is not an admin }
+        "404": { description: No such user }
+        "409": { description: Edge outside BR5.1 }
+        "422": { description: Reason outside 1–500 characters }
+        "503": { description: Audit write failed; nothing changed }
 ```
+
+The U1 `GET /admin/users?email=` search is removed: an address must not reach a URL or an access
+log (D-S1), and `/admin/users/lookup` replaces it. The two paths are separate entries, so the old
+one now answers with the gateway's deny-by-default `404`.
 
 - Undeclared paths return `404`; a missing or invalid token `401`; a role denial `403`. The SPA and support console never call a service directly.
 
@@ -119,6 +195,28 @@ components:
         emailVerified: { type: boolean }
         status: { type: string, enum: [pending, active, disabled, pending_deletion, deleted] }
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminUserAnswer:
+      type: object
+      description: >
+        The admin lookup answer (U10, W1). It is the User record plus the provider's current
+        app_metadata.role, read at lookup time through the RoleReader port. A provider read
+        failure is a 503 and no record — never a stale role.
+      properties:
+        role: { type: string, enum: [owner, admin, support] }
+        emailVerified: { type: boolean }
+        status: { type: string, enum: [pending, active, disabled, pending_deletion, deleted] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PendingGrant:
+      type: object
+      description: >
+        The C5 Grant shape as the console reads it from `GET /v1/support-grants` (W5): the same
+        id, userId, requestedBy, reason, status and expiresAt, plus requestedAt and approvedAt,
+        which the console's grant mapper requires.
+      properties:
+        requestedAt: { type: string, format: date-time }
+        approvedAt: { type: string, format: date-time, nullable: true }
 paths:
   /internal/users/by-subject/{subjectHash}:
     get:
@@ -284,7 +382,9 @@ components:
         approvedBy: { type: string }
         reason: { type: string, minLength: 1, maxLength: 500 }
         status: { type: string, enum: [pending_approval, active, denied, revoked, expired] }
-        expiresAt: { type: string, format: date-time }
+        requestedAt: { type: string, format: date-time }
+        approvedAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true, description: "Null until approval; set at approval" }
     SupportMetadata:
       type: object
       description: The only fields a grant exposes; never holdings, balances, values, transactions, orders, or credentials.
@@ -316,12 +416,29 @@ paths:
       responses:
         "201": { description: Grant in pending_approval }
         "422": { description: Reason outside 1–500 characters }
+    get:
+      summary: List grants filtered by status (admin) — powers the console's Approvals panel (W5)
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [pending_approval] } }
+      responses:
+        "200": { description: Array of Grant }
+        "403": { description: Caller is not an admin }
+        "422": { description: A status value other than pending_approval }
   /internal/support-grants/{id}/approve:
     post:
       summary: A different admin approves a grant
       responses:
         "200": { description: Grant active; expiresAt <= 60 minutes after approval }
         "403": { description: Requester equals approver }
+  /internal/support-grants/mine:
+    get:
+      summary: The support agent's own grants (self-scoped from the token; S2)
+      responses:
+        "200":
+          description: >
+            A bare array of Grant rows, newest first, at most 20. Scoped to the caller's support
+            agent id, never a request parameter; each row carries requestedBy.
+        "403": { description: Caller is not a support agent }
   /internal/support-grants/{id}/metadata:
     get:
       summary: Read the metadata projection under an active grant
@@ -356,6 +473,12 @@ paths:
 ```
 
 ## C7 — Account Lifecycle (U5), internal
+
+The console reaches the same two use cases over the gateway (U10, C1/C2):
+`POST /v1/admin/users/{id}/disable` and `POST /v1/admin/users/{id}/restore`, each with body
+`{"reason":"…"}` (1–500 characters) and answering `{userId, status, transitionId, occurredAt}`.
+A reason outside the bounds is `422`; an edge outside BR5.1 is `409`; a failed audit write is `503`
+and nothing changes.
 
 ```yaml
 openapi: 3.1.0

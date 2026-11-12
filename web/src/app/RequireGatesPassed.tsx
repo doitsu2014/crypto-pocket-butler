@@ -48,35 +48,6 @@ function GateLoading() {
   );
 }
 
-/**
- * A terminal surface for destinations the router does not register yet (U7
- * account recovery and account status). Navigating there would fall through
- * the catch-all back to sign-in and loop, so the guard stops here and offers
- * the one safe action.
- */
-function DestinationUnavailable({ onSignOut }: { onSignOut: () => void }) {
-  const { t } = useI18n();
-  return (
-    <section
-      data-testid="gates-destination-unavailable"
-      role="status"
-      aria-live="polite"
-      className="mx-auto max-w-xl rounded-lg border border-border bg-surface p-6"
-    >
-      <h1 className="text-section text-ink">{t("gates.unavailable.title")}</h1>
-      <p className="mt-3 text-small text-ink-2">{t("gates.unavailable.body")}</p>
-      <button
-        type="button"
-        data-testid="gates-signout"
-        onClick={onSignOut}
-        className="mt-6 rounded-xl bg-accent px-4 py-2 text-small font-medium text-accent-on"
-      >
-        {t("gates.blocked.signOut")}
-      </button>
-    </section>
-  );
-}
-
 export interface RequireGatesPassedProps {
   children: ReactNode;
   /** Test/route override of the resolved status; production omits it. */
@@ -106,9 +77,6 @@ export function RequireGatesPassed({ children, status }: RequireGatesPassedProps
         />
       );
     case "owned-elsewhere":
-      if (current.destination === "restore-account" || current.destination === "account-blocked") {
-        return <DestinationUnavailable onSignOut={() => void signOut()} />;
-      }
       return <Navigate to={GATE_DESTINATIONS[current.destination]} replace />;
     case "error":
       return (

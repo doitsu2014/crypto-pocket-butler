@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use identity_application::authorisation::catalogue::OperationCatalogue;
 use identity_application::authorisation::decision::{AuthorisationDecision, DecisionError};
-use identity_application::authorisation::ports::StatusReadError;
+use identity_application::authorisation::ports::{RoleReader, StatusReadError};
 use identity_application::authorisation::role_change::RoleChange;
 use identity_application::common::AppError;
 use identity_application::ports::ExternalError;
@@ -20,7 +20,8 @@ use identity_domain::authorisation::{
 use identity_domain::{AuditOutcome, Role, UserId, UserStatus};
 
 use common::fakes::{
-    FakeAuthorisationAudit, FakeObservation, FakeRoleWriter, FakeStatusReader, FakeUsers,
+    FakeAuthorisationAudit, FakeObservation, FakeRoleReader, FakeRoleWriter, FakeStatusReader,
+    FakeUsers,
 };
 
 struct Fixture {
@@ -773,4 +774,56 @@ async fn an_unknown_role_or_a_missing_target_is_refused() {
         .await
         .unwrap_err();
     assert!(matches!(error, AppError::NotFound(_)));
+}
+
+#[tokio::test]
+async fn a_provider_role_read_returns_the_role_the_provider_reports() {
+    // U10: the admin lookup reads the role from the provider through the port
+    // that sits beside `RoleWriter`; the provider value is authoritative and is
+    // never inferred from the stored record.
+    let reader = FakeRoleReader::default();
+    reader.set("provider-subject", Role::Support);
+    assert_eq!(
+        reader
+            .read_role("provider-subject")
+            .await
+            .expect("role read"),
+        Role::Support
+    );
+
+    for (subject, role) in [
+        ("owner-subject", Role::User),
+        ("admin-subject", Role::Admin),
+    ] {
+        reader.set(subject, role);
+        assert_eq!(reader.read_role(subject).await.unwrap(), role);
+    }
+}
+
+#[tokio::test]
+async fn a_failed_provider_role_read_maps_to_a_503() {
+    // Both provider failure shapes are a 503 at the boundary, never a record
+    // with a guessed or stored role (security design §7).
+    let reader = FakeRoleReader::default();
+
+    for failure in [
+        ExternalError::Unavailable("provider timed out".to_string()),
+        ExternalError::Refused("provider rejected the read".to_string()),
+    ] {
+        reader.fail_next(failure);
+        let error = reader
+            .read_role("provider-subject")
+            .await
+            .expect_err("the provider failure surfaces");
+        assert!(matches!(
+            AppError::from_external(error),
+            AppError::Unavailable(_)
+        ));
+    }
+
+    let missing = reader
+        .read_role("never-provisioned")
+        .await
+        .expect_err("an unknown provider subject is not a role");
+    assert!(matches!(missing, ExternalError::Refused(_)));
 }

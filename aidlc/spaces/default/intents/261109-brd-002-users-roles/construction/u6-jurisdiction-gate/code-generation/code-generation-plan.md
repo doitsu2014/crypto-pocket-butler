@@ -92,70 +92,70 @@ Add the Jurisdiction Gate to the Identity service: two tables and their migratio
 ## Steps
 
 ### Step 1 — Project structure and configuration skeleton
-- [x] Create the module skeleton in `services/identity`: `domain/src/jurisdiction.rs` (value types `CountryCode`, `JurisdictionStatus`, `RestrictionSource`, `Decision`), `application/src/jurisdiction.rs` (use cases and ports), `infrastructure/src/repositories/jurisdiction.rs`, `infrastructure/src/clients/geo_locator.rs`, `http/src/handlers.rs` additions.
+- [ ] Create the module skeleton in `services/identity`: `domain/src/jurisdiction.rs` (value types `CountryCode`, `JurisdictionStatus`, `RestrictionSource`, `Decision`), `application/src/jurisdiction.rs` (use cases and ports), `infrastructure/src/repositories/jurisdiction.rs`, `infrastructure/src/clients/geo_locator.rs`, `http/src/handlers.rs` additions.
 - *Trace:* US6.3, US6.4 (structure only).
 
 ### Step 2 — Verify the runner
-- [x] Verify `cargo test -p identity-domain` runs; record the exact unit-scoped commands in `unit-test-instructions.md`.
+- [ ] Verify `cargo test -p identity-domain` runs; record the exact unit-scoped commands in `unit-test-instructions.md`.
 - *Trace:* Testing Contract runner step.
 
 ### Step 3 — Data model / database — Red
-- [x] Failing tests for `CountryCode` parsing (valid, lowercase, wrong length, non-ASCII).
+- [ ] Failing tests for `CountryCode` parsing (valid, lowercase, wrong length, non-ASCII).
 - *Trace:* BR1.4, AC6.3.1.
 
 ### Step 4 — Data model / database — Green
-- [x] Implement `CountryCode` validation (`^[A-Z]{2}$`).
+- [ ] Implement `CountryCode` validation (`^[A-Z]{2}$`).
 - *Trace:* BR1.4.
 
 ### Step 5 — Data model / database — Refactor
-- [x] Refactor with tests green; no behavior change.
+- [ ] Refactor with tests green; no behavior change.
 
 ### Step 6 — Repository / data access — Red
-- [x] `#[ignore]` integration tests against a disposable Postgres: create/read a list version with its rules; checksum mismatch is refused; previous version stays readable after a new publish.
+- [ ] `#[ignore]` integration tests against a disposable Postgres: create/read a list version with its rules; checksum mismatch is refused; previous version stays readable after a new publish.
 - *Trace:* BR1.6, BR1.10, W3.
 
 ### Step 7 — Repository / data access — Green
-- [x] Add migration pair `0003_jurisdiction_list.{up,down}.sql` creating `jurisdiction_list_versions` and `jurisdiction_rules` (PK `(version, country_code)`, FK to version, checksum column); implement `PgJurisdictionListRepository` with the `identity_app` role; publish is a transaction.
+- [ ] Add migration pair `0003_jurisdiction_list.{up,down}.sql` creating `jurisdiction_list_versions` and `jurisdiction_rules` (PK `(version, country_code)`, FK to version, checksum column); implement `PgJurisdictionListRepository` with the `identity_app` role; publish is a transaction.
 - *Trace:* NFR19.2, NFR23.1, W3.
 
 ### Step 8 — Repository / data access — Refactor
-- [x] Refactor with tests green.
+- [ ] Refactor with tests green.
 
 ### Step 9 — Business logic — Red
-- [x] Failing application tests against port fakes: self-declared restricted denies; IP restricted denies; both allowed allows; stricter signal wins; absent country defaults to **allow only if present in the list**, otherwise deny (fail closed); provider unavailable → `ServiceUnavailable`; continued use on provider failure → `ServiceUnavailable`; every decision emits an audit event; audit failure → `ServiceUnavailable`.
+- [ ] Failing application tests against port fakes: self-declared restricted denies; IP restricted denies; both allowed allows; stricter signal wins; absent country defaults to **allow only if present in the list**, otherwise deny (fail closed); provider unavailable → `ServiceUnavailable`; continued use on provider failure → `ServiceUnavailable`; every decision emits an audit event; audit failure → `ServiceUnavailable`.
 - *Trace:* BR1.1–BR1.5, BR1.7–BR1.9, NFR23.4, NFR1.4.
 
 ### Step 10 — Business logic — Green
-- [x] Implement `CheckJurisdiction` and `PublishList` in `application` behind `GeoLocator`, `ListRepository`, `AuditSink`, `Clock` ports; enforce the 800 ms/one-retry/1.5 s provider budget and the 300 ms/one-retry audit budget with an idempotency key.
+- [ ] Implement `CheckJurisdiction` and `PublishList` in `application` behind `GeoLocator`, `ListRepository`, `AuditSink`, `Clock` ports; enforce the 800 ms/one-retry/1.5 s provider budget and the 300 ms/one-retry audit budget with an idempotency key.
 - *Trace:* NFR2.2–NFR2.4, NFR1.7.
 
 ### Step 11 — Business logic — Refactor
-- [x] Refactor with tests green.
+- [ ] Refactor with tests green.
 
 ### Step 12 — API / endpoint — Red
-- [x] Failing HTTP tests over the Axum router: `POST /internal/jurisdiction/check` (200 allowed/denied with `listVersion`, 422 invalid country, 503 provider/audit failure); `POST /internal/jurisdiction/publish` (admin JWT required, 403 otherwise, 200 on success).
+- [ ] Failing HTTP tests over the Axum router: `POST /internal/jurisdiction/check` (200 allowed/denied with `listVersion`, 422 invalid country, 503 provider/audit failure); `POST /internal/jurisdiction/publish` (admin JWT required, 403 otherwise, 200 on success).
 - *Trace:* C8, NFR10.1, NFR23.2.
 
 ### Step 13 — API / endpoint — Green
-- [x] Implement handlers, DTOs mapped at the boundary, RFC 7807 problems, metrics, and the gateway route declarations; reject a request whose IP did not come from the trusted caller.
+- [ ] Implement handlers, DTOs mapped at the boundary, RFC 7807 problems, metrics, and the gateway route declarations; reject a request whose IP did not come from the trusted caller.
 - *Trace:* C8, NFR23.3.
 
 ### Step 14 — API / endpoint — Refactor
-- [x] Refactor with tests green.
+- [ ] Refactor with tests green.
 
 ### Step 15 — Frontend behavior
-- [x] Not applicable to this backend unit; no frontend files are produced. The sign-up UI belongs to U8.
+- [ ] Not applicable to this backend unit; no frontend files are produced. The sign-up UI belongs to U8.
 
 ### Step 16 — Gateway client-IP change
-- [x] Modify the gateway middleware: strip inbound `x-forwarded-for`, derive the client address from the observed peer (or the trusted edge header), set `x-client-ip`, and pass it to U1 (the C8 body). Add tests.
+- [ ] Modify the gateway middleware: strip inbound `x-forwarded-for`, derive the client address from the observed peer (or the trusted edge header), set `x-client-ip`, and pass it to U1 (the C8 body). Add tests.
 - *Trace:* NFR23.3.
 
 ### Step 17 — Environment / build configuration
-- [x] Add the provider URL/key Docker secret references to the Identity service config (`JURISDICTION_PROVIDER_URL`, `JURISDICTION_PROVIDER_KEY_FILE`); update `infra/swarm-stack.yml` only for the two secrets; no replica or resource change.
+- [ ] Add the provider URL/key Docker secret references to the Identity service config (`JURISDICTION_PROVIDER_URL`, `JURISDICTION_PROVIDER_KEY_FILE`); update `infra/swarm-stack.yml` only for the two secrets; no replica or resource change.
 - *Trace:* infrastructure-specification.
 
 ### Step 18 — Documentation and traceability
-- [x] Module `//!` headers citing BR ids; write `code-summary.md`; write `source-manifest.json`; update `traceability.json`.
+- [ ] Module `//!` headers citing BR ids; write `code-summary.md`; write `source-manifest.json`; update `traceability.json`.
 - *Trace:* all.
 
 ## Story-to-step traceability
@@ -164,6 +164,41 @@ Add the Jurisdiction Gate to the Identity service: two tables and their migratio
 |---|---|
 | US6.3 | 1, 3–14, 16 |
 | US6.4 | 1, 6–10, 13 |
+
+## Loop-back 1 repair (Build and Test, 2026-11-12)
+
+Build and Test reopened this Unit for F7 only. The jurisdiction gate's behaviour is already built
+and tested; what the traceability sensor cannot see is the evidence file. This repair writes no
+production code — steps 1–18 stand as they are, and no test is added or changed.
+
+19. [x] **Evidence — AC6.4.1 and AC6.4.2.** Both ids are in `upstream_ids` with no `coverage`
+    entry, so the sensor counts them uncovered. Add one row each: code
+    `services/identity/application/src/principal.rs` (the gate clears before any user row, profile
+    override or shredding key is written), tests
+    `services/identity/tests/application.rs::user_registry_gate_denial_refuses_provisioning_and_stores_nothing`
+    (AC6.4.1: `users.len() == 0` after the refusal) — the same test asserts the audited
+    `identity.user.provision_denied` action, which is AC6.4.2 — plus the companion
+    `user_registry_gate_unavailable_is_a_retryable_refusal` for the fail-closed path.
+    *Trace:* AC6.4.1, AC6.4.2.
+20. [x] **Evidence — NFR23 targets.** NFR23.1–NFR23.3 are recorded in `path::symbol` notation,
+    which the sensor refuses ("target must be a workspace-relative file path"). Rewrite each as the
+    bare workspace-relative path and keep the symbol in the entry's `note`:
+    - NFR23.1 → `services/identity/migrations/0003_jurisdiction_list.up.sql` (+ `services/identity/infrastructure/src/repositories/jurisdiction.rs`)
+    - NFR23.2 → `services/identity/http/src/handlers.rs`, `services/identity/http/src/routes.rs`
+    - NFR23.3 → `services/identity/http/src/middleware.rs`, `services/gateway/http/src/middleware.rs`,
+      `services/gateway/http/src/server.rs`
+
+    Also add the missing **NFR23.4** row (fail closed: an unavailable provider or list returns
+    `503`): code `services/identity/application/src/jurisdiction.rs`, tests
+    `services/identity/tests/application.rs::jurisdiction_a_provider_failure_fails_closed_and_opens_the_circuit`,
+    `jurisdiction_a_country_absent_from_the_list_fails_closed` and
+    `jurisdiction_an_audit_failure_refuses_the_decision_and_the_retry_is_idempotent`. The sensor
+    lists NFR23.4 among this Unit's `not_built` entries precisely because the plan traces it at
+    step 9 while the evidence file has no row for it.
+    *Trace:* NFR23.1–NFR23.4.
+21. [x] **Record.** Update `code-summary.md` and `source-manifest.json` with the evidence repair,
+    then re-run `aidlc engine sensor-traceability --stage build-and-test` and record its output as
+    the repair's evidence in `code-summary.md`.
 
 ## Definition of done
 

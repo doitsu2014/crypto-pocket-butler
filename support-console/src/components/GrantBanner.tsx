@@ -1,13 +1,15 @@
 import type { SupportAccessGrant } from "../api/types";
-import { grantStatusAt, grantStatusPresentation } from "../domain/grants";
+import { formatRemainingMinutes, grantStatusAt, grantStatusPresentation } from "../domain/grants";
 import { formatMetadataValue } from "../domain/metadata";
+import { READ_AUDIT_STATEMENT } from "../domain/presentation";
 import { useGrantClock } from "../hooks/useGrantClock";
 import { StatusBadge } from "./StatusBadge";
-import { cardClass, overlineClass, primaryButtonClass } from "./ui";
+import { cardClass, overlineClass, primaryButtonClass, secondaryButtonClass } from "./ui";
 
 export interface GrantBannerProps {
   grant: SupportAccessGrant;
   now?: number;
+  onCheckStatus: () => void;
   onRequestNew: () => void;
 }
 
@@ -25,7 +27,23 @@ function formatDateTime(value: string | null): string {
   }).format(new Date(parsed));
 }
 
-export function GrantBanner({ grant, now, onRequestNew }: GrantBannerProps) {
+function remainingMinutesText(expiresAt: string | null, now: number): string {
+  if (!expiresAt) {
+    return "less than a minute left";
+  }
+  const expiry = Date.parse(expiresAt);
+  if (!Number.isFinite(expiry)) {
+    return "less than a minute left";
+  }
+  return formatRemainingMinutes((expiry - now) / 60_000);
+}
+
+/**
+ * W5: the session grant. The banner never claims access the clock does not
+ * allow, states that reads are metadata-only and audited, and offers the two
+ * ways out: check the current grant, or request a new one.
+ */
+export function GrantBanner({ grant, now, onCheckStatus, onRequestNew }: GrantBannerProps) {
   const clock = useGrantClock(grant.expiresAt);
   const currentNow = now ?? clock;
   const status = grantStatusAt(grant, currentNow);
@@ -34,7 +52,10 @@ export function GrantBanner({ grant, now, onRequestNew }: GrantBannerProps) {
   let copy: string;
   switch (status) {
     case "active":
-      copy = `Access ends at ${formatDateTime(grant.expiresAt)}. Every metadata read is recorded by the support API.`;
+      copy = `Access ends at ${formatDateTime(grant.expiresAt)} — ${remainingMinutesText(
+        grant.expiresAt,
+        currentNow,
+      )}. ${READ_AUDIT_STATEMENT} Metadata only: no balances or holdings are exposed.`;
       break;
     case "pending_approval":
       copy = "Waiting for a second approver. No metadata reads are allowed yet.";
@@ -77,7 +98,15 @@ export function GrantBanner({ grant, now, onRequestNew }: GrantBannerProps) {
         </div>
       </dl>
 
-      <div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          data-testid="grant-banner-check-status"
+          onClick={onCheckStatus}
+          className={secondaryButtonClass}
+        >
+          Check grant status
+        </button>
         <button
           type="button"
           data-testid="grant-banner-request-new"

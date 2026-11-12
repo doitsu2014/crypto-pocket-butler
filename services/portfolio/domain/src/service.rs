@@ -1,7 +1,9 @@
 //! Internal service identities and the operations each may call.
 //!
 //! Each calling service holds its own token; the registry maps a token hash to
-//! the caller name and a per-operation allow-list (security design).
+//! the caller name and a per-operation allow-list (security design). The
+//! `support_metadata` operation lets only Identity read the support projection
+//! (BR3.9).
 
 use crate::error::DomainError;
 
@@ -20,6 +22,8 @@ pub enum Operation {
     PrivacyAnonymise,
     /// `POST /v1/internal/run/portfolio-valuation`.
     RunValuation,
+    /// `GET /v1/internal/support-metadata/{userId}` (BR3.9).
+    SupportMetadata,
 }
 
 impl Operation {
@@ -33,6 +37,7 @@ impl Operation {
             Self::PrivacyExport => "privacy_export",
             Self::PrivacyAnonymise => "privacy_anonymise",
             Self::RunValuation => "run_valuation",
+            Self::SupportMetadata => "support_metadata",
         }
     }
 
@@ -48,6 +53,7 @@ impl Operation {
             "privacy_export" => Ok(Self::PrivacyExport),
             "privacy_anonymise" => Ok(Self::PrivacyAnonymise),
             "run_valuation" => Ok(Self::RunValuation),
+            "support_metadata" => Ok(Self::SupportMetadata),
             _ => Err(DomainError::Invalid {
                 field: "operation",
                 reason: "is not a registered Portfolio operation".to_string(),
@@ -67,7 +73,7 @@ pub fn service_allowed(service: &str, operation: Operation) -> bool {
         ),
         "identity" => matches!(
             operation,
-            Operation::PrivacyExport | Operation::PrivacyAnonymise
+            Operation::PrivacyExport | Operation::PrivacyAnonymise | Operation::SupportMetadata
         ),
         "job-orchestration" | "job_orchestration" => {
             matches!(operation, Operation::RunValuation)

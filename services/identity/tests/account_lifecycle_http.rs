@@ -165,6 +165,99 @@ async fn a_blank_reason_is_422_naming_the_field_and_an_illegal_edge_is_409() {
 }
 
 #[tokio::test]
+async fn an_admin_disables_and_restores_on_the_gateway_facing_admin_paths() {
+    let harness = harness();
+    let (owner_id, _admin_id) = seed(&harness.state).await;
+    let admin = bearer("admin-token");
+
+    // The forwarded JWT alone authenticates: no service token is supplied.
+    let (status, _, body) = send(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/admin/users/{owner_id}/disable"),
+        &[("authorization", admin.as_str())],
+        Some(serde_json::json!({ "reason": "account abuse" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", body);
+    assert_eq!(body["status"], "disabled");
+    assert_eq!(body["userId"], owner_id);
+
+    let (status, _, body) = send(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/admin/users/{owner_id}/restore"),
+        &[("authorization", admin.as_str())],
+        Some(serde_json::json!({ "reason": "appeal upheld" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", body);
+    assert_eq!(body["status"], "active");
+}
+
+#[tokio::test]
+async fn the_admin_status_paths_answer_403_404_409_and_422() {
+    let harness = harness();
+    let (owner_id, _admin_id) = seed(&harness.state).await;
+    let admin = bearer("admin-token");
+    let non_admin = bearer("user-token");
+
+    let (status, _, body) = send(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/admin/users/{owner_id}/disable"),
+        &[("authorization", non_admin.as_str())],
+        Some(serde_json::json!({ "reason": "self service" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{}", body);
+    assert_eq!(body["type"], "https://errors.cpb/identity/forbidden");
+
+    let unknown = identity_domain::UserId::generate().to_string();
+    let (status, _, body) = send(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/admin/users/{unknown}/disable"),
+        &[("authorization", admin.as_str())],
+        Some(serde_json::json!({ "reason": "account abuse" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{}", body);
+
+    let (status, _, body) = send(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/admin/users/{owner_id}/disable"),
+        &[("authorization", admin.as_str())],
+        Some(serde_json::json!({ "reason": "  " })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{}", body);
+    assert_eq!(body["errors"][0]["field"], "reason");
+
+    for _ in 0..2 {
+        let _ = send(
+            &harness.state,
+            Method::POST,
+            &format!("/v1/admin/users/{owner_id}/disable"),
+            &[("authorization", admin.as_str())],
+            Some(serde_json::json!({ "reason": "abuse" })),
+        )
+        .await;
+    }
+    let (status, _, body) = send(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/admin/users/{owner_id}/disable"),
+        &[("authorization", admin.as_str())],
+        Some(serde_json::json!({ "reason": "again" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{}", body);
+    assert_eq!(body["type"], "https://errors.cpb/identity/conflict");
+}
+
+#[tokio::test]
 async fn the_owner_opens_a_deletion_request_and_a_second_one_is_409() {
     let harness = harness();
     let (owner_id, _admin_id) = seed(&harness.state).await;

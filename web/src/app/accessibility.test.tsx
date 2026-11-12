@@ -17,10 +17,24 @@ import PortfolioDetailPage from "../features/portfolio/PortfolioDetailPage";
 import PortfoliosPage from "../features/portfolio/PortfoliosPage";
 import TargetsPage from "../features/portfolio/TargetsPage";
 import TradesPage from "../features/portfolio/TradesPage";
-import PrivacyPage from "../features/privacy/PrivacyPage";
+import PrivacyPanel from "../features/settings/PrivacyPanel";
 import MfaPage from "../features/settings/MfaPage";
-import SettingsPage from "../features/settings/SettingsPage";
-import type { Brief, Pnl, PortfolioValuation, Profile, SessionInfo } from "../api/types";
+import ProfilePanel from "../features/settings/ProfilePanel";
+import PreferencesPanel from "../features/settings/PreferencesPanel";
+import ConsentPanel from "../features/settings/ConsentPanel";
+import DeleteAccountPage from "../features/settings/DeleteAccountPage";
+import SettingsLayout from "../features/settings/SettingsLayout";
+import type {
+  Brief,
+  ConsentHistoryView,
+  ConsentStateView,
+  EffectivePreferences,
+  Pnl,
+  PortfolioValuation,
+  Profile,
+  ProfileView,
+} from "../api/types";
+import { NO_RECORD_PROBLEM_TYPE } from "../api/client";
 import { problem, stubGateway } from "../test/gateway";
 import { renderWithProviders } from "../test/render";
 import { expectNoAxeViolations } from "../test/axe";
@@ -95,7 +109,45 @@ const profile: Profile = {
   mfaEnrolled: false,
 };
 
-const sessions: SessionInfo[] = [];
+const profileView: ProfileView = {
+  userId: "user-1",
+  displayName: "Mai",
+  displayNameOverridden: false,
+  providerDisplayName: "Mai",
+  email: "mai@example.com",
+  emailVerified: true,
+  status: "active",
+};
+
+const preferences: EffectivePreferences = {
+  userId: "user-1",
+  locale: { value: "en", source: "user" },
+  baseCurrency: { value: "USD", source: "default" },
+  timezone: { value: "UTC", source: "user" },
+  notifications: {
+    email: { value: true, source: "user" },
+    push: { value: false, source: "default" },
+  },
+};
+
+const consentState: ConsentStateView = {
+  userId: "user-1",
+  kinds: { terms: "granted", risk: "granted", age: "granted", analytics: "none" },
+  missing: ["analytics"],
+};
+
+const consentHistory: ConsentHistoryView = {
+  events: [
+    {
+      id: "event-0",
+      seq: 0,
+      kind: "terms",
+      action: "granted",
+      occurredAt: "2026-11-01T10:00:00Z",
+      policyVersion: "2026-11-01.1",
+    },
+  ],
+};
 
 const brief: Brief = {
   id: "brief-1",
@@ -179,14 +231,33 @@ describe("core flows meet WCAG 2.2 AA automated checks", () => {
     );
   });
 
-  it("settings, MFA, privacy and help", async () => {
-    await check(
-      <SettingsPage profileOverride={profile} sessionsOverride={sessions} />,
-      "/settings",
-    );
+  it("settings panels, MFA, account deletion and help", async () => {
+    stubGateway({
+      "GET /v1/me/profile": () => ({ body: profileView }),
+      "GET /v1/me/preferences": () => ({ body: preferences }),
+      "GET /v1/me/consent/state": () => ({ body: consentState }),
+      "GET /v1/me/consent": () => ({ body: consentHistory }),
+      "GET /v1/me/deletion-request": () => ({
+        status: 404,
+        body: {
+          type: NO_RECORD_PROBLEM_TYPE,
+          title: "No record",
+          status: 404,
+          correlationId: "corr-no-record",
+        },
+      }),
+    });
+    await check(<ProfilePanel />, "/settings/profile");
+    await check(<PreferencesPanel />, "/settings/preferences");
+    await check(<ConsentPanel />, "/settings/consent");
+    await check(<PrivacyPanel />, "/settings/privacy");
+    await check(<DeleteAccountPage />, "/settings/delete");
     await check(<MfaPage profileOverride={profile} />, "/settings/mfa");
-    await check(<PrivacyPage consentOverride={[]} />, "/privacy");
     await check(<HelpPage articlesOverride={[]} incidentsOverride={[]} />, "/help");
+  });
+
+  it("the settings shell and its navigation", async () => {
+    await check(<SettingsLayout />, "/settings/profile");
   });
 
   it("a failed source degrades its panel without losing the page structure", async () => {

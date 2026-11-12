@@ -353,12 +353,17 @@ fn a_support_grant_cannot_be_self_approved_or_approved_by_a_non_admin() {
         Err(DomainError::Denied { .. })
     ));
     grant
-        .approve(other_admin, Role::Admin, at(10), Duration::minutes(60))
+        .approve(
+            other_admin,
+            Role::Admin,
+            at(9) + Duration::minutes(30),
+            Duration::minutes(60),
+        )
         .unwrap();
     assert_eq!(grant.status(), SupportGrantStatus::Active);
-    assert_eq!(grant.expires_at(), Some(at(10) + Duration::minutes(60)));
+    assert_eq!(grant.expires_at(), Some(at(9) + Duration::minutes(90)));
     assert_eq!(
-        grant.effective_status(at(10) + Duration::minutes(61)),
+        grant.effective_status(at(9) + Duration::minutes(91)),
         SupportGrantStatus::Expired
     );
 }
@@ -377,7 +382,7 @@ fn an_active_grant_can_be_revoked_but_a_revoked_one_is_terminal() {
         .approve(
             UserId::generate(),
             Role::Admin,
-            at(10),
+            at(9) + Duration::minutes(30),
             Duration::minutes(60),
         )
         .unwrap();

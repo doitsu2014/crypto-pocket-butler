@@ -75,6 +75,7 @@ export function noRecordResponse() {
 }
 
 export const defaultHandlers = [
+  http.get(`${API}/me/account-status`, () => HttpResponse.json({ status: "active" })),
   http.get(`${API}/me/principal`, () => HttpResponse.json(principalFixture)),
   http.get(`${API}/signup/gate-state`, () => HttpResponse.json(passedGateState)),
   http.post(`${API}/signup/gates`, () => new HttpResponse(null, { status: 200 })),

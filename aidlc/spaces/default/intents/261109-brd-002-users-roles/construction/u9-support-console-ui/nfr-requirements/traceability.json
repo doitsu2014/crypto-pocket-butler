@@ -1,0 +1,19 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u9-support-console-ui",
+  "upstream_ids": ["NFR21", "NFR22", "NFR23", "NFR24", "NFR25", "NFR26"],
+  "coverage": [
+    { "id": "NFR21", "status": "N/A", "target": "audit retention is server-side (C9, six months); this unit writes and reads no audit record — its obligation is NFR21.1 in security-requirements.md: state that a read is audited and render no audit content, audit id or retained personal data itself" },
+    { "id": "NFR22", "status": "OK", "target": "NFR22.1, NFR22.2, NFR22.3, NFR22.4 (S1's two 403 causes share one neutral line), NFR22.5, NFR22.6" },
+    { "id": "NFR23", "status": "N/A", "target": "UI-only unit: no Postgres schema or role; S2 reads through Identity's grant store under Identity's own role and the route itself is U3's (NFR23.1, tech-stack T1)" },
+    { "id": "NFR24", "status": "OK", "target": "NFR24.1, NFR24.2, NFR24.3, NFR24.4" },
+    { "id": "NFR25", "status": "OK", "target": "NFR25.1, NFR25.2, NFR25.3, NFR25.4, NFR25.5" },
+    { "id": "NFR26", "status": "Deferred", "target": "NFR26.1–NFR26.3: date/locale formatting and safe degradation are covered (NFR26.1, NFR26.3); the English/Vietnamese half is deferred with its reason recorded and tracked as decision ab46b27b in this intent's decision log — the support console has no i18n module (NFR26.2), and a console-wide localisation unit that does not exist in unit-of-work.md yet owns it, so this parent is not met for this surface" }
+  ],
+  "reverse": [
+    { "id": "NFR2.x", "status": "N/A", "target": "screen/latency prefix inherited from the BRD-001 intent requirements record (NFR2.1–NFR2.11 in performance-requirements.md)" },
+    { "id": "NFR9.x", "status": "N/A", "target": "transport and secret protection prefix inherited from the BRD-001 intent requirements record (NFR9.1–NFR9.2 in security-requirements.md)" },
+    { "id": "NFR10.x", "status": "N/A", "target": "token and session security prefix inherited from the BRD-001 intent requirements record (NFR10.1–NFR10.4 in security-requirements.md)" },
+    { "id": "NFR11.x", "status": "N/A", "target": "abuse protection prefix inherited from the BRD-001 intent requirements record (NFR11.1–NFR11.2 in security-requirements.md)" }
+  ]
+}

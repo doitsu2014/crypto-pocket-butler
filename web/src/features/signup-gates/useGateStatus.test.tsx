@@ -5,7 +5,14 @@ import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { GatewayClient } from "../../api/client";
 import type { Principal, SignupGateState } from "../../api/types";
-import { API, gateState, noRecordResponse, principal, problemResponse } from "./test/handlers";
+import {
+  API,
+  gateState,
+  hungGet,
+  noRecordResponse,
+  principal,
+  problemResponse,
+} from "./test/handlers";
 import { server } from "./test/server";
 import type { GateStatus } from "./gateStatus";
 import { useGateStatus } from "./useGateStatus";
@@ -77,10 +84,10 @@ const decisionCases: Array<{
     expected: { kind: "owned-elsewhere", destination: "account-blocked" },
   },
   {
-    name: "a pending-deletion account routes to the blocked screen",
+    name: "a pending-deletion account routes to the restore screen",
     principal: principal({ status: "pending_deletion", nextStep: "none" }),
     state: gateState({ missing: [] }),
-    expected: { kind: "owned-elsewhere", destination: "account-blocked" },
+    expected: { kind: "owned-elsewhere", destination: "restore-account" },
   },
   {
     name: "a deleted account routes to the blocked screen",
@@ -157,6 +164,36 @@ describe("useGateStatus decision table", () => {
   it("starts in the loading state before either read settles", () => {
     const { result } = renderGateStatus();
 
+    expect(result.current).toEqual({ kind: "loading" });
+  });
+
+  it("never routes into the app when the D0 account-status read fails", async () => {
+    server.use(http.get(`${API}/me/account-status`, () => problemResponse(503)));
+
+    const { result } = renderGateStatus();
+
+    await waitFor(() => expect(result.current.kind).toBe("error"));
+    expect(result.current).toMatchObject({ correlationId: "corr-503" });
+  });
+
+  it("stays in the loading state while the D0 account-status read is unresolved", async () => {
+    const settled: string[] = [];
+    server.use(
+      hungGet("/me/account-status"),
+      http.get(`${API}/me/principal`, () => {
+        settled.push("principal");
+        return HttpResponse.json(principal({ status: "active" }));
+      }),
+      http.get(`${API}/signup/gate-state`, () => {
+        settled.push("gate-state");
+        return HttpResponse.json(gateState());
+      }),
+    );
+
+    const { result } = renderGateStatus();
+
+    await waitFor(() => expect(settled).toEqual(expect.arrayContaining(["principal", "gate-state"])));
+    await new Promise((resolve) => setTimeout(resolve, 25));
     expect(result.current).toEqual({ kind: "loading" });
   });
 });

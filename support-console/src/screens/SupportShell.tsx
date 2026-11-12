@@ -1,23 +1,23 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState } from "react";
-import type { SupportAccessGrant } from "../api/types";
 import { clearSupportCache } from "../api/queryClient";
+import type { SupportAccessGrant } from "../api/types";
 import { clearSupportSession, type SupportRole, type SupportSession } from "../auth/session";
-import { AccountMetadataPanel } from "../components/AccountMetadataPanel";
-import { AccountSearch } from "../components/AccountSearch";
-import { GrantApprovalQueue } from "../components/GrantApprovalQueue";
 import { GrantBanner } from "../components/GrantBanner";
 import { GrantRequestForm } from "../components/GrantRequestForm";
 import { HelpPanel } from "../components/HelpPanel";
 import { StatusFooter } from "../components/StatusFooter";
+import { SupportMetadataPanel } from "../components/SupportMetadataPanel";
 import { TicketQueue } from "../components/TicketQueue";
+import { calloutClass, linkClass, overlineClass, secondaryButtonClass } from "../components/ui";
 import { canReadWithGrant, grantStatusAt } from "../domain/grants";
 import { useGrantClock } from "../hooks/useGrantClock";
-import { calloutClass, linkClass, overlineClass, secondaryButtonClass } from "../components/ui";
+import { useMyGrants } from "../hooks/useMyGrants";
 
 const IncidentConsole = lazy(() => import("../components/IncidentConsole"));
+const AdminUsersSection = lazy(() => import("./admin/AdminUsersSection"));
 
-export type SectionId = "grants" | "search" | "tickets" | "incidents" | "help";
+export type SectionId = "grants" | "metadata" | "tickets" | "incidents" | "admin-users" | "help";
 
 interface SectionDefinition {
   id: SectionId;
@@ -27,19 +27,24 @@ interface SectionDefinition {
 
 const SECTIONS: SectionDefinition[] = [
   { id: "grants", label: "Grants" },
-  { id: "search", label: "Account search" },
+  { id: "metadata", label: "Metadata" },
   { id: "tickets", label: "Tickets" },
   { id: "incidents", label: "Incidents", adminOnly: true },
+  { id: "admin-users", label: "Admin users", adminOnly: true },
   { id: "help", label: "Help" },
 ];
 
-function isSectionId(value: string): value is SectionId {
-  return SECTIONS.some((section) => section.id === value);
+/** `search` was the old name of the metadata section; old links still land. */
+function normalizeSection(value: string): SectionId | null {
+  if (value === "search") {
+    return "metadata";
+  }
+  return SECTIONS.some((section) => section.id === value) ? (value as SectionId) : null;
 }
 
 function readSectionFromHash(): SectionId {
   const raw = window.location.hash.replace(/^#\/?/, "");
-  return isSectionId(raw) ? raw : "grants";
+  return normalizeSection(raw) ?? "grants";
 }
 
 export interface SupportShellProps {
@@ -47,7 +52,6 @@ export interface SupportShellProps {
   role: SupportRole;
   onSignOut: () => void;
   initialGrant?: SupportAccessGrant | null;
-  initialPendingGrants?: SupportAccessGrant[];
   initialSection?: SectionId;
 }
 
@@ -56,19 +60,29 @@ export function SupportShell({
   role,
   onSignOut,
   initialGrant = null,
-  initialPendingGrants = [],
   initialSection,
 }: SupportShellProps) {
   const queryClient = useQueryClient();
   const [grant, setGrant] = useState<SupportAccessGrant | null>(initialGrant);
-  const [pendingGrants, setPendingGrants] = useState<SupportAccessGrant[]>(initialPendingGrants);
-  const [section, setSection] = useState<SectionId>(initialSection ?? readSectionFromHash);
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [section, setSection] = useState<SectionId>(
+    initialSection ? (normalizeSection(initialSection) ?? "grants") : readSectionFromHash(),
+  );
+
+  const mine = useMyGrants(session.accessToken, role);
 
   const clock = useGrantClock(grant?.expiresAt ?? null);
   const status = grant ? grantStatusAt(grant, clock) : null;
   const hasActiveGrant = Boolean(grant && canReadWithGrant(grant, clock));
-  const grantExpired = Boolean(grant && grant.status === "active" && !hasActiveGrant);
+
+  // The gateway already scopes `mine` to the caller, so the newest entry is the
+  // session's grant. It is adopted unconditionally: `requestedBy` is Identity's
+  // internal id, never the Supabase auth id, so comparing it would reject every
+  // grant. A grant adopted from a 201 is never replaced by a stale list.
+  useEffect(() => {
+    if (grant === null && mine.data && mine.data.length > 0) {
+      setGrant(mine.data[0]);
+    }
+  }, [grant, mine.data]);
 
   useEffect(() => {
     const onHashChange = () => setSection(readSectionFromHash());
@@ -77,14 +91,15 @@ export function SupportShell({
   }, []);
 
   useEffect(() => {
-    if (grantExpired) {
+    if (grant && grant.status === "active" && !hasActiveGrant) {
       clearSupportCache(queryClient);
-      setSelectedAccountId(null);
     }
-  }, [grantExpired, queryClient]);
+  }, [grant, hasActiveGrant, queryClient]);
 
   const visibleSection: SectionId =
-    section === "incidents" && role !== "admin" ? "grants" : section;
+    SECTIONS.find((item) => item.id === section)?.adminOnly && role !== "admin"
+      ? "grants"
+      : section;
 
   function signOut() {
     clearSupportCache(queryClient);
@@ -92,16 +107,13 @@ export function SupportShell({
     onSignOut();
   }
 
+  /** Only a grant already on screen is updated; another agent's approval never adopts. */
   function onGrantChanged(updated: SupportAccessGrant) {
-    setPendingGrants((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-    if (updated.status === "active") {
-      setGrant(updated);
-    }
+    setGrant((current) => (current && current.id === updated.id ? updated : current));
   }
 
   function onAccessEnded() {
     setGrant((current) => (current ? { ...current, status: "expired" } : current));
-    setSelectedAccountId(null);
   }
 
   return (
@@ -117,7 +129,9 @@ export function SupportShell({
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-small text-ink-2">
               Signed in as <span className="font-medium text-ink">{role}</span>
-              {session.user.email ? <span className="text-meta"> · {session.user.email}</span> : null}
+              {session.user.email ? (
+                <span className="text-meta"> · {session.user.email}</span>
+              ) : null}
             </p>
             <button
               type="button"
@@ -154,7 +168,12 @@ export function SupportShell({
 
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-6 py-8">
         {grant ? (
-          <GrantBanner grant={grant} now={clock} onRequestNew={() => setSection("grants")} />
+          <GrantBanner
+            grant={grant}
+            now={clock}
+            onCheckStatus={() => setSection("grants")}
+            onRequestNew={() => setSection("grants")}
+          />
         ) : (
           <p data-testid="support-shell-no-grant" className={calloutClass}>
             No support grant is active. Request one, or approve a pending request, before reading
@@ -164,45 +183,46 @@ export function SupportShell({
 
         {grant && status !== "active" ? (
           <p className="text-small text-meta">
-            Reads are disabled while the grant is {status === "pending_approval" ? "pending approval" : status}.
+            Reads are disabled while the grant is{" "}
+            {status === "pending_approval" ? "pending approval" : status}.
           </p>
         ) : null}
 
         {visibleSection === "grants" ? (
-          <div className="flex flex-col gap-4">
+          role === "admin" ? (
+            <p data-testid="admin-link" className={calloutClass}>
+              Administrators approve pending grants and manage users from the{" "}
+              <a
+                href="#admin-users"
+                className={linkClass}
+                onClick={() => setSection("admin-users")}
+              >
+                Admin users
+              </a>{" "}
+              section.
+            </p>
+          ) : (
             <GrantRequestForm
-              requesterId={session.user.id}
               token={session.accessToken}
-              onCreated={(created) => setPendingGrants((current) => [created, ...current])}
+              onCreated={(created) => setGrant(created)}
+              onCheckStatus={() => setSection("grants")}
             />
-            <GrantApprovalQueue
-              grants={pendingGrants}
-              currentUserId={session.user.id}
-              role={role}
-              token={session.accessToken}
-              onChanged={onGrantChanged}
-            />
-          </div>
+          )
         ) : null}
 
-        {visibleSection === "search" ? (
-          <div className="flex flex-col gap-4">
-            <AccountSearch
-              grantId={hasActiveGrant && grant ? grant.id : ""}
+        {visibleSection === "metadata" ? (
+          grant ? (
+            <SupportMetadataPanel
+              grant={grant}
               token={session.accessToken}
-              onSelect={setSelectedAccountId}
+              status={status}
+              onAccessEnded={onAccessEnded}
             />
-            {selectedAccountId && grant ? (
-              <AccountMetadataPanel
-                accountId={selectedAccountId}
-                grantId={grant.id}
-                token={session.accessToken}
-                defaultReason={grant.reason}
-                expiresAt={grant.expiresAt}
-                onAccessEnded={onAccessEnded}
-              />
-            ) : null}
-          </div>
+          ) : (
+            <p data-testid="metadata-grant-required" className={calloutClass}>
+              A support grant is required to read account and portfolio metadata.
+            </p>
+          )
         ) : null}
 
         {visibleSection === "tickets" ? (
@@ -215,6 +235,18 @@ export function SupportShell({
         {visibleSection === "incidents" && role === "admin" ? (
           <Suspense fallback={<p role="status">Loading incident console…</p>}>
             <IncidentConsole role={role} token={session.accessToken} />
+          </Suspense>
+        ) : null}
+
+        {visibleSection === "admin-users" && role === "admin" ? (
+          <Suspense fallback={<p role="status">Loading admin users…</p>}>
+            <AdminUsersSection
+              token={session.accessToken}
+              role={role}
+              currentUserId={session.user.id}
+              signedInEmail={session.user.email}
+              onGrantChanged={onGrantChanged}
+            />
           </Suspense>
         ) : null}
 

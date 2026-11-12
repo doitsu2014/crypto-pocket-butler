@@ -26,6 +26,7 @@ use identity_application::preferences::read::ReadUserPreferences;
 use identity_application::preferences::write::WriteUserPreferences;
 use identity_application::preferences::PreferencesService;
 use identity_application::principal::PrincipalService;
+use identity_application::profile::ProfileService;
 use identity_application::sessions::SessionService;
 use identity_application::signup_gate::SignupGateService;
 use identity_application::support::SupportService;
@@ -46,12 +47,13 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use fakes::{
-    FakeAccountObservation, FakeAudit, FakeAuthAdmin, FakeAuthorisationAudit, FakeConsent,
-    FakeConsentRepository, FakeContributors, FakeDecisionAudit, FakeDeletions, FakeErasureStore,
-    FakeExports, FakeGate, FakeGateIssuer, FakeGeoLocator, FakeGrants, FakeKeys, FakeListStore,
-    FakeObservationSink, FakePreferencesRepository, FakeRoleWriter, FakeRules, FakeServiceTokens,
-    FakeSessions, FakeStatusReader, FakeStatusTransitions, FakeStore, FakeTokenValidator,
-    FakeUserLookup, FakeUsers, FakeWake, MutableClock, Ready,
+    FakeAccountObservation, FakeAccountsSource, FakeAudit, FakeAuthAdmin, FakeAuthorisationAudit,
+    FakeConsent, FakeConsentRepository, FakeContributors, FakeDecisionAudit, FakeDeletions,
+    FakeErasureStore, FakeExports, FakeGate, FakeGateIssuer, FakeGeoLocator, FakeGrants, FakeKeys,
+    FakeListStore, FakeObservationSink, FakePortfoliosSource, FakePreferencesRepository,
+    FakeRoleReader, FakeRoleWriter, FakeRules, FakeServiceTokens, FakeSessions, FakeStatusReader,
+    FakeStatusTransitions, FakeStore, FakeSupportObservation, FakeSupportOutbox,
+    FakeTokenValidator, FakeUserLookup, FakeUsers, FakeWake, MutableClock, Ready,
 };
 
 /// The subject of the regular user under test.
@@ -190,6 +192,14 @@ pub struct Harness {
     pub erasure: Arc<FakeErasureStore>,
     /// The fake support grants.
     pub grants: Arc<FakeGrants>,
+    /// The fake support audit outbox (refusals and failures).
+    pub support_outbox: Arc<FakeSupportOutbox>,
+    /// The fake Account metadata source.
+    pub support_accounts: Arc<FakeAccountsSource>,
+    /// The fake Portfolio metadata source.
+    pub support_portfolios: Arc<FakePortfoliosSource>,
+    /// The fake inline read-audit sink.
+    pub support_observation: Arc<FakeSupportObservation>,
     /// The fake device sessions.
     pub sessions: Arc<FakeSessions>,
     /// The fake export requests.
@@ -228,6 +238,8 @@ pub struct Harness {
     pub authorisation_audit: Arc<FakeAuthorisationAudit>,
     /// The provider role writer fake (U2).
     pub role_writer: Arc<FakeRoleWriter>,
+    /// The provider role reader fake (U10 admin lookup).
+    pub role_reader: Arc<FakeRoleReader>,
     /// The movable clock.
     pub clock: Arc<MutableClock>,
     /// Principal resolution.
@@ -236,6 +248,8 @@ pub struct Harness {
     pub consent_service: Arc<ConsentService>,
     /// Preference use cases.
     pub preferences: Arc<PreferencesService>,
+    /// U7: the profile read and write use cases.
+    pub profile: Arc<ProfileService>,
     /// Session use cases.
     pub sessions_service: Arc<SessionService>,
     /// Support-grant use cases.
@@ -273,6 +287,10 @@ pub fn harness() -> Harness {
     let gate_clearance = Arc::new(FakeGate::default());
     let consent = Arc::new(FakeConsent::default());
     let grants = Arc::new(FakeGrants::default());
+    let support_outbox = Arc::new(FakeSupportOutbox::default());
+    let support_accounts = Arc::new(FakeAccountsSource::default());
+    let support_portfolios = Arc::new(FakePortfoliosSource::default());
+    let support_observation = Arc::new(FakeSupportObservation::default());
     let sessions = Arc::new(FakeSessions::default());
     let exports = Arc::new(FakeExports::default());
     let deletions = Arc::new(FakeDeletions::default());
@@ -328,6 +346,7 @@ pub fn harness() -> Harness {
     let status_reader = Arc::new(FakeStatusReader::default());
     let authorisation_audit = Arc::new(FakeAuthorisationAudit::default());
     let role_writer = Arc::new(FakeRoleWriter::default());
+    let role_reader = Arc::new(FakeRoleReader::default());
     let metrics = Arc::new(Metrics::default());
     let authorisation = Arc::new(AuthorisationDecision::new(
         OperationCatalogue::new(),
@@ -357,13 +376,22 @@ pub fn harness() -> Harness {
         gate_clearance.clone(),
         clock.clone(),
     ));
-    let user_registry = Arc::new(AdminLookup::new(users.clone(), trail.clone()));
+    let user_registry = Arc::new(AdminLookup::new(
+        users.clone(),
+        role_reader.clone(),
+        trail.clone(),
+    ));
     let consent_service = Arc::new(ConsentService::new(
         consent.clone(),
         trail.clone(),
         clock.clone(),
     ));
     let preferences = Arc::new(PreferencesService::new(
+        users.clone(),
+        trail.clone(),
+        clock.clone(),
+    ));
+    let profile = Arc::new(ProfileService::new(
         users.clone(),
         trail.clone(),
         clock.clone(),
@@ -378,7 +406,10 @@ pub fn harness() -> Harness {
     let support = Arc::new(SupportService::new(
         grants.clone(),
         users.clone(),
-        trail.clone(),
+        support_outbox.clone(),
+        support_accounts.clone(),
+        support_portfolios.clone(),
+        support_observation.clone(),
         clock.clone(),
     ));
     let signup_gate = Arc::new(SignupGateService::new(
@@ -438,12 +469,15 @@ pub fn harness() -> Harness {
 
     let mut unconfirmed = claims();
     unconfirmed.email_confirmed = false;
+    let mut nameless = claims();
+    nameless.display_name = None;
     let mut undeclared = claims();
     undeclared.country_code = None;
     undeclared.client_ip = None;
     let token_validator: Arc<dyn TokenValidator> = Arc::new(FakeTokenValidator::with(vec![
         ("user-token", Ok(claims())),
         ("unconfirmed-token", Ok(unconfirmed)),
+        ("nameless-token", Ok(nameless)),
         ("undeclared-token", Ok(undeclared)),
         ("admin-token", Ok(admin_claims())),
         ("support-token", Ok(support_claims())),
@@ -471,6 +505,7 @@ pub fn harness() -> Harness {
         consent_services: Arc::new(vec!["account-api".to_string()]),
         consent_observation: consent_observation.clone(),
         preferences: preferences.clone(),
+        profile: profile.clone(),
         preferences_read,
         preferences_write,
         sessions: sessions_service.clone(),
@@ -510,6 +545,10 @@ pub fn harness() -> Harness {
         consent_observation,
         erasure,
         grants,
+        support_outbox,
+        support_accounts,
+        support_portfolios,
+        support_observation,
         sessions,
         exports,
         deletions,
@@ -529,10 +568,12 @@ pub fn harness() -> Harness {
         status_reader,
         authorisation_audit,
         role_writer,
+        role_reader,
         clock,
         principal,
         consent_service,
         preferences,
+        profile,
         sessions_service,
         support,
         signup_gate,
@@ -668,19 +709,31 @@ $$;
 "#;
 
 async fn run_migrations(pool: &PgPool, before: Option<i64>) {
-    let mut lock = pool.acquire().await.expect("acquire migration lock");
-    sqlx::query("SELECT pg_advisory_lock(9812461)")
-        .execute(&mut *lock)
+    // sqlx's migrator takes a database-wide advisory lock, and a session blocked
+    // on that lock still holds a virtual xid that 0005's
+    // `CREATE INDEX CONCURRENTLY` waits for. Two cases migrating at once
+    // therefore deadlock, so the binary runs one migration set at a time.
+    static MIGRATION_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _gate = MIGRATION_GATE.lock().await;
+
+    // The lock is transaction-scoped so a panicking case can never return the
+    // connection to the pool still holding it (which would wedge every later
+    // case in the same test binary). It is released at commit, before the
+    // migrations run, because 0005's `CREATE INDEX CONCURRENTLY` waits for every
+    // open snapshot.
+    let mut transaction = pool.begin().await.expect("acquire migration lock");
+    sqlx::query("SELECT pg_advisory_xact_lock(9812461)")
+        .execute(&mut *transaction)
         .await
         .expect("take migration advisory lock");
     sqlx::query(ROLE_BOOTSTRAP)
-        .execute(&mut *lock)
+        .execute(&mut *transaction)
         .await
         .expect("bootstrap the cluster-wide roles");
-    let _ = sqlx::query("SELECT pg_advisory_unlock(9812461)")
-        .execute(&mut *lock)
-        .await;
-    drop(lock);
+    transaction
+        .commit()
+        .await
+        .expect("release the migration advisory lock");
 
     let result = match before {
         Some(version) => {

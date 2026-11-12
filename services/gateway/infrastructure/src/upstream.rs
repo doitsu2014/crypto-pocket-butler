@@ -85,9 +85,11 @@ impl UpstreamClient for ReqwestUpstreamClient {
         let url = format!("{base_url}{}", request.path_and_query);
         let mut builder = self.client.request(method, url);
 
-        // Forward the support console's X-Support-Reason header unchanged. It
-        // must never be logged: the gateway records ids, outcomes, and the
-        // correlation id, never request headers.
+        // Forward every non-hop-by-hop request header unchanged, the
+        // authorization bearer included. No header carries the support read
+        // reason any more (it travels in the POST /v1/support-grants body), and
+        // headers must never be logged: the gateway records ids, outcomes, and
+        // the correlation id, never request headers.
         for (name, value) in &request.headers {
             if is_hop_by_hop(name) {
                 continue;

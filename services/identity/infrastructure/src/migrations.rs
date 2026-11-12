@@ -97,10 +97,20 @@ pub async fn revert(pool: &PgPool) -> Result<(), MigrateError> {
             // `undo` reverts every applied migration above `target`, so this
             // reverts only the newest one. The live-table version is excluded
             // here; it is handled by the branch above when it is the newest.
-            transactional_migrator()
+            let result = transactional_migrator()
                 .undo(&mut connection, version - 1)
-                .await?;
-            Ok(())
+                .await;
+            if result.is_err() {
+                // sqlx's migrator takes a session advisory lock and does not
+                // release it on the error path. Without this the lock would ride
+                // the pooled connection back into the pool and wedge every later
+                // migration (a refused rollback must stay retryable).
+                sqlx::query("SELECT pg_advisory_unlock_all()")
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(MigrateError::from)?;
+            }
+            result
         }
     }
 }

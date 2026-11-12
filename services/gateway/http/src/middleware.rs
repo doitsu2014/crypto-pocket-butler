@@ -1,5 +1,8 @@
 //! Correlation ids, security headers, request metrics, the trusted client
 //! address, and rate limiting.
+//!
+//! Rate limiting runs the address budget first and then the declared per-route
+//! budget for the four support-access paths (FR16.3–FR16.6, NFR11.1).
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -151,8 +154,10 @@ pub async fn client_ip(mut request: Request, next: Next) -> Response {
     next.run(request).await
 }
 
-/// Enforces the per-caller fixed-window budget (BR4 / security design). The key
-/// is the address the gateway observed, never a caller-supplied header.
+/// Enforces the shared per-caller budget and, on a route that declares one, the
+/// route's own per-token budget (BR4 / security design, NFR11.1). The address
+/// key is the address the gateway observed, never a caller-supplied header; the
+/// route bucket is keyed on a hash of the bearer token, never the `sub` claim.
 pub async fn rate_limit(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let correlation = correlation_of(&request);
     let key = request
@@ -165,18 +170,43 @@ pub async fn rate_limit(State(state): State<AppState>, request: Request, next: N
     let authenticated = request.headers().contains_key(header::AUTHORIZATION);
 
     if let Err(retry_after) = state.rate_limiter.check(&key, authenticated) {
-        let mut response = ProblemDetails::new(
-            429,
-            "rate-limited",
-            "Too many requests",
-            Some(format!("retry after {retry_after} seconds")),
-            &correlation,
-        )
-        .into_response();
-        if let Ok(value) = HeaderValue::from_str(&retry_after.to_string()) {
-            response.headers_mut().insert(header::RETRY_AFTER, value);
+        return rate_limited(&correlation, retry_after);
+    }
+
+    // The route budget is the stricter, per-token limit on a manual write or a
+    // metadata read. It runs in a separate bucket from the address budget so
+    // one cannot evict the other.
+    let route_budget = gateway_domain::Method::parse(request.method().as_str())
+        .ok()
+        .and_then(|method| state.use_case.route_budget(method, request.uri().path()));
+    if let Some((route, limit)) = route_budget {
+        let token = request
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .map(str::trim)
+            .filter(|token| !token.is_empty());
+        if let Some(token) = token {
+            if let Err(retry_after) = state.rate_limiter.check_route(route, token, limit) {
+                return rate_limited(&correlation, retry_after);
+            }
         }
-        return response;
     }
     next.run(request).await
+}
+
+fn rate_limited(correlation: &str, retry_after: u64) -> Response {
+    let mut response = ProblemDetails::new(
+        429,
+        "rate-limited",
+        "Too many requests",
+        Some(format!("retry after {retry_after} seconds")),
+        correlation,
+    )
+    .into_response();
+    if let Ok(value) = HeaderValue::from_str(&retry_after.to_string()) {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
+    response
 }

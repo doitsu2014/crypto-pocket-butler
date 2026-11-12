@@ -11,8 +11,9 @@ use axum::body::Body;
 use axum::http::{header, HeaderMap, Method, Request, StatusCode};
 use common::*;
 use http_body_util::BodyExt;
-use identity_application::ports::ExternalError;
-use identity_domain::CountryCode;
+use identity_application::ports::{DeletionRepository, ExternalError};
+use identity_domain::user::UserStatus;
+use identity_domain::{CountryCode, Role};
 use identity_http::metrics::Metrics;
 use identity_http::router;
 use identity_http::state::AppState;
@@ -540,7 +541,7 @@ async fn the_c11_sweep_endpoint_refuses_another_services_token() {
 }
 
 #[tokio::test]
-async fn the_support_grant_check_is_gateway_only() {
+async fn the_retired_support_grant_check_route_is_gone() {
     let harness = harness();
     let uri = format!(
         "/v1/internal/support-grants/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/check?userId={USER_SUBJECT}"
@@ -554,7 +555,11 @@ async fn the_support_grant_check_is_gateway_only() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "the old check endpoint no longer exists, for any token"
+    );
 
     let (status, _, _) = send_auth(
         &harness.state,
@@ -567,7 +572,7 @@ async fn the_support_grant_check_is_gateway_only() {
     assert_eq!(
         status,
         StatusCode::NOT_FOUND,
-        "the gateway passes authorization; the grant itself is unknown"
+        "the gateway cannot see a retired route either"
     );
 }
 
@@ -1130,41 +1135,266 @@ async fn user_registry_a_record_is_owner_or_admin_only() {
 }
 
 #[tokio::test]
-async fn user_registry_admin_search_is_admin_only_and_a_miss_is_404() {
+async fn the_admin_user_lookup_is_a_body_carrying_post_that_returns_the_role() {
     let harness = harness();
     let target = active_user();
     harness.users.seed(target.clone(), USER_SUBJECT);
+    principal(&harness.state, "admin-token", ADMIN_SUBJECT).await;
+    harness.role_reader.set(USER_SUBJECT, Role::Support);
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::POST,
+        "/v1/admin/users/lookup",
+        Some("admin-token"),
+        Some(json!({ "email": "user@example.com" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let body = json_body(&body);
+    assert_eq!(body["id"], target.id().to_string());
+    assert_eq!(body["role"], "support");
+    assert_eq!(body["email"], "user@example.com");
+    assert!(
+        body.get("authSubject").is_none(),
+        "the provider subject must not leave Identity: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_admin_user_lookup_is_admin_only_validates_the_body_and_a_miss_is_404() {
+    let harness = harness();
+    let target = active_user();
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    principal(&harness.state, "admin-token", ADMIN_SUBJECT).await;
+    harness.role_reader.set(USER_SUBJECT, Role::User);
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::POST,
+        "/v1/admin/users/lookup",
+        Some("user-token"),
+        Some(json!({ "email": "user@example.com" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::POST,
+        "/v1/admin/users/lookup",
+        Some("admin-token"),
+        Some(json!({ "email": "not-an-address" })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    assert_eq!(json_body(&body)["errors"][0]["field"], "email");
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::POST,
+        "/v1/admin/users/lookup",
+        Some("admin-token"),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::POST,
+        "/v1/admin/users/lookup",
+        Some("admin-token"),
+        Some(json!({ "email": "missing@example.com" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_provider_failure_on_the_admin_lookup_is_a_503_and_no_role_is_returned() {
+    let harness = harness();
+    let target = active_user();
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    principal(&harness.state, "admin-token", ADMIN_SUBJECT).await;
+    harness
+        .role_reader
+        .fail_next(ExternalError::Unavailable("supabase is down".to_string()));
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::POST,
+        "/v1/admin/users/lookup",
+        Some("admin-token"),
+        Some(json!({ "email": "user@example.com" })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    assert!(json_body(&body).get("role").is_none());
+}
+
+#[tokio::test]
+async fn the_u1_admin_search_path_is_no_longer_served() {
+    let harness = harness();
+    let target = active_user();
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    principal(&harness.state, "admin-token", ADMIN_SUBJECT).await;
+
+    let (status, _, _) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/admin/users?email=user@example.com",
+        Some("admin-token"),
+        None,
+    )
+    .await;
+    assert!(
+        matches!(
+            status,
+            StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
+        ),
+        "the removed U1 search path must not answer: {status}"
+    );
+}
+
+#[tokio::test]
+async fn the_pending_grant_list_is_admin_only_and_accepts_only_the_pending_status() {
+    let harness = harness();
+    let target = principal(&harness.state, "user-token", USER_SUBJECT).await;
+    let target_id = target["userId"].as_str().unwrap().to_string();
+    let agent = principal(&harness.state, "support-token", SUPPORT_SUBJECT).await;
+    let agent_id = agent["userId"].as_str().unwrap().to_string();
+    principal(&harness.state, "admin-token", ADMIN_SUBJECT).await;
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::POST,
+        "/v1/support-grants",
+        Some("support-token"),
+        Some(json!({ "userId": target_id, "reason": "investigate a sync failure" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let grant_id = json_body(&body)["grantId"].as_str().unwrap().to_string();
 
     let (status, _, body) = send_auth(
         &harness.state,
         Method::GET,
-        "/v1/admin/users?email=user@example.com",
+        "/v1/support-grants?status=pending_approval",
         Some("admin-token"),
         None,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    assert_eq!(json_body(&body)["id"], target.id().to_string());
+    let body = json_body(&body);
+    let grants = body.as_array().expect("the list is an array");
+    assert_eq!(grants.len(), 1, "{body}");
+    assert_eq!(grants[0]["id"], grant_id);
+    assert_eq!(grants[0]["userId"], target_id);
+    assert_eq!(grants[0]["requestedBy"], agent_id);
+    assert_eq!(grants[0]["status"], "pending_approval");
+    assert_eq!(grants[0]["reason"], "investigate a sync failure");
 
     let (status, _, _) = send_auth(
         &harness.state,
         Method::GET,
-        "/v1/admin/users?email=user@example.com",
-        Some("user-token"),
+        "/v1/support-grants?status=pending_approval",
+        Some("support-token"),
         None,
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    let (status, _, _) = send_auth(
+    for uri in ["/v1/support-grants?status=active", "/v1/support-grants"] {
+        let (status, _, body) =
+            send_auth(&harness.state, Method::GET, uri, Some("admin-token"), None).await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{uri}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_u10_admin_routes_are_labelled_routes_not_other() {
+    let harness = harness();
+    let target = active_user();
+    harness.users.seed(target.clone(), USER_SUBJECT);
+    principal(&harness.state, "admin-token", ADMIN_SUBJECT).await;
+    principal(&harness.state, "user-token", USER_SUBJECT).await;
+    harness.role_reader.set(USER_SUBJECT, Role::User);
+
+    let (_, _, _) = send_auth(
+        &harness.state,
+        Method::POST,
+        "/v1/admin/users/lookup",
+        Some("admin-token"),
+        Some(json!({ "email": "user@example.com" })),
+    )
+    .await;
+    let (_, _, _) = send_auth(
+        &harness.state,
+        Method::PUT,
+        &format!("/v1/admin/users/{}/role", target.id()),
+        Some("admin-token"),
+        Some(json!({ "newRole": "support", "reason": "moved to support" })),
+    )
+    .await;
+    let (_, _, _) = send_auth(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/admin/users/{}/disable", target.id()),
+        Some("admin-token"),
+        Some(json!({ "reason": "account abuse" })),
+    )
+    .await;
+    let (_, _, _) = send_auth(
+        &harness.state,
+        Method::POST,
+        &format!("/v1/admin/users/{}/restore", target.id()),
+        Some("admin-token"),
+        Some(json!({ "reason": "appeal upheld" })),
+    )
+    .await;
+    let (_, _, _) = send_auth(
         &harness.state,
         Method::GET,
-        "/v1/admin/users?email=missing@example.com",
+        "/v1/support-grants?status=pending_approval",
         Some("admin-token"),
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let rendered = harness.state.metrics.render("identity-api");
+    for label in [
+        "admin.users.lookup",
+        "admin.users.role",
+        "admin.users.disable",
+        "admin.users.restore",
+        "support.grants",
+    ] {
+        assert!(
+            rendered.contains(&format!("route=\"{label}\"")),
+            "the {label} route is labelled rather than folded into other:\n{rendered}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1290,4 +1520,455 @@ async fn user_registry_internal_lookup_returns_the_metadata_boundary() {
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     assert_eq!(json_body(&body)["id"], target.id().to_string());
+}
+
+// ── U7: the settings routes (D0, P1, P2, D1, D2) ───────────────────────────
+
+/// A stored record in an explicit lifecycle state. `deleted` carries the
+/// anonymised shape the database constraint requires.
+fn user_in(status: UserStatus) -> identity_domain::User {
+    let deleted = status == UserStatus::Deleted;
+    identity_domain::User::from_stored(
+        identity_domain::UserId::generate(),
+        identity_domain::claims::Role::User,
+        status,
+        if deleted {
+            None
+        } else {
+            Some("Test User".to_string())
+        },
+        false,
+        if deleted {
+            None
+        } else {
+            Some("user@example.com".to_string())
+        },
+        false,
+        !deleted,
+        identity_domain::Locale::En,
+        identity_domain::BaseCurrency::parse("USD").unwrap(),
+        identity_domain::TimeZone::parse("UTC").unwrap(),
+        fixed_now(),
+        fixed_now(),
+        deleted.then(fixed_now),
+    )
+}
+
+fn open_request(
+    user_id: identity_domain::UserId,
+    requested_at: chrono::DateTime<chrono::Utc>,
+) -> identity_domain::deletion::DeletionRequest {
+    identity_domain::deletion::DeletionRequest::request(
+        identity_domain::DeletionRequestId::generate(),
+        user_id,
+        requested_at,
+    )
+}
+
+#[tokio::test]
+async fn d0_every_status_is_read_from_the_callers_own_record() {
+    for status in [
+        UserStatus::Pending,
+        UserStatus::Active,
+        UserStatus::Disabled,
+        UserStatus::PendingDeletion,
+        UserStatus::Deleted,
+    ] {
+        let harness = harness();
+        harness.users.seed(user_in(status), USER_SUBJECT);
+
+        let (status_code, _, body) = send_auth(
+            &harness.state,
+            Method::GET,
+            "/v1/me/account-status",
+            Some("user-token"),
+            None,
+        )
+        .await;
+        assert_eq!(
+            status_code,
+            StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&body)
+        );
+        assert_eq!(json_body(&body)["status"], status.as_str());
+        assert_eq!(
+            json_body(&body).as_object().unwrap().len(),
+            1,
+            "D0 answers the status and nothing else"
+        );
+    }
+}
+
+#[tokio::test]
+async fn d0_ignores_any_user_id_in_the_request() {
+    let harness = harness();
+    let other = user_in(UserStatus::Active);
+    harness.users.seed(other.clone(), OTHER_SUBJECT);
+    harness
+        .users
+        .seed(user_in(UserStatus::Disabled), USER_SUBJECT);
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        &format!("/v1/me/account-status?userId={}", other.id()),
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        json_body(&body)["status"],
+        "disabled",
+        "the answer comes from the caller's own record, never from the request"
+    );
+}
+
+#[tokio::test]
+async fn the_settings_reads_without_a_token_are_unauthorized() {
+    let harness = harness();
+    for (method, uri) in [
+        (Method::GET, "/v1/me/account-status"),
+        (Method::GET, "/v1/me/profile"),
+        (Method::PATCH, "/v1/me/profile"),
+        (Method::GET, "/v1/me/deletion-request"),
+        (Method::DELETE, "/v1/me/deletion-request"),
+    ] {
+        let (status, _, body) = send_auth(&harness.state, method.clone(), uri, None, None).await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "{method} {uri}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+}
+
+#[tokio::test]
+async fn p1_the_profile_read_returns_the_exact_field_set() {
+    let harness = harness();
+    let user = user_in(UserStatus::Active);
+    harness.users.seed(user.clone(), USER_SUBJECT);
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/me/profile",
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let body = json_body(&body);
+    let mut keys: Vec<&str> = body
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "displayName",
+            "displayNameOverridden",
+            "email",
+            "emailVerified",
+            "providerDisplayName",
+            "status",
+            "userId",
+        ]
+    );
+    assert_eq!(body["userId"], user.id().to_string());
+    assert_eq!(body["displayName"], "Test User");
+    assert_eq!(body["displayNameOverridden"], false);
+    assert_eq!(body["providerDisplayName"], "Test User");
+    assert_eq!(body["email"], "user@example.com");
+    assert_eq!(body["emailVerified"], true);
+    assert_eq!(body["status"], "active");
+}
+
+#[tokio::test]
+async fn p1_an_unavailable_store_is_a_problem_503() {
+    let harness = harness();
+    harness
+        .users
+        .fail_next(identity_application::ports::RepositoryError::Unavailable(
+            "database timed out".to_string(),
+        ));
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::GET,
+        "/v1/me/profile",
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        json_body(&body)["type"],
+        "https://errors.cpb/identity/unavailable"
+    );
+}
+
+#[tokio::test]
+async fn p2_a_display_name_save_returns_the_profile_shape() {
+    let harness = harness();
+    let user = user_in(UserStatus::Active);
+    harness.users.seed(user.clone(), USER_SUBJECT);
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::PATCH,
+        "/v1/me/profile",
+        Some("user-token"),
+        Some(json!({ "displayName": "  Mai Anh  " })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let body = json_body(&body);
+    assert_eq!(body["displayName"], "Mai Anh");
+    assert_eq!(body["displayNameOverridden"], true);
+    assert_eq!(body["providerDisplayName"], "Test User");
+    assert_eq!(body["userId"], user.id().to_string());
+    assert_eq!(
+        harness.users.get(user.id()).unwrap().display_name(),
+        Some("Mai Anh")
+    );
+}
+
+#[tokio::test]
+async fn p2_both_or_neither_selector_is_422_and_an_invalid_name_names_display_name() {
+    let harness = harness();
+    harness
+        .users
+        .seed(user_in(UserStatus::Active), USER_SUBJECT);
+
+    for body in [
+        json!({ "displayName": "Mai Anh", "useProviderName": true }),
+        json!({}),
+        json!({ "useProviderName": false }),
+    ] {
+        let (status, _, response) = send_auth(
+            &harness.state,
+            Method::PATCH,
+            "/v1/me/profile",
+            Some("user-token"),
+            Some(body.clone()),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}: {}",
+            String::from_utf8_lossy(&response)
+        );
+        assert_eq!(json_body(&response)["status"], 422);
+    }
+
+    let (status, _, response) = send_auth(
+        &harness.state,
+        Method::PATCH,
+        "/v1/me/profile",
+        Some("user-token"),
+        Some(json!({ "displayName": "   " })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    let response = json_body(&response);
+    assert_eq!(response["errors"][0]["field"], "displayName");
+    assert!(
+        response
+            .get("detail")
+            .is_some_and(|detail| detail.is_string()),
+        "the RFC 7807 body still carries its summary"
+    );
+}
+
+#[tokio::test]
+async fn p2_adopting_a_missing_provider_name_is_409() {
+    let harness = harness();
+    harness
+        .users
+        .seed(user_in(UserStatus::Active), USER_SUBJECT);
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::PATCH,
+        "/v1/me/profile",
+        Some("nameless-token"),
+        Some(json!({ "useProviderName": true })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    assert_eq!(
+        json_body(&body)["type"],
+        "https://errors.cpb/identity/conflict"
+    );
+
+    let (status, _, body) = send_auth(
+        &harness.state,
+        Method::PATCH,
+        "/v1/me/profile",
+        Some("user-token"),
+        Some(json!({ "useProviderName": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(json_body(&body)["displayNameOverridden"], false);
+}
+
+#[tokio::test]
+async fn d1_the_open_request_is_returned_and_an_empty_answer_is_the_pinned_no_record() {
+    let open_harness = harness();
+    let user = user_in(UserStatus::PendingDeletion);
+    open_harness.users.seed(user.clone(), USER_SUBJECT);
+    let request = open_request(user.id(), fixed_now());
+    open_harness.deletions.insert(&request).await.unwrap();
+
+    let (status, _, body) = send_auth(
+        &open_harness.state,
+        Method::GET,
+        "/v1/me/deletion-request",
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let body = json_body(&body);
+    assert_eq!(body["deletionId"], request.id().to_string());
+    assert_eq!(body["status"], "requested");
+
+    let restored = harness();
+    restored
+        .users
+        .seed(user_in(UserStatus::Active), USER_SUBJECT);
+    let (status, headers, body) = send_auth(
+        &restored.state,
+        Method::GET,
+        "/v1/me/deletion-request",
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        headers.get(header::CONTENT_TYPE).unwrap(),
+        "application/problem+json"
+    );
+    assert_eq!(
+        json_body(&body)["type"],
+        "https://crypto-pocket-butler.example/problems/no-record",
+        "the pinned type is what tells the SPA 'no record' from any other 404"
+    );
+}
+
+#[tokio::test]
+async fn d2_the_cancel_answers_200_then_409_and_410() {
+    // 200: the account is pending deletion and the request is open.
+    let open_harness = harness();
+    let user = user_in(UserStatus::PendingDeletion);
+    open_harness.users.seed(user.clone(), USER_SUBJECT);
+    let request = open_request(user.id(), fixed_now());
+    open_harness.deletions.insert(&request).await.unwrap();
+
+    let (status, _, body) = send_auth(
+        &open_harness.state,
+        Method::DELETE,
+        "/v1/me/deletion-request",
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    assert!(json_body(&body)["cancelledAt"].is_string());
+    assert_eq!(
+        open_harness.users.get(user.id()).unwrap().status(),
+        UserStatus::Active
+    );
+
+    // 409: nothing is open.
+    let empty = harness();
+    empty.users.seed(user_in(UserStatus::Active), USER_SUBJECT);
+    let (status, _, _) = send_auth(
+        &empty.state,
+        Method::DELETE,
+        "/v1/me/deletion-request",
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // 410: the recovery window has closed.
+    let closed = harness();
+    let stale = user_in(UserStatus::PendingDeletion);
+    closed.users.seed(stale.clone(), USER_SUBJECT);
+    let old = open_request(stale.id(), fixed_now() - chrono::Duration::days(31));
+    closed.deletions.insert(&old).await.unwrap();
+    let (status, _, body) = send_auth(
+        &closed.state,
+        Method::DELETE,
+        "/v1/me/deletion-request",
+        Some("user-token"),
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::GONE,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    assert_eq!(json_body(&body)["status"], 410);
+}
+
+#[tokio::test]
+async fn the_settings_paths_are_labelled_routes_not_other() {
+    let harness = harness();
+    let user = user_in(UserStatus::Active);
+    harness.users.seed(user.clone(), USER_SUBJECT);
+
+    let calls = [
+        (Method::GET, "/v1/me/account-status"),
+        (Method::GET, "/v1/me/profile"),
+        (Method::PATCH, "/v1/me/profile"),
+        (Method::GET, "/v1/me/deletion-request"),
+        (Method::DELETE, "/v1/me/deletion-request"),
+        (Method::POST, "/v1/privacy/deletions"),
+    ];
+    for (method, uri) in calls {
+        let body = match (method.clone(), uri) {
+            (Method::PATCH, _) => Some(json!({ "displayName": "Mai Anh" })),
+            _ => None,
+        };
+        send_auth(
+            &harness.state,
+            method.clone(),
+            uri,
+            Some("user-token"),
+            body,
+        )
+        .await;
+    }
+
+    let rendered = harness.state.metrics.render("identity-api");
+    for label in [
+        "me.account-status",
+        "me.profile",
+        "me.deletion.request",
+        "privacy.deletions",
+    ] {
+        assert!(
+            rendered.contains(&format!("route=\"{label}\"")),
+            "the {label} route is labelled rather than folded into other:\n{rendered}"
+        );
+    }
 }

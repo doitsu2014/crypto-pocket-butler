@@ -1,5 +1,8 @@
 //! Route handlers. Every refusal is an RFC 7807 problem carrying the correlation
 //! id; a validation refusal names the field paths and never the values.
+//!
+//! `support_metadata` is the internal Identity-only path that serves the closed
+//! account projection for a support grant (BR3.9, contract C1/C2).
 
 use account_application::common::{AppError, Caller, FieldError, ServiceCaller};
 use account_application::ports::{ExchangeCredentials, RegisteredService};
@@ -18,7 +21,7 @@ use serde_json::json;
 use crate::dto::{
     AccountResponse, AddExchangeRequest, AddWalletConnectRequest, AddWalletRequest,
     AnonymiseRequest, AnonymiseResponse, HoldingDto, ImportAcceptedResponse, PrivacyExportResponse,
-    ResyncResponse, RunRequest, RunResultResponse, TransactionDto,
+    ResyncResponse, RunRequest, RunResultResponse, SupportMetadataResponse, TransactionDto,
 };
 use crate::middleware::{CorrelationId, ServicePrincipal, ValidatedClaims};
 use crate::problem::{from_app_error, validation, ProblemDetails};
@@ -359,6 +362,27 @@ pub async fn privacy_export(
     let caller = service_caller(&principal, &correlation.0);
     match state.privacy.export(&caller, user_id).await {
         Ok(export) => Json(PrivacyExportResponse::from(export)).into_response(),
+        Err(error) => app_error(error, &correlation.0),
+    }
+}
+
+/// C1/C2: Identity reads one user's allowlisted account projection for a
+/// support grant (BR3.9). Only the Identity service carrying `support_metadata`
+/// may call it; a missing user answers an empty projection rather than leaking
+/// existence.
+pub async fn support_metadata(
+    State(state): State<AppState>,
+    Extension(correlation): Extension<CorrelationId>,
+    Extension(ServicePrincipal(principal)): Extension<ServicePrincipal>,
+    Path(user_id): Path<String>,
+) -> Response {
+    let user_id = match parse_user_id(&user_id) {
+        Ok(id) => id,
+        Err(error) => return validation(&correlation.0, vec![error]).into_response(),
+    };
+    let caller = service_caller(&principal, &correlation.0);
+    match state.accounts.support_metadata(&caller, user_id).await {
+        Ok(accounts) => Json(SupportMetadataResponse::from(accounts)).into_response(),
         Err(error) => app_error(error, &correlation.0),
     }
 }

@@ -1,6 +1,10 @@
 //! Request and response DTOs. They live only at the HTTP boundary and map to and
 //! from domain and application types here; no DTO type reaches inward.
+//!
+//! `SupportMetadataResponse` carries the closed allowlist Identity reads for a
+//! support grant (BR3.9).
 
+use account_application::accounts::SupportAccountSummary;
 use account_application::holdings::AccountHoldings;
 use account_application::privacy::PrivacyExport;
 use account_domain::{Account, HoldingSnapshot, ImportedTransaction, SyncRun, WalletConnection};
@@ -312,6 +316,47 @@ pub struct AnonymiseResponse {
     pub retained_categories: Vec<String>,
     /// Whether an earlier request already applied it.
     pub already_applied: bool,
+}
+
+/// `GET /v1/internal/support-metadata/{userId}` response (BR3.9).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportMetadataResponse {
+    /// The allowlisted account summaries.
+    pub accounts: Vec<SupportAccountDto>,
+}
+
+/// One allowlisted account summary.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportAccountDto {
+    /// The account identifier.
+    pub id: String,
+    /// The account label.
+    pub label: String,
+    /// `exchange`, `wallet`, `walletconnect`, or `csv`.
+    pub source_type: String,
+    /// `active`, `syncing`, `error`, or `disconnected`.
+    pub sync_status: String,
+    /// When the account last synced; `null` when it never has.
+    pub last_synced_at: Option<DateTime<Utc>>,
+}
+
+impl From<Vec<SupportAccountSummary>> for SupportMetadataResponse {
+    fn from(accounts: Vec<SupportAccountSummary>) -> Self {
+        Self {
+            accounts: accounts
+                .iter()
+                .map(|account| SupportAccountDto {
+                    id: account.id.to_string(),
+                    label: account.label.clone(),
+                    source_type: account.source_type.clone(),
+                    sync_status: account.sync_status.clone(),
+                    last_synced_at: account.last_synced_at,
+                })
+                .collect(),
+        }
+    }
 }
 
 /// `POST /v1/internal/run/account-sync` body.

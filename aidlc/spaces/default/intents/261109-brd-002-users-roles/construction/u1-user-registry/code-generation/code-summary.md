@@ -83,6 +83,78 @@ in-process.
 - `IDENTITY_URL` added to the gateway configuration (local compose and
   `.env.example`).
 
+## Loop-back repair (Build and Test, 2026-11-12)
+
+Build and Test reopened this Unit for a stale seam test (F2a) and crate coverage (F6).
+Steps 1–18 are unchanged; the repair is steps 19–22 of the plan.
+
+### F2a — the seam test now matches the erasure guard
+
+`a_user_is_found_by_the_hashed_subject_and_the_subject_is_protected_at_rest` stored an
+**active** user and then called `anonymise`, which U5's erasure guard deliberately refuses
+(`WHERE status IN ('pending_deletion','deleted')`). The guard is the intended contract and
+was not changed. The test now:
+
+- asserts the refusal deliberately in a new case,
+  `the_erasure_guard_refuses_an_account_that_is_not_pending_deletion` — a `Conflict`, the
+  record still resolves, and the protected subject still reveals;
+- drives the stored user to `pending_deletion` through `User::transition` plus
+  `UserRepository::update` before erasing, so the at-rest assertions run on a leg the guard
+  permits, and their substance is unchanged;
+- asserts the tombstone contract instead of a stale "the subject is gone": after erasure
+  `find_by_auth_subject` still answers the pseudonymous hash (BR5.8) with the `deleted`
+  record and no personal fields, and `reveal_auth_subject` returns `None`.
+
+Red: the suite failed at `users.anonymise(&user)` with
+`Conflict("the account is no longer pending deletion; the erasure was refused")` — the F2a
+evidence from Build and Test, reproduced locally. Green:
+`cargo test -p identity --test repositories -- --ignored --test-threads=1 a_user_is_found the_erasure_guard_refuses`
+— 2 passed, 32 filtered out.
+
+### F6 — adapter coverage
+
+New `#[ignore]` cases in `services/identity/tests/repositories.rs`, all against the
+disposable Postgres image:
+
+- `user_registry_reveal_auth_subject_is_none_for_an_unknown_user`;
+- `shredding_keys_active_for_user_returns_the_live_reference_and_destroy_refuses_an_unknown_key`
+  (none → create → active → destroy an unknown key is a `Conflict` → the live key is still
+  active);
+- `user_registry_lists_only_active_users_for_the_due_sweep` (two active, one pending;
+  limit/offset paging; an offset past the end is empty);
+- `user_registry_a_second_insert_of_the_same_user_conflicts_and_leaves_one_record`;
+- `user_registry_queries_report_an_unavailable_store` (the schema is dropped underneath the
+  pool, so every read and write maps to `RepositoryError::Unavailable`).
+
+The collision case was extended: the retry is still refused, `SELECT count(*) FROM users`
+is 1, and the stored status is `active` — the fail-closed path creates nothing.
+
+These cases were written against the existing adapters, which did not change; their "Red" is
+the F6 shortfall itself (the branches were unexecuted). Green:
+`TEST_DATABASE_URL=… cargo test -p identity --test repositories -- --ignored --test-threads=1`
+— 35 passed, 1 failed (only the out-of-scope F2b case), 3 filtered out.
+
+### F6 — composition-root coverage
+
+`services/identity/src/` was 0.00 % because nothing could reach it without a database, a
+listener and a signal. It now has testable entry points:
+
+- `ApiConfig::from_lookup` / `WorkerConfig::from_lookup` take an injected environment
+  lookup; `from_env` reads the process environment. `#[cfg(test)]` cases in `config.rs`
+  cover the happy paths and defaults, the zero drainer interval, a bad port, a missing
+  required variable, a missing retention DSN, CSV trimming, secret files (trimmed, empty,
+  plain fallback, absent), `file_or` and `optional_secret`.
+- `lib.rs` re-exports `identity_http::routes::router`, so router and middleware assembly is
+  reachable from the crate; `write_heartbeat` takes its path, so the write and the failure
+  branch are exercisable.
+- `run_worker`'s wiring moved into `pub async fn build_worker_runtime`, leaving `run_worker`
+  to build, bind and serve.
+- New `services/identity/tests/composition.rs`: the probes and security headers, a failed
+  readiness probe as a `problem+json` 503, the fallback plus its metric, the heartbeat, and
+  — `#[ignore]`d — `build_api_state` (health 200, readiness 503 on an un-migrated schema),
+  its two registry refusals, and `build_worker_runtime` (port carried, worker readiness
+  not-ready on an un-migrated schema).
+
 ## How to run
 
 ```bash
@@ -94,6 +166,14 @@ bash scripts/check-boundaries.sh
 # Disposable Postgres (pgsodium required by the adapter suites):
 TEST_DATABASE_URL=postgres://… cargo test -p identity --test repositories -- --ignored
 DATABASE_URL='postgres://…?options=-csearch_path%3Didentity' cargo run -p identity --bin identity-migrate
+```
+
+Composition root (the loop-back repair):
+
+```bash
+cargo test -p identity --lib                       # configuration parsing
+cargo test -p identity --test composition          # router, probes, heartbeat
+TEST_DATABASE_URL=postgres://… cargo test -p identity --test composition -- --ignored
 ```
 
 Unit-scoped commands: `cargo test -p identity --test domain user_registry`,
@@ -111,13 +191,36 @@ Unit-scoped commands: `cargo test -p identity --test domain user_registry`,
 
 ## Coverage (honest report)
 
-`cargo llvm-cov` over the identity crates reports 58.39% overall (64.53% lines).
-The target is 80% per
-crate. The shortfall is dominated by the adapter and binary crates, whose
-coverage only accrues when the `#[ignore]` suites run against Postgres; the
-domain/application/http paths added here are covered by the non-ignored suites.
-The frontends are untouched and were already below no configured TypeScript
-threshold.
+Measured after the loop-back repair with
+`TEST_DATABASE_URL=… cargo llvm-cov -p identity -p identity-infrastructure --ignore-run-fail --json --output-path target/coverage-loopback.json -- --include-ignored --test-threads=1`.
+Line coverage per crate, before and after:
+
+| Crate | Before (Build and Test) | After the repair |
+|---|---|---|
+| `identity-infrastructure` | 1 417 / 2 642 = 53.63 % | 1 716 / 2 642 = **64.95 %** |
+| `identity` (composition root) | 0 / 535 = 0.00 % | 623 / 703 = **88.62 %** |
+
+The composition root now clears the 80 % floor; its 67 remaining uncovered lines are the
+body of `run` after state construction, the listener/service tail of `run_worker`, and the
+supervisor's shutdown-signal wait — all of which need a real listener and a signal.
+
+`identity-infrastructure` does not clear the floor, and this repair does not lower it. Its
+926 uncovered lines concentrate in adapters this Unit did not add, whose cases belong to
+the units that own them (support adapters, lifecycle transitions, JWT validation,
+contributors, deletions, storage):
+
+| File | Uncovered lines |
+|---|---|
+| `infrastructure/src/auth.rs` | 134 |
+| `infrastructure/src/support/drainer.rs` | 90 |
+| `infrastructure/src/support/sources.rs` | 89 |
+| `infrastructure/src/repositories/status_transitions.rs` | 82 |
+| `infrastructure/src/contributors.rs` | 54 |
+| `infrastructure/src/support/observation.rs` | 42 |
+| `infrastructure/src/repositories/deletions.rs` | 42 |
+
+u1's own `repositories/users.rs` and `repositories/keys.rs` error and retry branches are now
+exercised. The frontends are untouched and have no configured TypeScript threshold.
 
 ## Known gaps / issues
 
@@ -132,7 +235,9 @@ threshold.
   derivable after `destroy_shredding_key` deletes its row, so the "destroyed
   key no longer decrypts" assertion does not hold in that image. The same
   sequence repros outside the repository, so this is environmental, not a
-  regression. Worth confirming on the production Postgres.
+  regression. Worth confirming on the production Postgres. **The loop-back
+  repair left this test untouched (F2b is out of scope); it is the only failure
+  in the ignored adapter suite.**
 - The public principal route requires a self-declared country (`x-country-code`)
   and the observed client address (`x-client-ip`); the sign-up UI (U8) must send
   them. Until then a first authentication without them is a 422 by design

@@ -101,3 +101,39 @@ personal data; IP values are documentation ranges (`192.0.2.0/24`, `198.51.100.0
   and the maintained list remain the primary control, as the security design records.
 - U1 must pass the gateway-derived `x-client-ip` value in the C8 body; that consumer code is not
   part of this unit.
+
+## Loop-back 1 repair — F7 traceability evidence (2026-11-12)
+
+Build and Test reopened this Unit for F7 only. No production code, test, or migration changed;
+this repair corrects the Code Generation evidence file so the traceability sensor can resolve it.
+
+- Added coverage rows for AC6.4.1 (a refused gate stores nothing) and AC6.4.2 (the refusal is
+  audited). Both target `services/identity/application/src/principal.rs`, where
+  `Principal::provision` resolves the gate before any user row, profile override, or shredding
+  key is written. The cited tests are
+  `services/identity/tests/application.rs::user_registry_gate_denial_refuses_provisioning_and_stores_nothing`
+  (asserts `users.len() == 0` and the `identity.user.provision_denied` audit action) and
+  `user_registry_gate_unavailable_is_a_retryable_refusal` (the fail-closed path).
+- Rewrote NFR23.1–NFR23.3 `path::symbol` targets as bare workspace-relative file paths, keeping
+  each symbol in the entry's `note`; added the missing NFR23.4 fail-closed row. All five cited
+  test names were verified present in `services/identity/tests/application.rs`; their spellings
+  match the brief exactly, so no correction was needed.
+- The sensor also requires an `OK` row's `target` to be one existing workspace-relative file, so
+  each row carries a `target` (the primary file) with the remaining files and symbols in its
+  `note`.
+
+Final run of `aidlc engine sensor-traceability --stage build-and-test` (executed as a command of
+its own). The `u6-jurisdiction-gate` lines, verbatim:
+
+```
+{"id":"FR19.4","covered":true,"through":["AC6.4.1","AC6.4.2"]}
+{"id":"NFR23","covered":true,"through":["u1-user-registry: NFR23.1","u1-user-registry: NFR23.2","u10-admin-users-ui: NFR23.1","u2-authorisation: NFR23.1","u2-authorisation: NFR23.2","u3-support-access: NFR23.1","u3-support-access: NFR23.2","u3-support-access: NFR23.3","u4-preferences-consent: NFR23.1","u4-preferences-consent: NFR23.2","u5-account-lifecycle: NFR23.1","u5-account-lifecycle: NFR23.2","u6-jurisdiction-gate: NFR23.1","u6-jurisdiction-gate: NFR23.2","u6-jurisdiction-gate: NFR23.3","u6-jurisdiction-gate: NFR23.4","u9-support-console-ui: NFR23.1"]}
+{"id":"AC6.4.1","covered":true,"built_in":["u6-jurisdiction-gate: services/identity/application/src/principal.rs"]}
+{"id":"AC6.4.2","covered":true,"built_in":["u6-jurisdiction-gate: services/identity/application/src/principal.rs"]}
+```
+
+The run has no `reason` field: the earlier NFR23.1–NFR23.4 target errors are gone. Its
+`uncovered` list is `["FR17.4","FR18.1","FR18.2","FR18.3","NFR26","AC4.4.2","AC5.1.1","AC5.1.2","AC5.2.1","AC5.2.2","AC5.3.1","AC5.3.2","AC8.1.1"]`,
+none of which belongs to `u6-jurisdiction-gate`; `AC6.4.1` and `AC6.4.2` no longer appear there.
+The overall `pass` stays `false` for those other Units' gaps, which this repair does not touch or
+weaken.

@@ -17,6 +17,7 @@
 
     { "path": "services/identity/Cargo.toml" },
     { "path": "services/identity/Dockerfile.migrate" },
+    { "path": "services/identity/src/config.rs" },
     { "path": "services/identity/src/lib.rs" },
     { "path": "services/identity/src/bin/migrate.rs" },
     { "path": "services/identity/migrations/0004_user_registry_extensions.up.sql" },
@@ -49,6 +50,7 @@
     { "path": "services/identity/tests/application.rs" },
     { "path": "services/identity/tests/common/fakes.rs" },
     { "path": "services/identity/tests/common/mod.rs" },
+    { "path": "services/identity/tests/composition.rs" },
     { "path": "services/identity/tests/domain.rs" },
     { "path": "services/identity/tests/http.rs" },
     { "path": "services/identity/tests/repositories.rs" }

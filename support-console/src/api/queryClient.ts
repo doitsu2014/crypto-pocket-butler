@@ -26,6 +26,15 @@ export function clearSupportCache(client: QueryClient): void {
   client.clear();
 }
 
+/**
+ * Drops only the `["support", …]` entries. A support-route 403 ends support
+ * access; it must not throw away unrelated admin state the same session holds.
+ */
+export function clearSupportQueries(client: QueryClient): void {
+  void client.cancelQueries({ queryKey: ["support"] });
+  client.removeQueries({ queryKey: ["support"] });
+}
+
 export function isForbiddenError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 403;
 }

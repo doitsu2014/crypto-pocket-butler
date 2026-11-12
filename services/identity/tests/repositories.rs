@@ -13,9 +13,9 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use identity_application::authorisation::ports::StatusReader;
 use identity_application::jurisdiction::ListRepository;
 use identity_application::ports::{
-    ConsentRepository, DeletionRepository, DeviceSessionRepository, ExportRepository,
-    JurisdictionRepository, RepositoryError, ShreddingKeyRepository, SupportGrantRepository,
-    UserRepository,
+    ConsentRepository, DeletionRepository, DeviceSessionRepository, DueUserRepository,
+    ExportRepository, JurisdictionRepository, RepositoryError, ShreddingKeyRepository,
+    SupportGrantRepository, UserRepository,
 };
 use identity_domain::claims::{AssuranceLevel, Role, VerifiedClaims};
 use identity_domain::consent::{ConsentPurpose, ConsentRecord, ConsentSource};
@@ -30,6 +30,7 @@ use identity_domain::jurisdiction::{
 use identity_domain::session::DeviceSession;
 use identity_domain::support::{SupportAccessGrant, SupportGrantStatus};
 use identity_domain::user::{User, UserStatus};
+use identity_domain::{ShreddingKey, ShreddingKeyId, ShreddingKeyStatus};
 use identity_infrastructure::authorisation::status::StatusReaderLocal;
 use identity_infrastructure::authorisation::status_cache::StatusCache;
 use identity_infrastructure::repositories::{
@@ -80,7 +81,7 @@ async fn stored_user(
 #[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
 async fn a_user_is_found_by_the_hashed_subject_and_the_subject_is_protected_at_rest() {
     let (pool, schema) = common::test_pool().await;
-    let (users, user, _key, id) = stored_user(&pool).await;
+    let (users, mut user, _key, id) = stored_user(&pool).await;
 
     let found = users
         .find_by_auth_subject(&claims().subject)
@@ -112,16 +113,62 @@ async fn a_user_is_found_by_the_hashed_subject_and_the_subject_is_protected_at_r
         "unprotect returns the subject for the Auth admin delete"
     );
 
+    // Erasure accepts only an account the lifecycle moved to `pending_deletion`
+    // (U5). Drive the stored user through the guarded edge, then assert the
+    // at-rest protection survives the erasure itself.
+    user.transition(UserStatus::PendingDeletion, at(10))
+        .unwrap();
+    users.update(&user).await.unwrap();
+
+    user.anonymise(at(11));
     users.anonymise(&user).await.unwrap();
+    // The erased record keeps its pseudonymous hash (BR5.8): a still-valid
+    // token resolves to the `deleted` tombstone and is denied, rather than
+    // being treated as an unknown subject and provisioned anew. What erasure
+    // removes is the personal data and the encrypted subject, not the fact
+    // that this subject once had an account.
+    let erased = users
+        .find_by_auth_subject(&claims().subject)
+        .await
+        .unwrap()
+        .expect("the erased tombstone still answers its old subject");
+    assert_eq!(erased.id(), id);
+    assert_eq!(erased.status(), UserStatus::Deleted);
+    assert_eq!(erased.email(), None, "the personal fields are erased");
+    assert_eq!(users.reveal_auth_subject(id).await.unwrap(), None);
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn the_erasure_guard_refuses_an_account_that_is_not_pending_deletion() {
+    let (pool, schema) = common::test_pool().await;
+    let (users, user, _key, id) = stored_user(&pool).await;
+    assert_eq!(user.status(), UserStatus::Active);
+
+    let error = users
+        .anonymise(&user)
+        .await
+        .expect_err("an active account is not pending deletion, so the erasure is refused");
+    assert!(
+        matches!(error, RepositoryError::Conflict(_)),
+        "the guard refuses with a conflict, got {error:?}"
+    );
+
     assert!(
         users
             .find_by_auth_subject(&claims().subject)
             .await
             .unwrap()
-            .is_none(),
-        "an anonymised user is no longer resolvable by its old subject"
+            .is_some(),
+        "the refused erasure leaves the record addressable"
     );
-    assert_eq!(users.reveal_auth_subject(id).await.unwrap(), None);
+    assert_eq!(
+        users.reveal_auth_subject(id).await.unwrap().as_deref(),
+        Some(claims().subject.as_str()),
+        "the refused erasure leaves the protected subject intact"
+    );
 
     common::drop_schema(&schema).await;
 }
@@ -229,7 +276,7 @@ async fn a_support_grant_round_trips_and_reads_as_expired_after_its_window() {
         target,
         UserId::generate(),
         "investigate a reported sync failure",
-        at(9),
+        at(9) + Duration::minutes(1),
     )
     .unwrap();
     grants.insert(&grant).await.unwrap();
@@ -736,6 +783,25 @@ async fn user_registry_a_hash_collision_is_refused_without_returning_the_record(
         "the refusal is a validation error, got {error:?}"
     );
 
+    // The refusal is stable and leaves the record untouched: a retry does not
+    // start returning the record the presented subject does not own, and no
+    // second user was created for it.
+    assert!(
+        users.find_by_auth_subject(other_subject).await.is_err(),
+        "a retry is refused the same way"
+    );
+    let users_count: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(users_count, 1, "the collision creates no record");
+    let stored_status: String = sqlx::query_scalar("SELECT status FROM users WHERE id = $1")
+        .bind(user.id().as_uuid())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored_status, "active", "the original record is untouched");
+
     common::drop_schema(&schema).await;
 }
 
@@ -773,8 +839,14 @@ async fn user_registry_migration_closes_the_status_set_and_the_down_maps_new_sta
     .await;
     assert!(unknown.is_err(), "a status outside the set is refused");
 
-    // 0006 and 0005 are newer than 0004, so the first two rollbacks revert
-    // them; the third is the 0004 down this test exercises.
+    // 0008, 0007, 0006 and 0005 are newer than 0004, so the first four
+    // rollbacks revert them; the fifth is the 0004 down this test exercises.
+    identity_infrastructure::migrations::revert(&pool)
+        .await
+        .expect("the 0008 down migration applies");
+    identity_infrastructure::migrations::revert(&pool)
+        .await
+        .expect("the 0007 down migration applies");
     identity_infrastructure::migrations::revert(&pool)
         .await
         .expect("the 0006 down migration applies");
@@ -802,6 +874,198 @@ async fn user_registry_migration_closes_the_status_set_and_the_down_maps_new_sta
     assert_eq!(columns, 0, "the down migration removes the new columns");
 
     common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn user_registry_reveal_auth_subject_is_none_for_an_unknown_user() {
+    let (pool, schema) = common::test_pool().await;
+    let users = PgUserRepository::new(pool.clone());
+    let unknown = UserId::generate();
+
+    assert_eq!(
+        users.reveal_auth_subject(unknown).await.unwrap(),
+        None,
+        "an unknown user has no personal row to decrypt"
+    );
+    assert!(
+        users.find_by_id(unknown).await.unwrap().is_none(),
+        "an unknown id is a `None`, never an error"
+    );
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn shredding_keys_active_for_user_returns_the_live_reference_and_destroy_refuses_an_unknown_key(
+) {
+    let (pool, schema) = common::test_pool().await;
+    let keys = PgShreddingKeyRepository::new(pool.clone());
+    let user_id = UserId::generate();
+
+    assert!(
+        keys.active_for_user(user_id).await.unwrap().is_none(),
+        "a user without a key is a `None`, never an error"
+    );
+    let key = keys.create_for_user(user_id, at(9)).await.unwrap();
+    let active = keys
+        .active_for_user(user_id)
+        .await
+        .unwrap()
+        .expect("the created key is the active one");
+    assert_eq!(active.id(), key.id());
+    assert_eq!(active.user_id(), user_id);
+
+    let error = keys
+        .destroy(ShreddingKeyId::generate(), at(10))
+        .await
+        .expect_err("destroying an unknown key is refused");
+    assert!(
+        matches!(error, RepositoryError::Conflict(_)),
+        "the refusal is a conflict, got {error:?}"
+    );
+    assert!(
+        keys.active_for_user(user_id).await.unwrap().is_some(),
+        "the refused destroy leaves the live key in place"
+    );
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn user_registry_lists_only_active_users_for_the_due_sweep() {
+    let (pool, schema) = common::test_pool().await;
+    let (users, _active, _key, active_id) = stored_user(&pool).await;
+
+    let other_claims = VerifiedClaims {
+        subject: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".to_string(),
+        email: Some("other@example.com".to_string()),
+        ..claims()
+    };
+    let other = User::provision(UserId::generate(), &other_claims, at(9));
+    users
+        .provision(&other, &other_claims.subject, at(9))
+        .await
+        .unwrap();
+
+    // An unconfirmed provider email starts `pending`; the due sweep must skip it.
+    let pending_claims = VerifiedClaims {
+        subject: "cccccccc-cccc-4ccc-8ccc-cccccccccccc".to_string(),
+        email_confirmed: false,
+        ..claims()
+    };
+    let pending = User::provision(UserId::generate(), &pending_claims, at(9));
+    users
+        .provision(&pending, &pending_claims.subject, at(9))
+        .await
+        .unwrap();
+
+    let listed = users.list_active(10, 0).await.unwrap();
+    let ids: Vec<UserId> = listed.iter().map(|candidate| candidate.user_id).collect();
+    assert_eq!(ids.len(), 2, "only the two active users are due");
+    assert!(ids.contains(&active_id));
+    assert!(ids.contains(&other.id()));
+
+    let first = users.list_active(1, 0).await.unwrap();
+    let second = users.list_active(1, 1).await.unwrap();
+    assert_eq!(first.len(), 1);
+    assert_eq!(second.len(), 1);
+    assert_ne!(
+        first[0].user_id, second[0].user_id,
+        "the pages are ordered by id and do not repeat a row"
+    );
+    assert!(
+        users.list_active(10, 2).await.unwrap().is_empty(),
+        "an offset past the end is empty"
+    );
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn user_registry_a_second_insert_of_the_same_user_conflicts_and_leaves_one_record() {
+    let (pool, schema) = common::test_pool().await;
+    let (users, user, key, _id) = stored_user(&pool).await;
+
+    let error = users
+        .insert(&user, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", &key)
+        .await
+        .expect_err("a user id is inserted once");
+    assert!(
+        matches!(error, RepositoryError::Conflict(_)),
+        "the duplicate id is a conflict, got {error:?}"
+    );
+
+    let counts: (i64, i64) =
+        sqlx::query_as("SELECT (SELECT count(*) FROM users), (SELECT count(*) FROM user_personal)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(counts, (1, 1), "the failed insert leaves no partial row");
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn user_registry_queries_report_an_unavailable_store() {
+    let (pool, schema) = common::test_pool().await;
+    let users = PgUserRepository::new(pool.clone());
+    let keys = PgShreddingKeyRepository::new(pool.clone());
+    let user = User::provision(UserId::generate(), &claims(), at(9));
+    let key = ShreddingKey::from_stored(
+        ShreddingKeyId::generate(),
+        user.id(),
+        format!("identity/user/{}", user.id()),
+        1,
+        ShreddingKeyStatus::Active,
+        at(9),
+        None,
+    );
+
+    // Drop the schema out from under the pool: every query now fails at the
+    // database boundary and must surface as `Unavailable`, never as a panic or
+    // a silently empty answer.
+    common::drop_schema(&schema).await;
+
+    let errors = vec![
+        users.find_by_id(user.id()).await.unwrap_err(),
+        users
+            .find_by_auth_subject(&claims().subject)
+            .await
+            .unwrap_err(),
+        users
+            .find_by_subject_hash(&"00".repeat(32))
+            .await
+            .unwrap_err(),
+        users.find_by_email("user@example.com").await.unwrap_err(),
+        users.reveal_auth_subject(user.id()).await.unwrap_err(),
+        users.update(&user).await.unwrap_err(),
+        users.anonymise(&user).await.unwrap_err(),
+        users.list_active(10, 0).await.unwrap_err(),
+        users
+            .provision(&user, &claims().subject, at(9))
+            .await
+            .unwrap_err(),
+        users
+            .insert(&user, &claims().subject, &key)
+            .await
+            .unwrap_err(),
+        keys.create_for_user(user.id(), at(9)).await.unwrap_err(),
+        keys.active_for_user(user.id()).await.unwrap_err(),
+        keys.destroy(ShreddingKeyId::generate(), at(9))
+            .await
+            .unwrap_err(),
+    ];
+    for error in errors {
+        assert!(
+            matches!(error, RepositoryError::Unavailable(_)),
+            "a store failure surfaces as unavailable, got {error:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1813,6 +2077,180 @@ async fn consent_outbox_drainer_refuses_a_token_shaped_payload_without_sending_i
         "the drainer refused the delivery before posting"
     );
     handle.abort();
+
+    common::drop_schema(&schema).await;
+}
+
+// ── U7: the settings projections (P1, D0, D1) ──────────────────────────────
+//
+// These three reads are answered by the existing adapter statements. The tests
+// pin the projection each route relies on so a later statement change cannot
+// silently drop a field the settings surface renders.
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn the_self_profile_projection_resolves_by_auth_subject_with_both_flags() {
+    let (pool, schema) = common::test_pool().await;
+    let (users, mut user, _key, id) = stored_user(&pool).await;
+
+    let found = users
+        .find_by_auth_subject(&claims().subject)
+        .await
+        .unwrap()
+        .expect("the stored user resolves by its auth subject");
+    assert_eq!(found.id(), id);
+    assert_eq!(found.display_name(), Some("Test User"));
+    assert!(
+        !found.display_name_overridden(),
+        "a provider-supplied name is not overridden"
+    );
+    assert_eq!(found.email(), Some("user@example.com"));
+    assert!(found.email_verified());
+    assert_eq!(found.status(), UserStatus::Active);
+
+    user.update_profile(Some("  Mai Anh  ".to_string()), None, at(10))
+        .unwrap();
+    users.update(&user).await.unwrap();
+
+    let overridden = users
+        .find_by_auth_subject(&claims().subject)
+        .await
+        .unwrap()
+        .expect("the overridden profile still resolves");
+    assert_eq!(overridden.display_name(), Some("Mai Anh"));
+    assert!(overridden.display_name_overridden());
+    assert_eq!(
+        overridden.email(),
+        Some("user@example.com"),
+        "a display-name write never touches the provider email"
+    );
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn the_open_deletion_read_returns_only_an_uncancelled_unerased_request() {
+    let (pool, schema) = common::test_pool().await;
+    let (_users, _user, _key, id) = stored_user(&pool).await;
+    let deletions = PgDeletionRepository::new(pool.clone());
+
+    assert!(
+        deletions.find_active_for_user(id).await.unwrap().is_none(),
+        "no request is a `None`, never an error"
+    );
+
+    let mut request = DeletionRequest::request(DeletionRequestId::generate(), id, at(9));
+    deletions.insert(&request).await.unwrap();
+    let open = deletions
+        .find_active_for_user(id)
+        .await
+        .unwrap()
+        .expect("the open request is returned");
+    assert_eq!(open.id(), request.id());
+    assert_eq!(open.status(), DeletionStatus::Requested);
+
+    request.cancel(at(10)).unwrap();
+    deletions.update(&request).await.unwrap();
+    assert!(
+        deletions.find_active_for_user(id).await.unwrap().is_none(),
+        "a cancelled request is history, not the open request"
+    );
+
+    let other = UserId::generate();
+    assert!(
+        deletions
+            .find_active_for_user(other)
+            .await
+            .unwrap()
+            .is_none(),
+        "the read is scoped to one user"
+    );
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn the_account_status_read_answers_every_status_by_auth_subject() {
+    let (pool, schema) = common::test_pool().await;
+    let (users, user, _key, id) = stored_user(&pool).await;
+
+    // `pending` is the transient provisioning state: an unconfirmed provider
+    // email starts the record there.
+    let pending_claims = VerifiedClaims {
+        subject: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".to_string(),
+        email_confirmed: false,
+        ..claims()
+    };
+    let pending = User::provision(UserId::generate(), &pending_claims, at(9));
+    let keys = PgShreddingKeyRepository::new(pool.clone());
+    let pending_key = keys.create_for_user(pending.id(), at(9)).await.unwrap();
+    users
+        .insert(&pending, &pending_claims.subject, &pending_key)
+        .await
+        .unwrap();
+    assert_eq!(
+        users
+            .find_by_auth_subject(&pending_claims.subject)
+            .await
+            .unwrap()
+            .expect("the pending record resolves")
+            .status(),
+        UserStatus::Pending,
+        "a status read answers `pending` too"
+    );
+
+    // Every other status, through the guarded edges from an active record.
+    let mut current = user;
+    let timeline = [
+        (
+            UserStatus::Disabled,
+            "the disabled status is readable by its subject",
+        ),
+        (
+            UserStatus::Active,
+            "the restored status is readable by its subject",
+        ),
+        (
+            UserStatus::PendingDeletion,
+            "the pending-deletion status is readable by its subject",
+        ),
+    ];
+    for (next, message) in timeline {
+        current.transition(next, at(11)).unwrap();
+        users.update(&current).await.unwrap();
+        assert_eq!(
+            users
+                .find_by_auth_subject(&claims().subject)
+                .await
+                .unwrap()
+                .expect(message)
+                .status(),
+            next,
+            "{message}"
+        );
+    }
+
+    // `deleted` is only reachable through the erasure shape: the row keeps its
+    // anonymised marker and drops the personal fields. A status read still
+    // answers it by subject, because the subject hash survives until the Auth
+    // admin delete completes.
+    current.anonymise(at(11));
+    users.update(&current).await.unwrap();
+    assert_eq!(
+        users
+            .find_by_auth_subject(&claims().subject)
+            .await
+            .unwrap()
+            .expect("the deleted status is readable by its subject")
+            .status(),
+        UserStatus::Deleted
+    );
+    assert_eq!(
+        users.find_by_id(id).await.unwrap().unwrap().status(),
+        UserStatus::Deleted
+    );
 
     common::drop_schema(&schema).await;
 }

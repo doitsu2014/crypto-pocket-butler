@@ -223,6 +223,24 @@ impl AccountLifecycleService {
         Ok(request)
     }
 
+    /// The owner's open deletion request (U7 — the recovery surface's read).
+    ///
+    /// The open request is the one whose status is neither cancelled nor
+    /// erased. Read-only: the read neither opens a request nor moves the
+    /// account, and it writes no audit event.
+    ///
+    /// # Errors
+    /// Returns [`AppError::NotFound`] when no request is open — another tab may
+    /// have restored the account or the erasure may have completed — and
+    /// [`AppError::Unavailable`] when the store cannot answer.
+    pub async fn open_deletion(&self, caller: &Caller) -> Result<DeletionRequest, AppError> {
+        self.deletions
+            .find_active_for_user(caller.user_id())
+            .await
+            .map_err(AppError::from_repository)?
+            .ok_or(AppError::NotFound("deletion"))
+    }
+
     /// W3: the owner restores inside the window.
     ///
     /// # Errors

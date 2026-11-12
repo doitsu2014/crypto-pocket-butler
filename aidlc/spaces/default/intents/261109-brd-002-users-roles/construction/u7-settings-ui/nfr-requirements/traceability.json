@@ -1,0 +1,19 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u7-settings-ui",
+  "upstream_ids": ["NFR21", "NFR22", "NFR23", "NFR24", "NFR25", "NFR26"],
+  "coverage": [
+    { "id": "NFR21", "status": "N/A", "target": "audit retention is server-side (Audit service, C9); this unit writes no audit record — its obligation is only never to undermine it: no sensitive identifier leaves the browser and every mutation reaches the service through the gateway (NFR21.1 in security-requirements.md)" },
+    { "id": "NFR22", "status": "OK", "target": "NFR22.1, NFR22.2, NFR22.3, NFR22.4, NFR22.5, NFR22.6" },
+    { "id": "NFR23", "status": "N/A", "target": "UI-only unit: no Postgres schema or role; least privilege at the data layer belongs to the service units, and this unit adds no schema, role, or cross-schema read" },
+    { "id": "NFR24", "status": "OK", "target": "NFR24.1, NFR24.2, NFR24.3, NFR24.4, NFR24.5, NFR24.6, NFR24.7" },
+    { "id": "NFR25", "status": "OK", "target": "NFR25.1, NFR25.2, NFR25.3, NFR25.4, NFR25.5, NFR25.6" },
+    { "id": "NFR26", "status": "OK", "target": "NFR26.1, NFR26.2, NFR26.3" }
+  ],
+  "reverse": [
+    { "id": "NFR2.x", "status": "N/A", "target": "screen response and network budget prefix inherited from the BRD-001 intent requirements record (NFR2.1–NFR2.9 in performance-requirements.md)" },
+    { "id": "NFR9.x", "status": "N/A", "target": "transport and secret protection prefix inherited from the BRD-001 intent requirements record (NFR9.1 in security-requirements.md)" },
+    { "id": "NFR10.x", "status": "N/A", "target": "token and session security prefix inherited from the BRD-001 intent requirements record (NFR10.1–NFR10.3 in security-requirements.md)" },
+    { "id": "NFR11.x", "status": "N/A", "target": "abuse protection prefix inherited from the BRD-001 intent requirements record (NFR11.1–NFR11.2 in security-requirements.md)" }
+  ]
+}

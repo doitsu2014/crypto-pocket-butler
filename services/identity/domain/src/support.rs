@@ -1,4 +1,4 @@
-//! Time-bound, second-approved support access grants (BR4.1–BR4.4).
+//! Time-bound, second-approved support access grants (BR3.1–BR3.8).
 
 use chrono::{DateTime, Duration, Utc};
 
@@ -12,6 +12,8 @@ pub const DEFAULT_GRANT_MINUTES: i64 = 60;
 pub const MAX_GRANT_MINUTES: i64 = 60;
 /// The longest reason the grant stores.
 pub const MAX_REASON_LEN: usize = 500;
+/// How long a request may be approved after it was made (BR3.5).
+pub const APPROVAL_WINDOW_MINUTES: i64 = 60;
 
 /// The grant lifecycle state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -78,10 +80,12 @@ pub struct SupportAccessGrant {
 }
 
 impl SupportAccessGrant {
-    /// Requests a grant (WF7 step 2). The reason must carry information.
+    /// Requests a grant (WF7 step 2). The reason must carry information and the
+    /// target is never the requester (BR3.1, BR3.2).
     ///
     /// # Errors
-    /// Returns [`DomainError`] when the reason is blank or too long.
+    /// Returns [`DomainError`] when the target is the requester, or the reason
+    /// is blank or too long.
     pub fn request(
         id: SupportGrantId,
         user_id: UserId,
@@ -89,6 +93,12 @@ impl SupportAccessGrant {
         reason: &str,
         now: DateTime<Utc>,
     ) -> Result<Self, DomainError> {
+        if user_id == support_agent_id {
+            return Err(DomainError::Invalid {
+                field: "userId",
+                reason: "a support agent cannot request access to their own record".to_string(),
+            });
+        }
         let reason = reason.trim();
         if reason.is_empty() {
             return Err(DomainError::Required { field: "reason" });
@@ -143,6 +153,11 @@ impl SupportAccessGrant {
                 reason: "the requester cannot approve their own grant".to_string(),
             });
         }
+        if self.approval_window_closed(now) {
+            return Err(DomainError::Conflict {
+                reason: "the request expired before it was approved".to_string(),
+            });
+        }
         let minutes = window.num_minutes();
         if minutes <= 0 || minutes > MAX_GRANT_MINUTES {
             return Err(DomainError::Invalid {
@@ -174,10 +189,22 @@ impl SupportAccessGrant {
         Ok(())
     }
 
+    /// Whether a still-pending request has passed the hour it may be approved in
+    /// (BR3.5).
+    #[must_use]
+    pub fn approval_window_closed(&self, now: DateTime<Utc>) -> bool {
+        self.status == SupportGrantStatus::PendingApproval
+            && now - self.requested_at >= Duration::minutes(APPROVAL_WINDOW_MINUTES)
+    }
+
     /// The state as of `now`, without writing: an active grant whose window
-    /// elapsed reads as expired (BR4.2).
+    /// elapsed reads as expired, and so does a request nobody approved inside
+    /// its hour (BR3.5, BR3.6).
     #[must_use]
     pub fn effective_status(&self, now: DateTime<Utc>) -> SupportGrantStatus {
+        if self.approval_window_closed(now) {
+            return SupportGrantStatus::Expired;
+        }
         match (self.status, self.expires_at) {
             (SupportGrantStatus::Active, Some(expires_at)) if now >= expires_at => {
                 SupportGrantStatus::Expired
@@ -186,7 +213,8 @@ impl SupportAccessGrant {
         }
     }
 
-    /// Persists the expiry when the window has elapsed.
+    /// Persists the expiry when the clock has passed a window — the approval
+    /// window for a pending request, the grant window for an active one.
     pub fn expire_if_due(&mut self, now: DateTime<Utc>) -> bool {
         if self.effective_status(now) == SupportGrantStatus::Expired
             && self.status != SupportGrantStatus::Expired
@@ -195,6 +223,12 @@ impl SupportAccessGrant {
             return true;
         }
         false
+    }
+
+    /// Whether `caller_id` is the support agent the grant names (BR3.8).
+    #[must_use]
+    pub fn is_held_by(&self, caller_id: UserId) -> bool {
+        self.support_agent_id == caller_id
     }
 
     /// Whether the grant authorises a read of `user_id`'s metadata at `now`.

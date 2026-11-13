@@ -1,0 +1,16 @@
+{
+  "stage": "functional-design",
+  "unit": "u4-preferences-consent",
+  "upstream_ids": ["AC6.1.1", "AC6.1.2", "AC6.2.1", "AC6.2.2", "AC6.5.1", "AC6.5.2"],
+  "coverage": [
+    { "id": "AC6.1.1", "status": "OK", "target": "BR4.1, BR4.2, BR4.9" },
+    { "id": "AC6.1.2", "status": "OK", "target": "BR4.4, BR4.5, BR4.8, BR4.11" },
+    { "id": "AC6.2.1", "status": "OK", "target": "BR4.6, BR4.7" },
+    { "id": "AC6.2.2", "status": "OK", "target": "BR4.6" },
+    { "id": "AC6.5.1", "status": "OK", "target": "BR4.10" },
+    { "id": "AC6.5.2", "status": "OK", "target": "BR4.10" }
+  ],
+  "reverse": [
+    { "id": "BR4.3", "status": "N/A", "target": "cross-cutting ownership rule applied to every read and write of this unit's entities; traced through BR4.1 and BR4.4 at the acceptance-criterion level" }
+  ]
+}

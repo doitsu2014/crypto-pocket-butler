@@ -1,0 +1,13 @@
+{
+  "stage": "functional-design",
+  "unit": "u8-signup-gates-ui",
+  "upstream_ids": ["AC6.2.1", "AC6.2.2", "AC6.3.1", "AC6.3.2", "AC6.5.1", "AC6.5.2"],
+  "coverage": [
+    { "id": "AC6.2.1", "status": "N/A", "target": "UI-only unit with no rules.md of its own: presentation and missing-acceptance naming specified in functional-spec.md §2.3/§6 (G3 422); consent recording and refusal delivered by u4-preferences-consent (BR4.6, BR4.7)" },
+    { "id": "AC6.2.2", "status": "N/A", "target": "UI-only unit with no rules.md of its own: route guard and named refusal specified in functional-spec.md §2.1/§2.3; server-side consent gate delivered by u4-preferences-consent (BR4.6)" },
+    { "id": "AC6.3.1", "status": "N/A", "target": "UI-only unit with no rules.md of its own: blocked-jurisdiction notice and no-data-collected screen specified in functional-spec.md §2.5/§2.6/§3; jurisdiction decision delivered by u6-jurisdiction-gate (C8)" },
+    { "id": "AC6.3.2", "status": "N/A", "target": "UI-only unit with no rules.md of its own: continued-use notice specified in functional-spec.md §2.1/§2.5; enforcement and audit delivered by u6-jurisdiction-gate" },
+    { "id": "AC6.5.1", "status": "N/A", "target": "UI-only unit with no rules.md of its own: single age checkbox with no upload specified in functional-spec.md §2.2/§2.4; age consent recording delivered by u4-preferences-consent (BR4.10)" },
+    { "id": "AC6.5.2", "status": "N/A", "target": "UI-only unit with no rules.md of its own: route guard and named missing item specified in functional-spec.md §2.1/§2.3; server-side gate delivered by u4-preferences-consent (BR4.10)" }
+  ]
+}

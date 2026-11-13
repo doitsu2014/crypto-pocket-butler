@@ -1,0 +1,19 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u10-admin-users-ui",
+  "upstream_ids": ["NFR21", "NFR22", "NFR23", "NFR24", "NFR25", "NFR26"],
+  "coverage": [
+    { "id": "NFR21", "status": "N/A", "target": "audit retention is server-side (C9, six months); this unit writes and reads no audit record — its obligation is NFR21.1 in security-requirements.md: state that a change is audited and render no retained personal data itself" },
+    { "id": "NFR22", "status": "OK", "target": "NFR22.1, NFR22.2, NFR22.3, NFR22.4, NFR22.5, NFR22.6 (NFR22.3 carries the A1′ address-in-a-logged-URL dependency, tech-stack §3)" },
+    { "id": "NFR23", "status": "N/A", "target": "UI-only unit: no Postgres schema or role; its routes read and write through Identity's existing use cases under Identity's own role (NFR23.1)" },
+    { "id": "NFR24", "status": "OK", "target": "NFR24.1, NFR24.2, NFR24.3, NFR24.4" },
+    { "id": "NFR25", "status": "OK", "target": "NFR25.1, NFR25.2, NFR25.3, NFR25.4, NFR25.5" },
+    { "id": "NFR26", "status": "Deferred", "target": "NFR26.1–NFR26.3: locale date formatting and label rules are covered (NFR26.1, NFR26.3); the English/Vietnamese half is deferred with its reason recorded — the support console has no i18n module (NFR26.2), so this parent is not met for this surface" }
+  ],
+  "reverse": [
+    { "id": "NFR2.x", "status": "N/A", "target": "screen/latency prefix inherited from the BRD-001 intent requirements record (NFR2.1–NFR2.10 in performance-requirements.md)" },
+    { "id": "NFR9.x", "status": "N/A", "target": "transport and secret protection prefix inherited from the BRD-001 intent requirements record (NFR9.1–NFR9.2 in security-requirements.md)" },
+    { "id": "NFR10.x", "status": "N/A", "target": "token and session security prefix inherited from the BRD-001 intent requirements record (NFR10.1–NFR10.3 in security-requirements.md)" },
+    { "id": "NFR11.x", "status": "N/A", "target": "abuse protection prefix inherited from the BRD-001 intent requirements record (NFR11.1–NFR11.3 in security-requirements.md)" }
+  ]
+}

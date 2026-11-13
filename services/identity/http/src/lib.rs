@@ -1,6 +1,8 @@
 //! Identity HTTP boundary: Axum routers, DTOs, middleware, and the worker's
 //! internal listener.
 
+pub mod authorisation;
+pub mod consent;
 pub mod dto;
 pub mod handlers;
 pub mod metrics;

@@ -1,15 +1,18 @@
 //! WF1–WF3: account onboarding, credential replacement, and manual re-sync
 //! (BR1.1–BR1.4, BR2.1–BR2.5, BR3.1–BR3.3, BR4.1).
+//!
+//! `support_metadata` returns the closed account projection for a support grant
+//! (BR3.9): an id, label, source type, sync status and last-sync time.
 
 use std::sync::Arc;
 
 use account_domain::{
     ensure_not_secret, validate_label, Account, AccountId, AccountKind, AuditOutcome, Credential,
-    CredentialId, SyncRun, SyncRunId, UserId, Venue, WalletConnection, WalletConnectionId,
-    LEASE_SECONDS,
+    CredentialId, Operation, SyncRun, SyncRunId, UserId, Venue, WalletConnection,
+    WalletConnectionId, LEASE_SECONDS,
 };
 
-use crate::common::{AppError, Caller, FieldError};
+use crate::common::{AppError, Caller, FieldError, ServiceCaller};
 use crate::ports::{
     AccountRepository, AssetRegistry, AuthAdmin, Clock, CredentialRepository, ExchangeCredentials,
     ExchangeProvider, RepositoryError, SyncRunRepository, VaultClient, WakeTransport,
@@ -28,6 +31,22 @@ pub enum ResyncOutcome {
     Started(SyncRun),
     /// A live run already owns the account (C1 returns 202 with its id).
     AlreadyRunning(SyncRun),
+}
+
+/// One account's allowlisted support-metadata projection (BR3.9). It carries no
+/// venue, provider account identifier, credential reference, or holding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupportAccountSummary {
+    /// The account identifier.
+    pub id: AccountId,
+    /// The account label.
+    pub label: String,
+    /// `exchange`, `wallet`, `walletconnect`, or `csv`.
+    pub source_type: String,
+    /// `active`, `syncing`, `error`, or `disconnected`.
+    pub sync_status: String,
+    /// When the account last synced; null when it never has.
+    pub last_synced_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Onboards accounts, replaces credentials, and starts manual runs.
@@ -541,6 +560,37 @@ impl AccountService {
                 "the has_exchange_credentials claim could not be updated; the next credential event corrects it"
             );
         }
+    }
+
+    /// Reads the allowlisted support-metadata projection for one user (BR3.9).
+    /// The caller must be the Identity service carrying `support_metadata`;
+    /// the owner answers from its own store and returns no venue, provider
+    /// account identifier, credential, or holding.
+    ///
+    /// # Errors
+    /// Returns [`AppError::Forbidden`] when the caller may not call the
+    /// operation and [`AppError::Internal`] when the store fails.
+    pub async fn support_metadata(
+        &self,
+        caller: &ServiceCaller,
+        user_id: UserId,
+    ) -> Result<Vec<SupportAccountSummary>, AppError> {
+        caller.require_operation(Operation::SupportMetadata)?;
+        let accounts = self
+            .accounts
+            .find_for_user(user_id)
+            .await
+            .map_err(AppError::from_repository)?;
+        Ok(accounts
+            .iter()
+            .map(|account| SupportAccountSummary {
+                id: account.id(),
+                label: account.label().to_string(),
+                source_type: account.kind().as_str().to_string(),
+                sync_status: account.status().as_str().to_string(),
+                last_synced_at: account.last_synced_at(),
+            })
+            .collect())
     }
 }
 

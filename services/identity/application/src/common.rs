@@ -45,6 +45,10 @@ pub enum AppError {
     /// The action conflicts with the record's state.
     #[error("conflict: {0}")]
     Conflict(String),
+    /// The window the action needed has closed; the resource is gone or due to
+    /// be erased.
+    #[error("gone: {0}")]
+    Gone(String),
     /// A dependency could not serve the request.
     #[error("unavailable: {0}")]
     Unavailable(String),
@@ -85,6 +89,9 @@ impl AppError {
             RepositoryError::Unavailable(detail) => Self::Unavailable(detail),
             RepositoryError::Conflict(detail) => Self::Conflict(detail),
             RepositoryError::Forbidden(detail) => Self::Forbidden(detail),
+            RepositoryError::Validation(detail) => {
+                Self::Validation(vec![FieldError::new("subject", detail)])
+            }
             RepositoryError::InvalidData(detail) => {
                 Self::Internal(format!("stored data is invalid: {detail}"))
             }
@@ -117,10 +124,11 @@ impl Caller {
         self.user.id()
     }
 
-    /// The capability role.
+    /// The capability role, taken from the validated token (never the stored
+    /// row and never a request header).
     #[must_use]
     pub fn role(&self) -> Role {
-        self.user.role()
+        self.claims.role
     }
 
     /// Whether the caller holds the admin capability.

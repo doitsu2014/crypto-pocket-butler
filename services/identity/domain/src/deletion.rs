@@ -1,7 +1,10 @@
 //! The account-deletion request and its execution state machine (WF9,
-//! BR6.1–BR6.7).
+//! BR5.3–BR5.6, BR6.1–BR6.7).
 //!
 //! Completed destruction is never repeated: a retry resumes the remaining steps.
+//! The request also carries the recovery window (`recoverable_until`) and the
+//! erasure outcome (`cancelled_at`, `erased_at`, `attempt_count`,
+//! `next_attempt_at`), which the account-lifecycle unit owns.
 
 use std::collections::BTreeMap;
 
@@ -9,6 +12,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::error::DomainError;
 pub use crate::ids::{DeletionRequestId, UserId};
+use crate::lifecycle::{backoff_minutes, recoverable_until, MAX_ERASURE_ATTEMPTS};
 
 use crate::export::Contributor;
 
@@ -209,6 +213,44 @@ impl DeletionProgress {
     }
 }
 
+/// The stored columns of one account-deletion request.
+///
+/// The record exists so a rebuilt request takes one argument object rather than
+/// fifteen positional ones, and so a column cannot be swapped for its neighbour.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletionRecord {
+    /// The request identifier.
+    pub id: DeletionRequestId,
+    /// The owner.
+    pub user_id: UserId,
+    /// The bookkeeping state.
+    pub status: DeletionStatus,
+    /// The per-step progress a retry resumes from.
+    pub progress: DeletionProgress,
+    /// When the request committed.
+    pub requested_at: DateTime<Utc>,
+    /// The labelled retention categories.
+    pub retained_categories: Vec<RetainedCategory>,
+    /// When the deletion completed.
+    pub completed_at: Option<DateTime<Utc>>,
+    /// Why the last attempt failed.
+    pub failure_reason: Option<String>,
+    /// The worker holding the lease.
+    pub lease_owner: Option<String>,
+    /// When the lease frees.
+    pub lease_until: Option<DateTime<Utc>>,
+    /// The end of the recovery window.
+    pub recoverable_until: DateTime<Utc>,
+    /// When the owner restored; the request is kept as evidence.
+    pub cancelled_at: Option<DateTime<Utc>>,
+    /// When the erasure cascade finished.
+    pub erased_at: Option<DateTime<Utc>>,
+    /// Failed attempts so far.
+    pub attempt_count: u32,
+    /// When the sweep may try again.
+    pub next_attempt_at: DateTime<Utc>,
+}
+
 /// One account-deletion request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletionRequest {
@@ -222,10 +264,15 @@ pub struct DeletionRequest {
     failure_reason: Option<String>,
     lease_owner: Option<String>,
     lease_until: Option<DateTime<Utc>>,
+    recoverable_until: DateTime<Utc>,
+    cancelled_at: Option<DateTime<Utc>>,
+    erased_at: Option<DateTime<Utc>>,
+    attempt_count: u32,
+    next_attempt_at: DateTime<Utc>,
 }
 
 impl DeletionRequest {
-    /// Creates a requested deletion (WF9 step 2).
+    /// Creates a requested deletion (WF9 step 2) and opens the recovery window.
     #[must_use]
     pub fn request(id: DeletionRequestId, user_id: UserId, now: DateTime<Utc>) -> Self {
         Self {
@@ -239,7 +286,75 @@ impl DeletionRequest {
             failure_reason: None,
             lease_owner: None,
             lease_until: None,
+            recoverable_until: recoverable_until(now),
+            cancelled_at: None,
+            erased_at: None,
+            attempt_count: 0,
+            next_attempt_at: now,
         }
+    }
+
+    /// Whether the request is open: neither cancelled nor erased. At most one
+    /// open request exists per user (BR5.3).
+    #[must_use]
+    pub fn is_open(&self) -> bool {
+        self.cancelled_at.is_none() && self.erased_at.is_none()
+    }
+
+    /// Cancels an open request (BR5.4). The row is kept as evidence.
+    ///
+    /// # Errors
+    /// Returns [`DomainError::Conflict`] when the request is already closed.
+    pub fn cancel(&mut self, now: DateTime<Utc>) -> Result<(), DomainError> {
+        if !self.is_open() {
+            return Err(DomainError::Conflict {
+                reason: "the deletion request is already closed".to_string(),
+            });
+        }
+        self.cancelled_at = Some(now);
+        Ok(())
+    }
+
+    /// Records one failed erasure attempt: increments the counter and schedules
+    /// the next attempt with the bounded backoff. At
+    /// [`MAX_ERASURE_ATTEMPTS`] the request is parked (`failed`) and closed, so
+    /// it stops blocking a new request and the failure is visible.
+    ///
+    /// # Errors
+    /// Returns [`DomainError::Conflict`] when the request is not open.
+    pub fn record_attempt_failure(&mut self, now: DateTime<Utc>) -> Result<u32, DomainError> {
+        if !self.is_open() {
+            return Err(DomainError::Conflict {
+                reason: "the deletion request is already closed".to_string(),
+            });
+        }
+        self.attempt_count = self.attempt_count.saturating_add(1);
+        self.next_attempt_at = now + Duration::minutes(backoff_minutes(self.attempt_count));
+        self.status = DeletionStatus::Failed;
+        self.lease_until = Some(now);
+        if self.attempt_count >= MAX_ERASURE_ATTEMPTS {
+            // Parked: no longer open, still visible through `status = 'failed'`.
+            self.cancelled_at = Some(now);
+        }
+        Ok(self.attempt_count)
+    }
+
+    /// Records that the erasure cascade finished and resets the retry counter
+    /// (BR5.5). Running it twice leaves the same end state (BR5.6).
+    pub fn record_erased(
+        &mut self,
+        retained_categories: Vec<RetainedCategory>,
+        now: DateTime<Utc>,
+    ) {
+        self.status = DeletionStatus::Completed;
+        self.retained_categories = retained_categories;
+        self.erased_at = Some(now);
+        self.completed_at = Some(now);
+        // An erased request was never restored; a parked row resumed by an
+        // operator must satisfy the window CHECK, which forbids both timestamps.
+        self.cancelled_at = None;
+        self.attempt_count = 0;
+        self.failure_reason = None;
     }
 
     /// Claims the request for one worker, including a retry of a failed one.
@@ -264,15 +379,18 @@ impl DeletionRequest {
         Ok(())
     }
 
-    /// Whether a worker may claim the request at `now`.
+    /// Whether a worker may claim the request at `now`. A cancelled, erased, or
+    /// parked request is never claimed again.
     #[must_use]
     pub fn is_claimable(&self, now: DateTime<Utc>) -> bool {
-        matches!(
-            self.status,
-            DeletionStatus::Requested | DeletionStatus::InProgress | DeletionStatus::Failed
-        ) && self
-            .lease_until
-            .is_none_or(|lease_until| now >= lease_until)
+        self.is_open()
+            && matches!(
+                self.status,
+                DeletionStatus::Requested | DeletionStatus::InProgress | DeletionStatus::Failed
+            )
+            && self
+                .lease_until
+                .is_none_or(|lease_until| now >= lease_until)
     }
 
     /// Records that one contributing service anonymised its data.
@@ -342,6 +460,8 @@ impl DeletionRequest {
         self.status = DeletionStatus::Completed;
         self.retained_categories = retained_categories;
         self.completed_at = Some(now);
+        self.erased_at = Some(now);
+        self.attempt_count = 0;
         self.failure_reason = None;
         Ok(())
     }
@@ -370,30 +490,23 @@ impl DeletionRequest {
 
     /// Rebuilds a request from stored columns.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_stored(
-        id: DeletionRequestId,
-        user_id: UserId,
-        status: DeletionStatus,
-        progress: DeletionProgress,
-        requested_at: DateTime<Utc>,
-        retained_categories: Vec<RetainedCategory>,
-        completed_at: Option<DateTime<Utc>>,
-        failure_reason: Option<String>,
-        lease_owner: Option<String>,
-        lease_until: Option<DateTime<Utc>>,
-    ) -> Self {
+    pub fn from_stored(record: DeletionRecord) -> Self {
         Self {
-            id,
-            user_id,
-            status,
-            progress,
-            requested_at,
-            retained_categories,
-            completed_at,
-            failure_reason,
-            lease_owner,
-            lease_until,
+            id: record.id,
+            user_id: record.user_id,
+            status: record.status,
+            progress: record.progress,
+            requested_at: record.requested_at,
+            retained_categories: record.retained_categories,
+            completed_at: record.completed_at,
+            failure_reason: record.failure_reason,
+            lease_owner: record.lease_owner,
+            lease_until: record.lease_until,
+            recoverable_until: record.recoverable_until,
+            cancelled_at: record.cancelled_at,
+            erased_at: record.erased_at,
+            attempt_count: record.attempt_count,
+            next_attempt_at: record.next_attempt_at,
         }
     }
 
@@ -455,5 +568,35 @@ impl DeletionRequest {
     #[must_use]
     pub fn lease_until(&self) -> Option<DateTime<Utc>> {
         self.lease_until
+    }
+
+    /// The end of the recovery window (BR5.3).
+    #[must_use]
+    pub fn recoverable_until(&self) -> DateTime<Utc> {
+        self.recoverable_until
+    }
+
+    /// When the owner restored, if they did.
+    #[must_use]
+    pub fn cancelled_at(&self) -> Option<DateTime<Utc>> {
+        self.cancelled_at
+    }
+
+    /// When the erasure completed, if it did.
+    #[must_use]
+    pub fn erased_at(&self) -> Option<DateTime<Utc>> {
+        self.erased_at
+    }
+
+    /// Failed erasure attempts so far.
+    #[must_use]
+    pub fn attempt_count(&self) -> u32 {
+        self.attempt_count
+    }
+
+    /// When the sweep may try again.
+    #[must_use]
+    pub fn next_attempt_at(&self) -> DateTime<Utc> {
+        self.next_attempt_at
     }
 }

@@ -1,0 +1,23 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u6-jurisdiction-gate",
+  "upstream_ids": ["NFR21", "NFR22", "NFR23", "NFR24", "NFR25", "NFR26"],
+  "coverage": [
+    { "id": "NFR21", "status": "N/A", "target": "audit retention is owned by the Audit service; this unit only writes events" },
+    { "id": "NFR22", "status": "N/A", "target": "this unit never handles the provider subject or any user identifier" },
+    { "id": "NFR23", "status": "OK", "target": "NFR23.1, NFR23.2, NFR23.3, NFR23.4" },
+    { "id": "NFR24", "status": "N/A", "target": "this unit holds no role or account-status data" },
+    { "id": "NFR25", "status": "N/A", "target": "backend unit with no user-facing surfaces; u8-signup-gates-ui owns accessibility" },
+    { "id": "NFR26", "status": "N/A", "target": "no user-facing copy in this unit" }
+  ],
+  "reverse": [
+    { "id": "NFR1.1", "status": "N/A", "target": "extends BRD-001 NFR1 availability to this endpoint" },
+    { "id": "NFR2.1", "status": "N/A", "target": "extends BRD-001 NFR2 response-time target to the gate" },
+    { "id": "NFR9.1", "status": "N/A", "target": "extends BRD-001 NFR9 transport protection" },
+    { "id": "NFR10.1", "status": "N/A", "target": "extends BRD-001 NFR10 token security" },
+    { "id": "NFR17.1", "status": "N/A", "target": "extends BRD-001 NFR17 observability" },
+    { "id": "NFR18.1", "status": "N/A", "target": "extends BRD-001 NFR18 recovery objectives" },
+    { "id": "NFR19.1", "status": "N/A", "target": "extends BRD-001 NFR19 audit rules" },
+    { "id": "NFR20.1", "status": "N/A", "target": "extends BRD-001 NFR20 scalability" }
+  ]
+}

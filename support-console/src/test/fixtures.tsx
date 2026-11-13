@@ -1,12 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, type RenderResult } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
-import type {
-  AccountMetadata,
-  Incident,
-  SupportAccessGrant,
-  TicketMetadata,
-} from "../api/types";
+import type { Incident, SupportAccessGrant, SupportMetadata, TicketMetadata } from "../api/types";
 import type { SupportSession } from "../auth/session";
 
 export function createTestQueryClient(): QueryClient {
@@ -111,14 +106,31 @@ export function expiredGrant(overrides: Partial<SupportAccessGrant> = {}): Suppo
   };
 }
 
-export const accountMetadata: AccountMetadata = {
-  id: "acct-1",
-  kind: "exchange",
-  label: "Main Binance",
-  venue: "binance",
-  status: "active",
-  lastSyncedAt: "2026-11-08T08:55:00.000Z",
-};
+export function supportMetadata(overrides: Partial<SupportMetadata> = {}): SupportMetadata {
+  return {
+    userId: "user-1",
+    displayName: "Customer One",
+    emailVerified: true,
+    accounts: [
+      {
+        id: "acct-1",
+        label: "Main Binance",
+        sourceType: "exchange",
+        syncStatus: "active",
+        lastSyncedAt: "2026-11-08T08:55:00.000Z",
+      },
+      {
+        id: "acct-2",
+        label: "Cold wallet",
+        sourceType: "wallet",
+        syncStatus: "active",
+        lastSyncedAt: null,
+      },
+    ],
+    portfolios: [{ id: "portfolio-1", label: "Long term" }],
+    ...overrides,
+  };
+}
 
 export const ticketMetadata: TicketMetadata = {
   id: "ticket-1",

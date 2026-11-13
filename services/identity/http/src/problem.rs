@@ -1,5 +1,8 @@
 //! RFC 7807 `application/problem+json` responses carrying the correlation id and,
 //! for a validation refusal, the offending field paths only.
+//!
+//! `bad_request` renders the support-access catalogue codes (`invalid-grant-id`,
+//! `invalid-user-id`) that BR3.10 puts in `detail`.
 
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -9,6 +12,15 @@ use serde::Serialize;
 
 /// The problem content type.
 pub const PROBLEM_CONTENT_TYPE: &str = "application/problem+json";
+
+/// The pinned problem type the deletion-request read answers when the caller has
+/// no open request.
+///
+/// The SPA treats only this type as "no record" and every other `404` as an
+/// error, so the value is a contract rather than a string to reword. It is
+/// deliberately outside the `https://errors.cpb/identity/` family every other
+/// problem uses.
+pub const NO_RECORD_TYPE: &str = "https://crypto-pocket-butler.example/problems/no-record";
 
 /// One offending field path, never its value.
 #[derive(Debug, Clone, Serialize)]
@@ -104,6 +116,22 @@ impl IntoResponse for ProblemDetails {
     }
 }
 
+/// A 404 problem carrying the pinned no-record type.
+///
+/// The body has no `detail`: the SPA renders the type, the status, and the
+/// correlation id only.
+#[must_use]
+pub fn no_record(correlation_id: &str) -> ProblemDetails {
+    ProblemDetails {
+        r#type: NO_RECORD_TYPE.to_string(),
+        title: "No open deletion request".to_string(),
+        status: 404,
+        detail: None,
+        errors: None,
+        correlation_id: correlation_id.to_string(),
+    }
+}
+
 /// Maps an application refusal to the RFC 7807 response.
 #[must_use]
 pub fn from_app_error(error: &AppError, correlation_id: &str) -> ProblemDetails {
@@ -148,6 +176,9 @@ pub fn from_app_error(error: &AppError, correlation_id: &str) -> ProblemDetails 
             Some(detail.clone()),
             correlation_id,
         ),
+        AppError::Gone(detail) => {
+            ProblemDetails::new(410, "gone", "Gone", Some(detail.clone()), correlation_id)
+        }
         AppError::Unavailable(detail) => ProblemDetails::new(
             503,
             "unavailable",
@@ -166,4 +197,19 @@ pub fn from_app_error(error: &AppError, correlation_id: &str) -> ProblemDetails 
 #[must_use]
 pub fn validation(correlation_id: &str, errors: Vec<FieldError>) -> ProblemDetails {
     from_app_error(&AppError::Validation(errors), correlation_id)
+}
+
+/// A 400 problem whose `detail` is a stable code from the support-access error
+/// catalogue (`invalid-user-id`, `invalid-grant-id`). A malformed identifier is
+/// refused before any role check or lookup, so its code is precise rather than
+/// the uniform `support-access-refused`.
+#[must_use]
+pub fn bad_request(correlation_id: &str, code: &str) -> ProblemDetails {
+    ProblemDetails::new(
+        400,
+        "bad-request",
+        "Bad request",
+        Some(code.to_string()),
+        correlation_id,
+    )
 }

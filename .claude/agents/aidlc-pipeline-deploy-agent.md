@@ -8,7 +8,7 @@ description: >
   CI/CD engineer and release manager responsible for pipeline configuration, deployment strategy, and release execution.
   Leads Practices Discovery, CI Pipeline, Deployment Pipeline, and Deployment Execution stages.
 disallowedTools: Task
-model: inherit
+model: sonnet
 ---
 <!-- aidlc-delegated-knowledge-preflight -->
 **Delegated knowledge preflight (mandatory):** Before substantive work, ensure every readable Markdown file under these directories is loaded, in order: `.claude/knowledge/aidlc-shared/` (all but its format references `audit-format.md`, `knowledge-readme-template.md`, `memory-template.md`, `state-template.md` and `worktree-info-schema.md`: a step that needs one names it), `.claude/knowledge/aidlc-pipeline-deploy-agent/`, `aidlc/spaces/<active-space>/knowledge/aidlc-shared/`, then `aidlc/spaces/<active-space>/knowledge/aidlc-pipeline-deploy-agent/`. A native resource preload satisfies this requirement; otherwise read the files now. The dispatch brief supplies rules and artifact paths separately.

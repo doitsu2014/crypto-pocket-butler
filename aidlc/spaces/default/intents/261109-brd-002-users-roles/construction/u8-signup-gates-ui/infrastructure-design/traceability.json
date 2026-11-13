@@ -1,0 +1,31 @@
+{
+  "stage": "infrastructure-design",
+  "unit": "u8-signup-gates-ui",
+  "upstream_ids": ["NFR2.1", "NFR2.7", "NFR24.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR2.5", "NFR2.6", "NFR10.1", "NFR9.1", "NFR11.1", "NFR22.1", "NFR25.1", "NFR25.2", "NFR25.3", "NFR26.1", "NFR10.2", "NFR24.2", "NFR11.2", "NFR22.3", "NFR22.2", "NFR25.4", "NFR26.2", "NFR26.3"],
+  "coverage": [
+    { "id": "NFR2.1", "status": "OK", "target": "cicd-pipeline.md stage 5 — `yarn size` (size-limit route-*.js glob + web/scripts/check-size.mjs) blocks the build; runs inside the existing web image build, no stack or config change (infrastructure-specification.md Deployment)" },
+    { "id": "NFR2.7", "status": "N/A", "target": "client cache design in code (staleTime 0, memory-only); the edge half already exists — nginx index.html no-store + immutable hashed assets (web/nginx.conf), unchanged" },
+    { "id": "NFR24.1", "status": "N/A", "target": "re-resolution on entry is client code; no cache tier exists that could serve stale gate state — nginx no-store on index.html (existing, unchanged) already guarantees a fresh shell per navigation" },
+    { "id": "NFR2.2", "status": "N/A", "target": "parallel entry resolution and the 15s deadline are client code, MSW-tested (pipeline stage 4); server-hop latency metrics are owned by the gateway/U1/U4/U6 units (measurement-ownership split, monitoring-design.md fact 3)" },
+    { "id": "NFR2.3", "status": "N/A", "target": "synchronous isPending and the inline error surfaces are client code, MSW-tested; no infrastructure" },
+    { "id": "NFR2.4", "status": "N/A", "target": "combobox filtering is client code over a bundled module; checked by the devtools profiling guidance pass — nothing to provision" },
+    { "id": "NFR2.5", "status": "N/A", "target": "render performance is component structure and memoisation in code; no infrastructure" },
+    { "id": "NFR2.6", "status": "N/A", "target": "retry predicate and jittered retryDelay live in client.ts/query options; no infrastructure" },
+    { "id": "NFR10.1", "status": "N/A", "target": "memory-only holding is a code property (no storage API imported); the static host is read_only with tmpfs (existing stack hardening) and stores nothing feature-side" },
+    { "id": "NFR9.1", "status": "OK", "target": "existing edge unchanged: TLS terminates ahead of the gateway's published 443, /v1 is same-origin under the CSP connect-src 'self' (web/nginx.conf), no new browser-external origin (infrastructure-specification.md Networking rows)" },
+    { "id": "NFR11.1", "status": "OK", "target": "existing gateway rate limits already configured in infra/swarm-stack.yml (GATEWAY_RATE_LIMIT_PER_MINUTE 120, anonymous 30) bound abuse; the key holder itself is client code — no configuration change" },
+    { "id": "NFR22.1", "status": "N/A", "target": "allowlist ProblemDetails mapping and dedicated error components are client code; no infrastructure" },
+    { "id": "NFR25.1", "status": "N/A", "target": "focus management and ARIA patterns are client code; verified by the suite (pipeline stage 4)" },
+    { "id": "NFR25.2", "status": "N/A", "target": "colour paired with icon+text over Parchment Ledger tokens is client code in the components; verified by the suite and review — nothing to provision" },
+    { "id": "NFR25.3", "status": "N/A", "target": "tab order equal to DOM order is a markup property of the gate screen; verified by the suite — nothing to provision" },
+    { "id": "NFR26.1", "status": "N/A", "target": "EN/VI catalogues and the generated country module are bundled at build time into the existing web image build; no infrastructure" },
+    { "id": "NFR10.2", "status": "N/A", "target": "the absence of JWT decode/validate code is a code property enforced at review; no infrastructure" },
+    { "id": "NFR24.2", "status": "N/A", "target": "the guard is presentational and server enforcement is unchanged — nothing is provisioned or deprovisioned for it" },
+    { "id": "NFR11.2", "status": "N/A", "target": "skip-already-recorded semantics are Identity behaviour owned by U4/U1 (security-design §11 dependency 2); this unit provisions nothing for it" },
+    { "id": "NFR22.3", "status": "OK", "target": "nginx access-log format (URL logged, headers never — web/nginx.conf, unchanged) plus self-scoped gate routes keep identifiers out of edge logs — qualified: today's G1 shape (GET /v1/principals/{authUserId}) puts an auth user id in the logged URL, so identifier-free gate URLs hold only once the read-only self-scoped entry reads land (security-design §11 dep 1); monitoring-design.md Logs & tracing" },
+    { "id": "NFR22.2", "status": "OK", "target": "zero feature telemetry — no telemetry infrastructure added; the only route-naming signal is the shell render-crash beacon, whose gateway telemetry route (/v1/telemetry/client-errors) is undeclared today: recorded as a platform gap, not wired around (monitoring-design.md fact 1)" },
+    { "id": "NFR25.4", "status": "OK", "target": "cicd-pipeline.md stage 4 — yarn --cwd web test blocks the build and the suite runs jest-axe on every rendered state" },
+    { "id": "NFR26.2", "status": "N/A", "target": "locale resolution reuses the shell LocaleProvider in code (recorded deviation lives in security-design §9); no infrastructure" },
+    { "id": "NFR26.3", "status": "N/A", "target": "no date/time rendering on this screen — nothing to configure (vacuous by design, nfr-design diary)" }
+  ]
+}

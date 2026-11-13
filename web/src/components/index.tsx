@@ -1,6 +1,14 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useI18n } from "../i18n/react";
-import type { DataStatus, Freshness, LineDataStatus, Pnl, ProblemDetails } from "../api/types";
+import type {
+  DataStatus,
+  Freshness,
+  LineDataStatus,
+  Pnl,
+  ProblemDetails,
+  UserStatus,
+} from "../api/types";
 import { NetworkError, ApiError } from "../api/client";
 import { localiseProblem } from "../i18n";
 
@@ -141,6 +149,64 @@ export function FreshnessBadge({
       </span>
       <span>{t(`freshness.${freshness}`)}</span>
       {observedAt ? <span className="text-meta">{format(observedAt)}</span> : null}
+    </span>
+  );
+}
+
+const STATUS_PILL: Record<
+  UserStatus,
+  { label: string; shape: string; glyph: string; tone: string }
+> = {
+  pending: { label: "status.pending", shape: "ring", glyph: "○", tone: "text-warn" },
+  active: { label: "status.active", shape: "dot", glyph: "●", tone: "text-success" },
+  disabled: { label: "status.disabled", shape: "square", glyph: "■", tone: "text-muted" },
+  pending_deletion: {
+    label: "status.pendingDeletion",
+    shape: "square-outline",
+    glyph: "□",
+    tone: "text-warn",
+  },
+  deleted: { label: "status.deleted", shape: "cross", glyph: "×", tone: "text-danger" },
+};
+
+/**
+ * The account status as a word plus its own shape (design-system: colour never
+ * carries meaning alone). A pending-deletion account also carries the exact
+ * restore date as text beside the pill, never inside it.
+ */
+export function StatusPill({
+  status,
+  restoreDate,
+  className = "",
+}: {
+  status: UserStatus;
+  restoreDate?: string | null;
+  className?: string;
+}) {
+  const { t, format } = useI18n();
+  const meta = STATUS_PILL[status];
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
+      <span
+        data-testid="status-pill"
+        data-status={status}
+        className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-overline uppercase tracking-overline"
+      >
+        <span
+          data-testid="status-pill-shape"
+          data-shape={meta.shape}
+          aria-hidden="true"
+          className={meta.tone}
+        >
+          {meta.glyph}
+        </span>
+        <span className="text-ink-2">{t(meta.label)}</span>
+      </span>
+      {status === "pending_deletion" && restoreDate ? (
+        <span data-testid="status-pill-restore" className="text-small text-ink-2">
+          {t("status.restoreOn", { date: format(restoreDate) })}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -311,15 +377,62 @@ export function ConfirmDialog({
   onCancel: () => void;
 }) {
   const { t } = useI18n();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  // Focus enters the dialog (on the least destructive action) and returns to
+  // the control that opened it (spec §5, WCAG 2.2 AA).
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    triggerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    cancelRef.current?.focus();
+    return () => {
+      triggerRef.current?.focus();
+    };
+  }, [open]);
+
   if (!open) {
     return null;
   }
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable || focusable.length === 0) {
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   return (
     <div
+      ref={dialogRef}
       data-testid="confirm-dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
+      onKeyDown={onKeyDown}
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
     >
       <div className="w-full max-w-md rounded-lg border border-border bg-surface p-6">
@@ -337,6 +450,7 @@ export function ConfirmDialog({
             {confirmLabel}
           </button>
           <button
+            ref={cancelRef}
             type="button"
             data-testid="confirm-cancel"
             onClick={onCancel}

@@ -31,11 +31,11 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
 
             reactSpa = container "React Web Client (SPA)" "Authenticated UI for onboarding, dashboard, accounts, portfolios, valuation, P&L, snapshots, orders, briefs, notifications, settings, billing and support. Signs in via Supabase Auth; calls only the API Gateway, plus WalletConnect for read-only wallet sessions." "React 18 + TypeScript 5, Vite, TanStack Query, @supabase/supabase-js, Recharts" "Container"
 
-            supportConsole = container "Support Console" "Least-privilege support UI for account metadata and tickets. Requires a recorded reason, is time-bound and audited, and never displays credentials or portfolio contents." "React 18 + TypeScript 5" "Container"
+            supportConsole = container "Support Console" "Least-privilege support UI for account metadata and tickets, plus an administrator-only users section that looks a user up by exact email (address kept in the request body, never a URL) and changes role, disables or restores an account. Requires a recorded reason, is time-bound and audited, and never displays credentials or portfolio contents." "React 18 + TypeScript 5" "Container"
 
             apiGateway = container "API Gateway (BFF)" "Single public entry point: validates JWTs, resolves the principal, routes deny-by-default with admin and support gating, entitlement checks, rate limits and correlation IDs, and forwards the JWT unchanged. Stateless." "Rust, Axum, tower, jsonwebtoken, reqwest" "Container"
 
-            identityService = container "Identity Service" "Internal users keyed by Supabase auth.users.id, roles, status, locale, base currency, timezone, consent state, support-access grants, deletion and retention. Holds no passwords or MFA state." "Rust, Axum, jsonwebtoken, sqlx" "Container"
+            identityService = container "Identity Service" "Internal users keyed by Supabase auth.users.id, roles, status, locale, base currency, timezone, consent state, support-access grants and their metadata fan-out with an audit outbox, deletion and retention. Holds no passwords or MFA state." "Rust, Axum, jsonwebtoken, sqlx" "Container"
 
             accountService = container "Account Service" "Read-only exchange, on-chain, WalletConnect, watch-only and CSV accounts; verified read-only credentials; holdings sync; spam and dust filtering; DeFi position labelling; regional coverage; quotas. Never accepts private keys." "Rust, Axum, sqlx, rust_decimal, alloy, solana-client" "Container"
 
@@ -91,6 +91,8 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
             identityService -> supabasePostgres "Reads and writes internal users, roles, status, preferences, consent and session events" "Supabase Postgres (schema identity, role identity)"
             identityService -> notificationService "Queues security, account and consent-change alerts" "Internal HTTP"
             identityService -> auditService "Records user lifecycle, role, status, support-access and consent audit events" "Internal HTTP"
+            identityService -> accountService "Reads the allowlisted account projection for a support grant" "Internal HTTP, service token"
+            identityService -> portfolioService "Reads the allowlisted portfolio projection for a support grant" "Internal HTTP, service token"
             identityService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             accountService -> supabasePostgres "Reads and writes accounts, credential ciphertext, holdings, sync runs, spam state and the registry projection" "Supabase Postgres (schema account, role account)"
@@ -106,6 +108,7 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
             accountService -> billingService "Checks account, coverage and sync-frequency quotas" "Internal HTTP"
             accountService -> analyticsService "Emits sync, coverage and account-type events" "Internal HTTP"
             accountService -> auditService "Records credential and account lifecycle audit events" "Internal HTTP"
+            accountService -> identityService "Calls the C4 authorisation decision to verify role, status, and cross-owner linkage before storing a link" "Internal HTTP, service token + forwarded JWT"
             accountService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             assetRegistryService -> supabasePostgres "Reads and writes assets, contracts, decimals, chains, token registries, sources and quarantine" "Supabase Postgres (schema registry, role registry)"
@@ -132,6 +135,7 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
             portfolioService -> billingService "Checks portfolio quotas and entitlements" "Internal HTTP"
             portfolioService -> analyticsService "Emits valuation, drift, allocation and activation events" "Internal HTTP"
             portfolioService -> auditService "Records order decision, snapshot and performance audit events" "Internal HTTP"
+            portfolioService -> identityService "Calls the C4 authorisation decision to enforce role, status, and ownership on every read and write" "Internal HTTP, service token + forwarded JWT"
             portfolioService -> observabilityStack "Emits structured logs, metrics and traces with correlation context" "Prometheus scrape, OTLP export"
 
             ledgerService -> supabasePostgres "Appends transactions and adjustments, stores cost lots, P&L and reconciliation state" "Supabase Postgres (schema ledger, role ledger)"
@@ -312,9 +316,12 @@ workspace "Crypto Pocket Butler" "Global retail crypto portfolio aggregation, P&
 
         dynamic cpb "SupportAccess" "Support Access" {
             supportAgent -> supportConsole "Opens a ticket and requests account metadata"
-            supportConsole -> apiGateway "Requests metadata with a recorded reason"
-            apiGateway -> identityService "Resolves the user and account metadata"
-            apiGateway -> auditService "Records the time-bound support access"
+            supportConsole -> apiGateway "Requests a grant, an admin approves or revokes it, or the holder reads metadata under a live grant; an administrator also looks a user up by exact email and changes role, disables or restores an account, each with a reason and audited"
+            apiGateway -> identityService "Applies role, status and grant rules and resolves the closed metadata projection"
+            identityService -> accountService "Reads the allowlisted account projection"
+            identityService -> portfolioService "Reads the allowlisted portfolio projection"
+            identityService -> supabasePostgres "Persists the grant and its audit outbox row"
+            identityService -> auditService "Delivers support-access audit events from the outbox"
             supportConsole -> helpDesk "Works the ticket"
             autolayout
         }

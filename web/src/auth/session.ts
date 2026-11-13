@@ -164,7 +164,10 @@ export function createSessionStore(client: AuthClientLike | null): SessionStore 
 }
 
 export const sessionStore = createSessionStore(
-  supabase as unknown as AuthClientLike | null,
+  // The auth surface lives on `client.auth`, not on the client itself: handing
+  // the client over made `getSession` undefined and crashed the first render in
+  // a real browser. A unit test with an injected fake could not see it.
+  (supabase?.auth as unknown as AuthClientLike) ?? null,
 );
 
 /** The API client reads this per request; it never touches web storage. */

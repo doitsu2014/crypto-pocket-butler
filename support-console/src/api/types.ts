@@ -18,18 +18,29 @@ export interface SupportAccessGrant {
   approvedAt: string | null;
 }
 
-export interface AccountMetadata {
+/**
+ * The closed support metadata projection (S3). Exactly these five fields:
+ * anything else the API sends is dropped by the picker, never rendered.
+ */
+export interface SupportMetadataAccount {
   id: string;
-  kind: string;
   label: string;
-  venue?: string | null;
-  status: string;
-  lastSyncedAt?: string | null;
+  sourceType: string;
+  syncStatus: string;
+  lastSyncedAt: string | null;
 }
 
-export interface AccountSearchResult {
-  items: AccountMetadata[];
-  nextCursor: string | null;
+export interface SupportMetadataPortfolio {
+  id: string;
+  label: string;
+}
+
+export interface SupportMetadata {
+  userId: string;
+  displayName: string | null;
+  emailVerified: boolean;
+  accounts: SupportMetadataAccount[];
+  portfolios: SupportMetadataPortfolio[];
 }
 
 export interface TicketMetadata {
@@ -67,37 +78,24 @@ export interface Incident {
   notification?: IncidentNotification | null;
 }
 
+export interface ProblemFieldError {
+  field: string;
+  reason: string;
+}
+
 export interface ProblemDetails {
   type: string;
   title: string;
   status: number;
   detail?: string;
   correlationId: string;
+  errors?: ProblemFieldError[];
 }
 
+/** `POST /v1/support-grants` body (S1). */
 export interface GrantRequestInput {
   userId: string;
   reason: string;
-  durationMinutes: number;
-  approverId: string;
-}
-
-export interface GrantRequestValues {
-  requesterId: string;
-  targetUserId: string;
-  reason: string;
-  durationMinutes: number;
-  approverId: string;
-}
-
-export interface MetadataReadInput {
-  grantId: string;
-  reason: string;
-}
-
-export interface AccountSearchInput {
-  grantId: string;
-  query: string;
 }
 
 export interface IncidentInput {
@@ -111,4 +109,48 @@ export interface IncidentPatch {
   status?: IncidentStatus;
   summary?: string;
   components?: string[];
+}
+
+/** The role an administrator can assign (U10). Distinct from `SupportRole`. */
+export type ConsoleRole = "owner" | "admin" | "support";
+
+/** The five user statuses the admin answer reports (U10). */
+export type AdminUserStatus = "pending" | "active" | "disabled" | "pending_deletion" | "deleted";
+
+/** The admin lookup answer: the record plus the provider's current role. */
+export interface AdminUserRecord {
+  id: string;
+  displayName?: string;
+  email?: string;
+  emailVerified: boolean;
+  status: AdminUserStatus;
+  role: ConsoleRole;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `PUT /admin/users/{userId}/role` body. */
+export interface RoleChangeBody {
+  newRole: ConsoleRole;
+  reason: string;
+}
+
+/** The role change answer. */
+export interface RoleChangeResult {
+  userId: string;
+  previousRole: ConsoleRole;
+  newRole: ConsoleRole;
+}
+
+/** `POST /admin/users/{userId}/disable` and `/restore` body. */
+export interface AdminStatusBody {
+  reason: string;
+}
+
+/** The disable or restore answer. */
+export interface AdminStatusResult {
+  userId: string;
+  status: AdminUserStatus;
+  transitionId: string;
+  occurredAt: string;
 }

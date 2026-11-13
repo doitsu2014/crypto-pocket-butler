@@ -1,81 +1,54 @@
-//! WF9 — account deletion and its execution worker (BR6.1–BR6.7).
+//! W4 — account deletion, its recovery window, and its execution worker
+//! (BR5.3–BR5.6, BR6.1–BR6.7).
+//!
+//! The owner opens a request through [`AccountLifecycleService`]
+//! (`super::account_lifecycle`); this module's worker erases a request only once
+//! its recovery window has closed. The cascade is ordered so a failure is always
+//! retryable, and it records the attempt/backoff bookkeeping the sweep claims on.
 
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use identity_domain::{
-    AuditOutcome, Contributor, DeletionRequest, DeletionRequestId, LEASE_SECONDS,
+    AuditOutcome, Contributor, DeletionRequest, DeletionRequestId, UserStatus, LEASE_SECONDS,
+    SYSTEM_ACTOR,
 };
 
+use crate::account_lifecycle::AccountObservation;
 use crate::common::{AppError, Caller};
 use crate::ports::{
-    AuthAdmin, Clock, ConsentRepository, ContributorGateway, DeletionRepository,
-    ShreddingKeyRepository, UserRepository, WakeTransport,
+    AuthAdmin, ContributorGateway, DeletionRepository, ErasureStore, ShreddingKeyRepository,
+    StatusChange, StatusTransitionStore, UserRepository,
 };
 use crate::trail::{context, Trail};
 
-/// Creates deletion requests and answers status polls.
+/// Answers the owner's deletion status and records the privacy event.
+///
+/// Opening a request belongs to [`crate::account_lifecycle::AccountLifecycleService`],
+/// which writes the status change, the request, and the audit intent in one
+/// transaction; this service reads the result back and writes the operator-facing
+/// C10 event.
 pub struct DeletionService {
     deletions: Arc<dyn DeletionRepository>,
     trail: Arc<Trail>,
-    wake: Arc<dyn WakeTransport>,
-    clock: Arc<dyn Clock>,
 }
 
 impl DeletionService {
     /// Creates the use case.
     #[must_use]
-    pub fn new(
-        deletions: Arc<dyn DeletionRepository>,
-        trail: Arc<Trail>,
-        wake: Arc<dyn WakeTransport>,
-        clock: Arc<dyn Clock>,
-    ) -> Self {
-        Self {
-            deletions,
-            trail,
-            wake,
-            clock,
-        }
+    pub fn new(deletions: Arc<dyn DeletionRepository>, trail: Arc<Trail>) -> Self {
+        Self { deletions, trail }
     }
 
-    /// Confirms a deletion, reusing the user's active request (BR6.1).
+    /// The owner's open deletion request, when one exists (WF9).
     ///
     /// # Errors
-    /// Returns [`AppError::Unavailable`] when the request or its audit event
-    /// cannot be written.
-    pub async fn request(&self, caller: &Caller) -> Result<DeletionRequest, AppError> {
-        if let Some(active) = self
-            .deletions
+    /// Returns [`AppError::Unavailable`] when the store cannot answer.
+    pub async fn open_request(&self, caller: &Caller) -> Result<Option<DeletionRequest>, AppError> {
+        self.deletions
             .find_active_for_user(caller.user_id())
             .await
-            .map_err(AppError::from_repository)?
-        {
-            return Ok(active);
-        }
-        let deletion = DeletionRequest::request(
-            DeletionRequestId::generate(),
-            caller.user_id(),
-            self.clock.now(),
-        );
-        self.deletions
-            .insert(&deletion)
-            .await
-            .map_err(AppError::from_repository)?;
-        self.trail
-            .record(
-                Some(caller.user_id()),
-                "identity.deletion.requested",
-                deletion.id().to_string(),
-                AuditOutcome::Success,
-                &caller.correlation_id,
-                context(&[]),
-            )
-            .await?;
-        if let Err(error) = self.wake.wake().await {
-            tracing::warn!(%error, "deletion wake failed; the sweep will pick the request up");
-        }
-        Ok(deletion)
+            .map_err(AppError::from_repository)
     }
 
     /// Returns the owner's deletion state (BR6.4).
@@ -100,17 +73,40 @@ impl DeletionService {
         }
         Ok(deletion)
     }
+
+    /// Records the privacy event through C10.
+    ///
+    /// # Errors
+    /// Returns [`AppError::Unavailable`] when the audit sink cannot record it.
+    pub async fn record_requested(
+        &self,
+        caller: &Caller,
+        deletion: &DeletionRequest,
+    ) -> Result<(), AppError> {
+        self.trail
+            .record(
+                Some(caller.user_id()),
+                "identity.deletion.requested",
+                deletion.id().to_string(),
+                AuditOutcome::Success,
+                &caller.correlation_id,
+                context(&[]),
+            )
+            .await
+    }
 }
 
-/// Executes one deletion per run, in a fixed order, resuming a retry without
-/// repeating completed destruction.
+/// Executes one due deletion per claim, in a fixed order, resuming a retry
+/// without repeating completed destruction.
 pub struct DeletionWorker {
     deletions: Arc<dyn DeletionRepository>,
     users: Arc<dyn UserRepository>,
     keys: Arc<dyn ShreddingKeyRepository>,
-    consent: Arc<dyn ConsentRepository>,
+    erasure: Arc<dyn ErasureStore>,
     contributors: Arc<dyn ContributorGateway>,
     auth_admin: Arc<dyn AuthAdmin>,
+    transitions: Arc<dyn StatusTransitionStore>,
+    observation: Arc<dyn AccountObservation>,
     trail: Arc<Trail>,
 }
 
@@ -122,27 +118,31 @@ impl DeletionWorker {
         deletions: Arc<dyn DeletionRepository>,
         users: Arc<dyn UserRepository>,
         keys: Arc<dyn ShreddingKeyRepository>,
-        consent: Arc<dyn ConsentRepository>,
+        erasure: Arc<dyn ErasureStore>,
         contributors: Arc<dyn ContributorGateway>,
         auth_admin: Arc<dyn AuthAdmin>,
+        transitions: Arc<dyn StatusTransitionStore>,
+        observation: Arc<dyn AccountObservation>,
         trail: Arc<Trail>,
     ) -> Self {
         Self {
             deletions,
             users,
             keys,
-            consent,
+            erasure,
             contributors,
             auth_admin,
+            transitions,
+            observation,
             trail,
         }
     }
 
-    /// Runs one deletion pass. Returns how many requests it processed.
+    /// Runs one erasure pass. Returns how many requests it processed.
     ///
     /// # Errors
     /// Returns [`AppError`] when the store cannot be reached. A failed step is
-    /// recorded on the request, which stays retryable.
+    /// recorded on the request, which stays retryable with a bounded backoff.
     pub async fn run_once(&self, worker: &str, now: DateTime<Utc>) -> Result<usize, AppError> {
         let Some(mut deletion) = self
             .deletions
@@ -152,9 +152,139 @@ impl DeletionWorker {
         else {
             return Ok(0);
         };
+        // BR5.6: a second run over an erased request changes nothing and reports
+        // success.
+        if deletion.erased_at().is_some() {
+            return Ok(1);
+        }
         let user_id = deletion.user_id();
         let correlation = format!("deletion-{}", deletion.id());
 
+        let mut user = match self.users.find_by_id(user_id).await {
+            Ok(Some(user)) => user,
+            Ok(None) => {
+                self.fail(
+                    &mut deletion,
+                    "user",
+                    "the user record is unavailable",
+                    now,
+                    &correlation,
+                )
+                .await?;
+                return Ok(1);
+            }
+            Err(error) => {
+                return Err(AppError::from_repository(error));
+            }
+        };
+
+        // W4.1: a concurrent restore wins. The request is closed so it is never
+        // re-claimed, and nothing is erased. A retry after the transition
+        // already committed continues the cascade instead (`deleted` is this
+        // run's own outcome, not a restore).
+        if !matches!(
+            user.status(),
+            UserStatus::PendingDeletion | UserStatus::Deleted
+        ) {
+            deletion.cancel(now).map_err(AppError::from_domain)?;
+            self.deletions
+                .update(&deletion)
+                .await
+                .map_err(AppError::from_repository)?;
+            self.observation.record_deletion_event("cancelled");
+            return Ok(1);
+        }
+
+        // 1. The Supabase Auth identity leaves first: a failure here leaves the
+        //    local account intact and retryable.
+        if !deletion.progress().auth_deleted() {
+            match self.users.reveal_auth_subject(user_id).await {
+                Ok(Some(subject)) => match self.auth_admin.delete_user(&subject).await {
+                    Ok(()) => {}
+                    Err(error) => {
+                        self.fail(&mut deletion, "auth", &error.to_string(), now, &correlation)
+                            .await?;
+                        return Ok(1);
+                    }
+                },
+                // An absent subject means the identity is already gone; the step
+                // is idempotent, never a failure.
+                Ok(None) => {}
+                Err(error) => {
+                    self.fail(
+                        &mut deletion,
+                        "auth",
+                        &format!("the subject is unavailable: {error}"),
+                        now,
+                        &correlation,
+                    )
+                    .await?;
+                    return Ok(1);
+                }
+            }
+            deletion.record_auth_deleted();
+            self.deletions
+                .update(&deletion)
+                .await
+                .map_err(AppError::from_repository)?;
+        }
+
+        // 2. The status change, its append-only transition, and its audit intent
+        //    commit together (BR5.9).
+        if user.status() == UserStatus::PendingDeletion {
+            let change = StatusChange {
+                user_id,
+                from: UserStatus::PendingDeletion,
+                to: UserStatus::Deleted,
+                actor: SYSTEM_ACTOR.to_string(),
+                actor_kind: "system",
+                reason: None,
+                occurred_at: now,
+            };
+            if let Err(error) = self.transitions.apply(&change).await {
+                self.fail(
+                    &mut deletion,
+                    "transition",
+                    &error.to_string(),
+                    now,
+                    &correlation,
+                )
+                .await?;
+                return Ok(1);
+            }
+            user.transition(UserStatus::Deleted, now)
+                .map_err(AppError::from_domain)?;
+            self.observation.record_transition(
+                UserStatus::PendingDeletion,
+                UserStatus::Deleted,
+                "system",
+            );
+        }
+
+        // 3. The guarded tombstone move; it copies the subject hash before
+        //    `user_personal` leaves.
+        if !deletion.progress().identity_anonymised() {
+            user.anonymise(now);
+            if let Err(error) = self.users.anonymise(&user).await {
+                self.fail(
+                    &mut deletion,
+                    "tombstone",
+                    &error.to_string(),
+                    now,
+                    &correlation,
+                )
+                .await?;
+                return Ok(1);
+            }
+            deletion.record_identity_anonymised(now);
+            self.deletions
+                .update(&deletion)
+                .await
+                .map_err(AppError::from_repository)?;
+        }
+
+        // 4. Each service that owns a slice of the account erases it through its
+        //    own path, recorded step by step so a retry resumes.
         for contributor in Contributor::ALL {
             if deletion.progress().is_anonymised(contributor) {
                 continue;
@@ -174,71 +304,21 @@ impl DeletionWorker {
                         .map_err(AppError::from_repository)?;
                 }
                 Err(error) => {
-                    self.fail(&mut deletion, error.to_string(), now, &correlation)
-                        .await?;
-                    return Ok(1);
-                }
-            }
-        }
-
-        if !deletion.progress().auth_deleted() {
-            let subject = match self
-                .users
-                .reveal_auth_subject(user_id)
-                .await
-                .map_err(AppError::from_repository)?
-            {
-                Some(subject) => subject,
-                None => {
                     self.fail(
                         &mut deletion,
-                        "the Supabase Auth subject is unavailable".to_string(),
+                        "contributor",
+                        &error.to_string(),
                         now,
                         &correlation,
                     )
                     .await?;
                     return Ok(1);
                 }
-            };
-            match self.auth_admin.delete_user(&subject).await {
-                Ok(()) => {
-                    deletion.record_auth_deleted();
-                    self.deletions
-                        .update(&deletion)
-                        .await
-                        .map_err(AppError::from_repository)?;
-                }
-                Err(error) => {
-                    self.fail(&mut deletion, error.to_string(), now, &correlation)
-                        .await?;
-                    return Ok(1);
-                }
             }
         }
 
-        if !deletion.progress().identity_anonymised() {
-            let mut user = self
-                .users
-                .find_by_id(user_id)
-                .await
-                .map_err(AppError::from_repository)?
-                .ok_or(AppError::NotFound("user"))?;
-            user.anonymise(now);
-            self.users
-                .anonymise(&user)
-                .await
-                .map_err(AppError::from_repository)?;
-            self.consent
-                .delete_for_user(user_id)
-                .await
-                .map_err(AppError::from_repository)?;
-            deletion.record_identity_anonymised(now);
-            self.deletions
-                .update(&deletion)
-                .await
-                .map_err(AppError::from_repository)?;
-        }
-
+        // 5. The shredding key is destroyed only after every other destructive
+        //    step (BR6.3).
         if !deletion.progress().key_destroyed() {
             if let Some(key) = self
                 .keys
@@ -246,10 +326,11 @@ impl DeletionWorker {
                 .await
                 .map_err(AppError::from_repository)?
             {
-                self.keys
-                    .destroy(key.id(), now)
-                    .await
-                    .map_err(AppError::from_repository)?;
+                if let Err(error) = self.keys.destroy(key.id(), now).await {
+                    self.fail(&mut deletion, "key", &error.to_string(), now, &correlation)
+                        .await?;
+                    return Ok(1);
+                }
             }
             deletion
                 .record_key_destroyed(now)
@@ -258,6 +339,19 @@ impl DeletionWorker {
                 .update(&deletion)
                 .await
                 .map_err(AppError::from_repository)?;
+        }
+
+        // 6. Consent events and preferences leave through the retention role.
+        if let Err(error) = self.erasure.erase_consent(user_id).await {
+            self.fail(
+                &mut deletion,
+                "consent",
+                &format!("the retention delete failed: {error}"),
+                now,
+                &correlation,
+            )
+            .await?;
+            return Ok(1);
         }
 
         let retained = deletion.progress().retained().to_vec();
@@ -279,36 +373,52 @@ impl DeletionWorker {
             )
             .await
         {
-            self.fail(&mut deletion, error.to_string(), now, &correlation)
-                .await?;
+            self.fail(
+                &mut deletion,
+                "audit",
+                &error.to_string(),
+                now,
+                &correlation,
+            )
+            .await?;
             return Ok(1);
         }
 
-        deletion
-            .complete(retained, now)
-            .map_err(AppError::from_domain)?;
+        deletion.record_erased(retained, now);
         self.deletions
             .update(&deletion)
             .await
             .map_err(AppError::from_repository)?;
+        self.observation.record_deletion_event("erased");
         Ok(1)
     }
 
     async fn fail(
         &self,
         deletion: &mut DeletionRequest,
-        reason: String,
+        step: &str,
+        reason: &str,
         now: DateTime<Utc>,
         correlation: &str,
     ) -> Result<(), AppError> {
-        let reason = truncate(&reason, 500);
+        let reason = truncate(reason, 500);
+        self.observation.record_erasure_failure(step);
         deletion
             .fail(reason.clone(), now)
+            .map_err(AppError::from_domain)?;
+        deletion
+            .record_attempt_failure(now)
             .map_err(AppError::from_domain)?;
         self.deletions
             .update(deletion)
             .await
             .map_err(AppError::from_repository)?;
+        tracing::warn!(
+            account = %deletion.user_id(),
+            step,
+            attempts = deletion.attempt_count(),
+            "an erasure step failed; the request backs off"
+        );
         let context_reason = truncate(&reason, 200);
         if let Err(error) = self
             .trail
@@ -318,7 +428,7 @@ impl DeletionWorker {
                 deletion.id().to_string(),
                 AuditOutcome::Failed,
                 correlation,
-                context(&[("reason", context_reason.as_str())]),
+                context(&[("reason", context_reason.as_str()), ("step", step)]),
             )
             .await
         {
@@ -328,6 +438,8 @@ impl DeletionWorker {
     }
 }
 
+/// Keeps the retained categories the cascade collected, so the finished request
+/// still reports what a contributor keeps under a legal basis.
 fn truncate(value: &str, max: usize) -> String {
     value.chars().take(max).collect()
 }

@@ -1,6 +1,7 @@
 import { getAccessToken } from "../auth/session";
 import type {
   Account,
+  AccountStatusView,
   AddExchangeAccountInput,
   AddWalletConnectInput,
   AddWalletInput,
@@ -8,9 +9,12 @@ import type {
   Brief,
   ClientErrorEvent,
   ConsentDecision,
-  ConsentRecord,
+  ConsentDecisionView,
+  ConsentHistoryView,
+  ConsentStateView,
   CorrectionInput,
-  DeletionRequest,
+  DeletionView,
+  EffectivePreferences,
   ExportJob,
   GateResponse,
   ImportBatch,
@@ -23,11 +27,15 @@ import type {
   Portfolio,
   PortfolioValuation,
   Preferences,
+  PreferencesPatch,
+  Principal,
   ProblemDetails,
   Profile,
+  ProfileView,
   RecoveryCodes,
   ResolveAssetInput,
-  SessionInfo,
+  SignupGateState,
+  SignupGatesPayload,
   Snapshot,
   SupportArticle,
   SupportRequestInput,
@@ -62,11 +70,14 @@ export type {
   Portfolio,
   PortfolioValuation,
   Preferences,
+  Principal,
   ProblemDetails,
   Profile,
   RecoveryCodes,
   ResolveAssetInput,
   SessionInfo,
+  SignupGateState,
+  SignupGatesPayload,
   Snapshot,
   SupportArticle,
   SupportRequestInput,
@@ -95,6 +106,69 @@ export class NetworkError extends Error {
   }
 }
 
+/** A sign-up gate call that outlived its deadline (performance-design §5). */
+export class DeadlineAbort extends Error {
+  readonly name = "DeadlineAbort";
+
+  constructor() {
+    super("the gateway did not answer within the deadline");
+  }
+}
+
+/** The gate calls' single deadline: connect 5 s + read 10 s (performance-design §5). */
+export const GATE_DEADLINE_MS = 15_000;
+
+/**
+ * The one ProblemDetails `type` that means "this visitor has no principal or
+ * gate record yet" (functional-spec §6 G1/G2). The gateway route work owns
+ * publishing this value in the shared contract; this unit pins the designed
+ * value and treats every other 404 as a failure, so an undeclared route can
+ * never unlock the app.
+ */
+export const NO_RECORD_PROBLEM_TYPE = "https://crypto-pocket-butler.example/problems/no-record";
+
+/** The four pre-written, localised submit-failure variants (spec §2.6). */
+export type GateFailureVariant = "restricted" | "unasserted" | "unavailable" | "incomplete";
+
+/**
+ * Allowlist mapping for gate failures (security-design §5): the response
+ * status selects a pre-written variant; `detail` and `errors` are already
+ * discarded by the gate request path and are never rendered.
+ */
+export function gateFailureVariant(error: unknown): GateFailureVariant {
+  if (error instanceof ApiError) {
+    if (error.problem.status === 403) {
+      return "restricted";
+    }
+    if (error.problem.status === 422) {
+      return "unasserted";
+    }
+    if (error.problem.status === 503) {
+      return "unavailable";
+    }
+  }
+  return "incomplete";
+}
+
+/**
+ * Auto-retry eligibility for the gate reads (performance-design §5): only fast
+ * failures (network, 5xx) are retried; a deadline and every 4xx are terminal.
+ */
+export function isAutoRetryableGateError(error: unknown): boolean {
+  if (error instanceof DeadlineAbort) {
+    return false;
+  }
+  if (error instanceof NetworkError) {
+    return true;
+  }
+  return error instanceof ApiError && error.problem.status >= 500;
+}
+
+/** Jittered exponential backoff for the gate reads (performance-design §5). */
+export function gateRetryDelay(attempt: number): number {
+  return Math.min(1000 * 2 ** attempt, 8000) * (0.5 + Math.random() / 2);
+}
+
 const GATEWAY_URL = (import.meta.env.VITE_GATEWAY_URL as string | undefined) ?? "/v1";
 
 /** The default page size for every list call (NFR2.5). */
@@ -118,6 +192,8 @@ export interface ClientConfig {
   baseUrl?: string;
   getToken?: () => string | null;
   fetchImpl?: typeof fetch;
+  /** Gate-call deadline override for tests; defaults to GATE_DEADLINE_MS. */
+  deadlineMs?: number;
 }
 
 function newCorrelationId(): string {
@@ -160,6 +236,86 @@ async function toProblem(response: Response, correlationId: string): Promise<Pro
   }
 }
 
+function absoluteUrl(url: string): string {
+  // Node's fetch (used by the MSW-backed suite) rejects a relative URL; the
+  // browser resolves it against the page origin exactly as a relative request
+  // would be sent (security-design §3 — no third-party origin).
+  const origin = globalThis.location?.origin;
+  return new URL(url, origin ?? "http://localhost").toString();
+}
+
+/** Whether the problem is the exact, designed no-record answer (never a bare 404). */
+function isNoRecordProblem(problem: ProblemDetails): boolean {
+  return problem.status === 404 && problem.type === NO_RECORD_PROBLEM_TYPE;
+}
+
+/**
+ * Allowlist view of a problem: status/type select a pre-written message at the
+ * boundary; `detail` and `errors` are discarded here and never reach a surface
+ * (security-design §5, NFR22.1).
+ */
+function sanitiseProblem(problem: ProblemDetails): ProblemDetails {
+  return {
+    type: problem.type,
+    title: problem.title,
+    status: problem.status,
+    correlationId: problem.correlationId,
+  };
+}
+
+let fetchAcceptsAbortSignal: boolean | undefined;
+
+/**
+ * Whether the platform's `fetch` accepts the platform's `AbortSignal`.
+ *
+ * True in every browser and in Node. It is false only under a test runner
+ * whose jsdom `AbortController` is a different realm from Node's undici
+ * `fetch` (the brand check rejects it); the deadline still bounds the call —
+ * `Promise.race` below surfaces `DeadlineAbort` — it just cannot cancel the
+ * underlying request in that environment.
+ */
+function platformSignalIsAccepted(): boolean {
+  if (fetchAcceptsAbortSignal !== undefined) {
+    return fetchAcceptsAbortSignal;
+  }
+  try {
+    new Request("http://localhost/", { signal: new AbortController().signal });
+    fetchAcceptsAbortSignal = true;
+  } catch {
+    fetchAcceptsAbortSignal = false;
+  }
+  return fetchAcceptsAbortSignal;
+}
+
+async function callWithDeadline(
+  run: (signal: AbortSignal | undefined) => Promise<Response>,
+  deadlineMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const signal = platformSignalIsAccepted() ? controller.signal : undefined;
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      // A deadline is terminal for the attempt sequence (performance-design §5):
+      // the retry predicate sees DeadlineAbort and never retries it.
+      controller.abort();
+      reject(new DeadlineAbort());
+    }, deadlineMs);
+  });
+  try {
+    return await Promise.race([run(signal), deadline]);
+  } catch (error) {
+    if (timedOut) {
+      throw new DeadlineAbort();
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * The one module that owns every API Gateway call (BR1.2).
  *
@@ -170,6 +326,7 @@ export class GatewayClient {
   private readonly baseUrl: string;
   private readonly token: () => string | null;
   private readonly fetchImpl?: typeof fetch;
+  private readonly deadlineMs: number;
 
   constructor(config: ClientConfig = {}) {
     this.baseUrl = config.baseUrl ?? GATEWAY_URL;
@@ -177,6 +334,7 @@ export class GatewayClient {
     // Resolved per request rather than captured here, so a test that replaces
     // the global fetch after this client was constructed still takes effect.
     this.fetchImpl = config.fetchImpl;
+    this.deadlineMs = config.deadlineMs ?? GATE_DEADLINE_MS;
   }
 
   /** The base URL the client is bound to (used by the origin test). */
@@ -233,6 +391,101 @@ export class GatewayClient {
     return (await response.json()) as T;
   }
 
+  /**
+   * Gate transport (U8): absolute URL (for the MSW-backed suite), 15 s
+   * deadline, sanitised problems, and the no-record sentinel. `null` is a
+   * *resolved* value — only a rejection is an error (performance-design §2).
+   */
+  private async gateRequest<T>(
+    path: string,
+    options: {
+      method?: HttpMethod;
+      body?: unknown;
+      idempotencyKey?: string;
+      nullOnNoRecord?: boolean;
+    } = {},
+  ): Promise<T | null> {
+    const correlationId = newCorrelationId();
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "x-correlation-id": correlationId,
+    };
+    const token = this.token();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    if (options.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+    if (options.idempotencyKey) {
+      headers["Idempotency-Key"] = options.idempotencyKey;
+    }
+
+    let response: Response;
+    try {
+      const doFetch = this.fetchImpl ?? globalThis.fetch;
+      const url = absoluteUrl(buildUrl(this.baseUrl, path));
+      response = await callWithDeadline(
+        (signal) =>
+          doFetch(url, {
+            method: options.method ?? "GET",
+            headers,
+            body: options.body === undefined ? undefined : JSON.stringify(options.body),
+            signal,
+          }),
+        this.deadlineMs,
+      );
+    } catch (error) {
+      if (error instanceof DeadlineAbort) {
+        throw error;
+      }
+      throw new NetworkError(error instanceof Error ? error.message : "network failure");
+    }
+
+    if (!response.ok) {
+      const problem = await toProblem(response, correlationId);
+      if (options.nullOnNoRecord && isNoRecordProblem(problem)) {
+        return null;
+      }
+      throw new ApiError(sanitiseProblem(problem));
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    const text = await response.text();
+    if (!text) {
+      return undefined as T;
+    }
+    return JSON.parse(text) as T;
+  }
+
+  // ── Signup gates (U8) ────────────────────────────────────────────────────
+
+  /** G1: self-scoped, read-only principal; `null` means no record (spec §2.1). */
+  getPrincipalReadOnly(): Promise<Principal | null> {
+    return this.gateRequest<Principal>("/me/principal", { nullOnNoRecord: true });
+  }
+
+  /** G2: what is still outstanding; `null` means no record (spec §2.1). */
+  getSignupGateState(): Promise<SignupGateState | null> {
+    return this.gateRequest<SignupGateState>("/signup/gate-state", { nullOnNoRecord: true });
+  }
+
+  /** G3: record the four gates; the key makes retries idempotent (spec §3). */
+  submitSignupGates(values: SignupGatesPayload, idempotencyKey: string): Promise<void> {
+    return this.gateRequest<void>("/signup/gates", {
+      method: "POST",
+      body: {
+        countryCode: values.countryCode,
+        terms: values.terms,
+        risk: values.risk,
+        age: values.age,
+      },
+      idempotencyKey,
+    }).then(() => undefined);
+  }
+
   // ── Assets (U1) ──────────────────────────────────────────────────────────
 
   resolveAsset(input: ResolveAssetInput): Promise<Asset> {
@@ -267,16 +520,8 @@ export class GatewayClient {
     });
   }
 
-  getConsent(): Promise<ConsentRecord[]> {
-    return this.request<ConsentRecord[]>("/consent");
-  }
-
   postConsent(decisions: ConsentDecision[]): Promise<void> {
     return this.request<void>("/consent", { method: "POST", body: { decisions } });
-  }
-
-  getPreferences(): Promise<Preferences> {
-    return this.request<Preferences>("/preferences");
   }
 
   updatePreferences(preferences: Preferences): Promise<Preferences> {
@@ -288,20 +533,6 @@ export class GatewayClient {
 
   getProfile(): Promise<Profile> {
     return this.request<Profile>("/users/me");
-  }
-
-  updateProfile(patch: Partial<Pick<Profile, "displayName">>): Promise<Profile> {
-    return this.request<Profile>("/users/me", { method: "PATCH", body: patch });
-  }
-
-  listSessions(): Promise<SessionInfo[]> {
-    return this.request<SessionInfo[]>("/sessions");
-  }
-
-  revokeSession(sessionId: string): Promise<void> {
-    return this.request<void>(`/sessions/${encodeURIComponent(sessionId)}`, {
-      method: "DELETE",
-    });
   }
 
   enrolMfa(): Promise<{ secret: string; otpauthUrl: string }> {
@@ -531,8 +762,94 @@ export class GatewayClient {
     return this.request<ExportJob>(`/exports/${encodeURIComponent(exportId)}`);
   }
 
-  requestDeletion(): Promise<DeletionRequest> {
-    return this.request<DeletionRequest>("/privacy/deletions", { method: "POST" });
+  requestDeletion(): Promise<DeletionView> {
+    return this.request<DeletionView>("/privacy/deletions", { method: "POST" });
+  }
+
+  // ── Settings (U7) ────────────────────────────────────────────────────────
+
+  /** D0: the caller's own status; answers for a denied account too. */
+  getAccountStatus(): Promise<AccountStatusView> {
+    return this.request<AccountStatusView>("/me/account-status");
+  }
+
+  /** P1: the served profile view. */
+  getProfileView(): Promise<ProfileView> {
+    return this.request<ProfileView>("/me/profile");
+  }
+
+  /** P2 (W1): save the person's own display name; the answer is the new view. */
+  saveDisplayName(displayName: string): Promise<ProfileView> {
+    return this.request<ProfileView>("/me/profile", {
+      method: "PATCH",
+      body: { displayName },
+    });
+  }
+
+  /** P2 (W2): adopt the provider-supplied name again. */
+  useProviderName(): Promise<ProfileView> {
+    return this.request<ProfileView>("/me/profile", {
+      method: "PATCH",
+      body: { useProviderName: true },
+    });
+  }
+
+  /**
+   * D1: the open deletion request. A `404` is the designed "no request" answer
+   * only when it carries the pinned no-record type; every other refusal throws.
+   */
+  async getOpenDeletion(): Promise<DeletionView | null> {
+    try {
+      return await this.request<DeletionView>("/me/deletion-request");
+    } catch (error) {
+      if (error instanceof ApiError && isNoRecordProblem(error.problem)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /** D2: restore the account inside its recovery window. */
+  cancelDeletion(): Promise<DeletionView> {
+    return this.request<DeletionView>("/me/deletion-request", { method: "DELETE" });
+  }
+
+  /** X2: the effective preferences with their sources. */
+  readPreferences(): Promise<EffectivePreferences> {
+    return this.request<EffectivePreferences>("/me/preferences");
+  }
+
+  /** X2: write only the changed fields. */
+  savePreferences(patch: PreferencesPatch): Promise<EffectivePreferences> {
+    return this.request<EffectivePreferences>("/me/preferences", {
+      method: "PUT",
+      body: patch,
+    });
+  }
+
+  /** X3: the consent state per kind plus the required kinds still missing. */
+  getConsentState(): Promise<ConsentStateView> {
+    return this.request<ConsentStateView>("/me/consent/state");
+  }
+
+  /** X4: the consent history, newest first. */
+  getConsentHistory(): Promise<ConsentHistoryView> {
+    return this.request<ConsentHistoryView>("/me/consent");
+  }
+
+  /** X5: record a grant with the policy version the person acted on. */
+  grantConsent(kind: string, policyVersion: string): Promise<ConsentDecisionView> {
+    return this.request<ConsentDecisionView>("/me/consent", {
+      method: "POST",
+      body: { kind, policyVersion },
+    });
+  }
+
+  /** X6: withdraw a kind. */
+  withdrawConsent(kind: string): Promise<ConsentDecisionView> {
+    return this.request<ConsentDecisionView>(`/me/consent/${encodeURIComponent(kind)}/withdraw`, {
+      method: "POST",
+    });
   }
 
   // ── Help and status (U1/U3) ──────────────────────────────────────────────

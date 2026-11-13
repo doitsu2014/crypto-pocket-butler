@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use identity_application::ports::{DeletionRepository, RepositoryError};
 use identity_domain::{
-    DeletionProgress, DeletionRequest, DeletionRequestId, DeletionStatus, RetainedCategory, UserId,
+    DeletionProgress, DeletionRecord, DeletionRequest, DeletionRequestId, DeletionStatus,
+    RetainedCategory, UserId,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -14,7 +15,8 @@ use uuid::Uuid;
 use super::{invalid_data, map_sqlx_error};
 
 const DELETION_COLUMNS: &str = "id, user_id, status, progress, retained_categories, requested_at, \
-     completed_at, failure_reason, lease_owner, lease_until";
+     completed_at, failure_reason, lease_owner, lease_until, recoverable_until, cancelled_at, \
+     erased_at, attempt_count, next_attempt_at";
 
 /// sqlx-backed deletion requests.
 #[derive(Debug, Clone)]
@@ -42,6 +44,11 @@ struct DeletionRow {
     failure_reason: Option<String>,
     lease_owner: Option<String>,
     lease_until: Option<DateTime<Utc>>,
+    recoverable_until: DateTime<Utc>,
+    cancelled_at: Option<DateTime<Utc>>,
+    erased_at: Option<DateTime<Utc>>,
+    attempt_count: i32,
+    next_attempt_at: DateTime<Utc>,
 }
 
 fn progress_to_json(progress: &DeletionProgress) -> serde_json::Value {
@@ -144,19 +151,24 @@ fn retained_from_json(value: &serde_json::Value) -> Result<Vec<RetainedCategory>
 
 impl DeletionRow {
     fn into_domain(self) -> Result<DeletionRequest, RepositoryError> {
-        Ok(DeletionRequest::from_stored(
-            DeletionRequestId::new(self.id),
-            UserId::new(self.user_id),
-            DeletionStatus::parse(&self.status)
+        Ok(DeletionRequest::from_stored(DeletionRecord {
+            id: DeletionRequestId::new(self.id),
+            user_id: UserId::new(self.user_id),
+            status: DeletionStatus::parse(&self.status)
                 .map_err(|error| invalid_data("read deletion", error))?,
-            progress_from_json(&self.progress)?,
-            self.requested_at,
-            retained_from_json(&self.retained_categories)?,
-            self.completed_at,
-            self.failure_reason,
-            self.lease_owner,
-            self.lease_until,
-        ))
+            progress: progress_from_json(&self.progress)?,
+            requested_at: self.requested_at,
+            retained_categories: retained_from_json(&self.retained_categories)?,
+            completed_at: self.completed_at,
+            failure_reason: self.failure_reason,
+            lease_owner: self.lease_owner,
+            lease_until: self.lease_until,
+            recoverable_until: self.recoverable_until,
+            cancelled_at: self.cancelled_at,
+            erased_at: self.erased_at,
+            attempt_count: u32::try_from(self.attempt_count.max(0)).unwrap_or(u32::MAX),
+            next_attempt_at: self.next_attempt_at,
+        }))
     }
 }
 
@@ -166,8 +178,9 @@ impl DeletionRepository for PgDeletionRepository {
         sqlx::query(
             "INSERT INTO deletion_requests
                  (id, user_id, status, progress, retained_categories, requested_at, completed_at,
-                  failure_reason, lease_owner, lease_until)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                  failure_reason, lease_owner, lease_until, recoverable_until, cancelled_at,
+                  erased_at, attempt_count, next_attempt_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
         )
         .bind(deletion.id().as_uuid())
         .bind(deletion.user_id().as_uuid())
@@ -179,6 +192,11 @@ impl DeletionRepository for PgDeletionRepository {
         .bind(deletion.failure_reason())
         .bind(deletion.lease_owner())
         .bind(deletion.lease_until())
+        .bind(deletion.recoverable_until())
+        .bind(deletion.cancelled_at())
+        .bind(deletion.erased_at())
+        .bind(i32::try_from(deletion.attempt_count()).unwrap_or(i32::MAX))
+        .bind(deletion.next_attempt_at())
         .execute(&self.pool)
         .await
         .map_err(|error| map_sqlx_error("insert deletion", error))?;
@@ -203,7 +221,8 @@ impl DeletionRepository for PgDeletionRepository {
         let affected = sqlx::query(
             "UPDATE deletion_requests
              SET status = $2, progress = $3, retained_categories = $4, completed_at = $5,
-                 failure_reason = $6, lease_owner = $7, lease_until = $8
+                 failure_reason = $6, lease_owner = $7, lease_until = $8, recoverable_until = $9,
+                 cancelled_at = $10, erased_at = $11, attempt_count = $12, next_attempt_at = $13
              WHERE id = $1",
         )
         .bind(deletion.id().as_uuid())
@@ -214,6 +233,11 @@ impl DeletionRepository for PgDeletionRepository {
         .bind(deletion.failure_reason())
         .bind(deletion.lease_owner())
         .bind(deletion.lease_until())
+        .bind(deletion.recoverable_until())
+        .bind(deletion.cancelled_at())
+        .bind(deletion.erased_at())
+        .bind(i32::try_from(deletion.attempt_count()).unwrap_or(i32::MAX))
+        .bind(deletion.next_attempt_at())
         .execute(&self.pool)
         .await
         .map_err(|error| map_sqlx_error("update deletion", error))?
@@ -233,14 +257,14 @@ impl DeletionRepository for PgDeletionRepository {
     ) -> Result<Option<DeletionRequest>, RepositoryError> {
         let row = sqlx::query_as::<_, DeletionRow>(&format!(
             "SELECT {DELETION_COLUMNS} FROM deletion_requests
-             WHERE user_id = $1 AND status IN ('requested', 'in_progress')
+             WHERE user_id = $1 AND cancelled_at IS NULL AND erased_at IS NULL
              ORDER BY requested_at DESC
              LIMIT 1"
         ))
         .bind(user_id.as_uuid())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|error| map_sqlx_error("find active deletion", error))?;
+        .map_err(|error| map_sqlx_error("find open deletion", error))?;
         row.map(DeletionRow::into_domain).transpose()
     }
 
@@ -250,14 +274,20 @@ impl DeletionRepository for PgDeletionRepository {
         now: DateTime<Utc>,
         lease: Duration,
     ) -> Result<Option<DeletionRequest>, RepositoryError> {
+        // W4: only an open request past its recovery window, due for a retry,
+        // and not under a live lease is claimed. The claim commits before any
+        // cascade work, so a long cascade never holds the row lock.
         let row = sqlx::query_as::<_, DeletionRow>(&format!(
             "UPDATE deletion_requests
              SET lease_owner = $1, lease_until = $2, status = 'in_progress'
              WHERE id = (
                  SELECT id FROM deletion_requests
-                 WHERE status IN ('requested', 'in_progress', 'failed')
+                 WHERE cancelled_at IS NULL AND erased_at IS NULL
+                   AND status IN ('requested', 'in_progress', 'failed')
+                   AND next_attempt_at <= $3
+                   AND recoverable_until <= $3
                    AND (lease_until IS NULL OR lease_until <= $3)
-                 ORDER BY requested_at
+                 ORDER BY recoverable_until
                  FOR UPDATE SKIP LOCKED
                  LIMIT 1
              )

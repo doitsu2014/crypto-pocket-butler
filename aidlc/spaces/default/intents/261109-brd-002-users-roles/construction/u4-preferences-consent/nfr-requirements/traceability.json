@@ -1,0 +1,23 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u4-preferences-consent",
+  "upstream_ids": ["NFR21", "NFR22", "NFR23", "NFR24", "NFR25", "NFR26"],
+  "coverage": [
+    { "id": "NFR21", "status": "N/A", "target": "six-month audit retention is the Audit service's; this unit's audit copies follow it, and its own rows live until erasure (NFR20.5)" },
+    { "id": "NFR22", "status": "OK", "target": "NFR22.1, NFR22.2, NFR22.3, NFR22.4" },
+    { "id": "NFR23", "status": "OK", "target": "NFR23.1, NFR23.2" },
+    { "id": "NFR24", "status": "N/A", "target": "role and status freshness is u2-authorisation's; this unit's consent freshness rule (NFR24.1 in reliability-requirements.md) is a local rule for the gate, not the inception NFR24" },
+    { "id": "NFR25", "status": "N/A", "target": "backend unit; the settings screens U7 owns carry the accessibility target" },
+    { "id": "NFR26", "status": "N/A", "target": "the user-facing copy is U7's; this unit supplies only the closed locale (en, vi) and base-currency (USD, EUR, GBP, VND) sets" }
+  ],
+  "reverse": [
+    { "id": "NFR1.x", "status": "N/A", "target": "availability and dependency-failure prefixes inherited from the BRD-001 intent requirements record (NFR1.1–NFR1.6 in reliability-requirements.md)" },
+    { "id": "NFR2.x", "status": "N/A", "target": "latency prefixes inherited from the BRD-001 intent requirements record (NFR2.1–NFR2.7 in performance-requirements.md)" },
+    { "id": "NFR9.x", "status": "N/A", "target": "transport and authentication prefixes inherited from the BRD-001 intent requirements record (NFR9.1–NFR9.2 in security-requirements.md)" },
+    { "id": "NFR10.x", "status": "N/A", "target": "authorisation prefixes inherited from the BRD-001 intent requirements record (NFR10.1 in security-requirements.md)" },
+    { "id": "NFR17.x", "status": "N/A", "target": "observability prefixes inherited from the BRD-001 intent requirements record (NFR17.1–NFR17.6 in observability-requirements.md)" },
+    { "id": "NFR18.x", "status": "N/A", "target": "recovery-objective prefix inherited from the BRD-001 intent requirements record (NFR18.1 in reliability-requirements.md)" },
+    { "id": "NFR19.x", "status": "N/A", "target": "audit-rule prefixes inherited from the BRD-001 intent requirements record (NFR19.1–NFR19.4 in security-requirements.md)" },
+    { "id": "NFR20.x", "status": "N/A", "target": "scalability and retention prefixes introduced for this unit (NFR20.5–NFR20.6 in scalability-requirements.md); NFR20.1–NFR20.4 are the inherited §20 prefixes" }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "stage": "infrastructure-design",
+  "unit": "u1-user-registry",
+  "upstream_ids": ["NFR2.1", "NFR2.4", "NFR22.1", "NFR19.1", "NFR9.1", "NFR23.1", "NFR20.1", "NFR20.4", "NFR24.1", "NFR1.1"],
+  "coverage": [
+    { "id": "NFR2.1", "status": "OK", "target": "Identity API replicas with indexed reads" },
+    { "id": "NFR2.4", "status": "OK", "target": "Identity API replicas with indexed reads" },
+    { "id": "NFR22.1", "status": "OK", "target": "pgsodium plus Vault shredding keys" },
+    { "id": "NFR19.1", "status": "OK", "target": "Audit service HTTP client" },
+    { "id": "NFR9.1", "status": "OK", "target": "Loki logging pipeline with no secrets" },
+    { "id": "NFR23.1", "status": "OK", "target": "identity_app role grants" },
+    { "id": "NFR20.1", "status": "OK", "target": "Postgres indexes on subject hash and id" },
+    { "id": "NFR20.4", "status": "OK", "target": "Postgres email index" },
+    { "id": "NFR24.1", "status": "OK", "target": "stored status read on every request, no cache tier" },
+    { "id": "NFR1.1", "status": "OK", "target": "replicated Identity API with Swarm health checks" }
+  ]
+}

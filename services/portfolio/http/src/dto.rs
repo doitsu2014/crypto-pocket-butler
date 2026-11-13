@@ -1,5 +1,8 @@
 //! Request and response DTOs. They live only at the HTTP boundary and map to and
 //! from domain and application types here; no DTO type reaches inward.
+//!
+//! `SupportMetadataDto` carries the closed allowlist Identity reads for a support
+//! grant (BR3.9): a portfolio id and its label, nothing else.
 
 use chrono::{DateTime, Utc};
 use portfolio_application::intents::IntentRequest;
@@ -617,6 +620,38 @@ impl From<&TradeOverlay> for OverlayDto {
             asset_id: overlay.asset_id().to_string(),
             quantity_delta: overlay.quantity_delta().to_string(),
             applied_at: overlay.applied_at(),
+        }
+    }
+}
+
+/// `GET /v1/internal/support-metadata/{userId}` response (BR3.9).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportMetadataDto {
+    /// The allowlisted portfolio summaries.
+    pub portfolios: Vec<SupportPortfolioDto>,
+}
+
+/// One allowlisted portfolio summary.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportPortfolioDto {
+    /// The portfolio identifier.
+    pub id: String,
+    /// The portfolio label.
+    pub label: String,
+}
+
+impl From<Vec<Portfolio>> for SupportMetadataDto {
+    fn from(portfolios: Vec<Portfolio>) -> Self {
+        Self {
+            portfolios: portfolios
+                .iter()
+                .map(|portfolio| SupportPortfolioDto {
+                    id: portfolio.id().to_string(),
+                    label: portfolio.name().to_string(),
+                })
+                .collect(),
         }
     }
 }

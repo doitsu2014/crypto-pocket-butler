@@ -1,0 +1,32 @@
+{
+  "stage": "functional-design",
+  "unit": "u3-support-access",
+  "upstream_ids": ["AC3.1.1", "AC3.1.2", "AC3.2.1", "AC3.2.2", "AC3.2.3", "AC3.3.1", "AC3.3.2", "AC3.4.1", "AC3.4.2", "AC3.5.1", "AC3.5.2", "AC3.6.1", "AC3.6.2", "AC7.3.1", "AC7.3.2"],
+  "coverage": [
+    { "id": "AC3.1.1", "status": "OK", "target": "BR3.13" },
+    { "id": "AC3.1.2", "status": "OK", "target": "BR3.7" },
+    { "id": "AC3.2.1", "status": "OK", "target": "BR3.6" },
+    { "id": "AC3.2.2", "status": "OK", "target": "BR3.4" },
+    { "id": "AC3.2.3", "status": "OK", "target": "BR3.1" },
+    { "id": "AC3.3.1", "status": "OK", "target": "BR3.9" },
+    { "id": "AC3.3.2", "status": "OK", "target": "BR3.9, BR3.10" },
+    { "id": "AC3.4.1", "status": "OK", "target": "BR3.10" },
+    { "id": "AC3.4.2", "status": "OK", "target": "BR3.10" },
+    { "id": "AC3.5.1", "status": "OK", "target": "BR3.7, BR3.13" },
+    { "id": "AC3.5.2", "status": "OK", "target": "BR3.7, BR3.12" },
+    { "id": "AC3.6.1", "status": "OK", "target": "BR3.11" },
+    { "id": "AC3.6.2", "status": "OK", "target": "BR3.8, BR3.11" },
+    { "id": "AC7.3.1", "status": "OK", "target": "BR3.13" },
+    { "id": "AC7.3.2", "status": "OK", "target": "BR3.13" }
+  ],
+  "reverse": [
+    { "id": "BR3.2", "status": "N/A", "target": "Derived by this stage from FR16.1 and requirements OQ-B: the target must exist, must not be deleted or pending deletion, and must not be the requester; no AC names the target's state." },
+    { "id": "BR3.3", "status": "N/A", "target": "Derived by this stage: at most one live grant per (agent, target); no AC names it." },
+    { "id": "BR3.5", "status": "N/A", "target": "Derived by this stage: approval is eligible for 60 minutes after the request; no AC names it." }
+  ],
+  "notes": [
+    "C5's `denied` status is dropped (question Q3) because no requirement defines a deny action; recorded as an open contract item in functional-spec.md.",
+    "The metadata read moves to the `/v1/support-grants/{grantId}/metadata` surface (question Q1) and aggregates from two new internal endpoints owned by the Account and Portfolio services; both are open dependencies, not delivered by this unit.",
+    "AC3.4.1 has two halves. The API half — no support endpoint returns, reads or resets a credential or a holding — is BR3.10 and is delivered here. The screen half — no credential column in the console — is U9 (u9-support-console-ui, metadata panel) and U10 (u10-admin-users-ui, admin users list) presentation and is traced in those units."
+  ]
+}

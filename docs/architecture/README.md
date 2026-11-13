@@ -185,7 +185,7 @@ Tempo, Grafana) is an internal container deployed on the same Swarm cluster (sec
 | React Web Client (SPA) | UI for onboarding, dashboard, accounts, portfolios, valuation, P&L, snapshots, orders, briefs, notifications, settings and billing; Supabase Auth flows in-browser; WalletConnect read-only sessions; tokens in memory only | — |
 | Support Console | Least-privilege support UI for account metadata and tickets; reason-recorded, time-bound and audited | — |
 | API Gateway (BFF) | JWT validation, principal resolution, deny-by-default routing, admin/support gating, entitlement checks, rate limits, correlation IDs, SSE proxy. Stateless | — |
-| Identity Service | Internal users keyed by `auth.users.id`, roles from `app_metadata.role`, status, locale, base currency, timezone, consent, support-access grants, deletion and retention | `identity` |
+| Identity Service | Internal users keyed by `auth.users.id`, roles from `app_metadata.role`, status, locale, base currency, timezone, consent, support-access grants and their metadata fan-out with an audit outbox, deletion and retention | `identity` |
 | Account Service | Read-only exchange, on-chain, WalletConnect, watch-only and CSV accounts; verified credentials; holdings sync; spam/dust filtering; DeFi position labelling; regional coverage; quotas | `account` |
 | Asset Registry Service | Canonical asset identity, chains, token registries, price-source registry and quarantine for unmapped observations | `registry` |
 | Market Data Service | Multi-source prices, candles, pair metadata, FX and benchmarks with priority, fallback, licensing and freshness | `market` |
@@ -229,6 +229,53 @@ TypeScript 5.
    over internal HTTP and never call email or push providers directly.
 9. Support reads go through the gateway and Identity with a recorded reason, a time bound and
    an audit event; the Support Console never calls portfolio or credential endpoints.
+10. Role, status, and ownership decisions are made once inside the Identity Service and called
+    in-process by every Identity module. A service outside Identity (Account, Portfolio, and
+    any future caller) enforces the same rule through C4 `POST /internal/authorize` with its
+    own service token in `x-service-token` and the user's JWT unchanged in `Authorization`.
+    The subject and role come from that validated JWT — a body carrying `callerSubject` or
+    `roleClaim` is refused with 400 — and every denial is audited before the refusal returns.
+    The admin role change is reachable as `PUT /v1/admin/users/{id}/role` through the gateway
+    (admin required at the edge and re-checked inside Identity from the same token); the C4
+    `/internal/admin/role` path remains for a service caller.
+
+### 6.1 Support access
+
+A support grant is requested by a support-role user, approved by a different admin, and lives
+for exactly 60 minutes from the approval (the request itself expires 60 minutes after it was
+made). The four support paths reach Identity through the gateway:
+
+| Gateway route | Caller | Limit |
+| --- | --- | --- |
+| `GET /v1/support-grants` (`status=pending_approval`) | admin | 60/min per bearer token |
+| `POST /v1/support-grants` | support role | 20/min per bearer token |
+| `POST /v1/support-grants/{grantId}/approve` | admin, never the requester | address budget |
+| `DELETE /v1/support-grants/{grantId}` | admin | address budget |
+| `GET /v1/support-grants/{grantId}/metadata` | the grant holder | 60/min per bearer token |
+
+The support console's administrator-only **Admin users** section reaches Identity over four more
+gateway paths, all `requires_admin`:
+
+| Gateway route | Caller | Limit |
+| --- | --- | --- |
+| `POST /v1/admin/users/lookup` (body `{"email":"…"}`) | admin | 60/min per bearer token |
+| `PUT /v1/admin/users/{userId}/role` | admin | 20/min per bearer token |
+| `POST /v1/admin/users/{userId}/disable` | admin | 20/min per bearer token |
+| `POST /v1/admin/users/{userId}/restore` | admin | 20/min per bearer token |
+
+The lookup carries the address in the body: the earlier `GET /v1/admin/users?email=` search is
+retired so an address never reaches a URL or an access log. The answer is the user record plus the
+provider's current `app_metadata.role`; a provider read failure is a `503` and no record rather
+than a stale role. Each change carries a reason and an audit event, and the console renders only
+what the server answers — it re-reads the record after a change and never caches it past the
+section's lifetime.
+
+Identity resolves the closed metadata projection by calling one internal route on each owning
+service, gated by the Identity service token and the `support_metadata` operation:
+`GET /v1/internal/support-metadata/{userId}` on Account and the same path on Portfolio. A missing
+user answers an empty projection rather than a 404, so the read never becomes an existence
+oracle. Every grant decision and every served read is audited; an audit append that fails refuses
+the request rather than serving it unrecorded.
 
 ---
 
@@ -245,6 +292,11 @@ TypeScript 5.
   and per-subject crypto-shredding keys.
 - The Support Console owns no schema; it reads account metadata through Identity and writes
   access records through Audit.
+- Identity owns `support_grants` — one live grant per agent/target pair, enforced by the
+  `support_grants_live_pair_idx` partial unique index added in `0007_support_access` — and
+  `support_audit_outbox`, drained inside `identity-api` with bounded retries and a delivered-row
+  retention window. Both the grant decision and the audit append are recorded before a read is
+  served.
 - Analytics owns consent-aware aggregates and experiment exposure, not a shadow user database;
   consent state is owned by Identity.
 
@@ -310,6 +362,7 @@ covers `Production` only; Supabase services are external systems, not deployment
 | Self-hosted Swarm observability stack (Loki/Prometheus/Tempo/Grafana) instead of Supabase Logs & Metrics | One more stack to deploy, upgrade and back up; Supabase is scoped to the database platform; dashboards, alert rules and retention are fully under product control |
 | Single Swarm cluster with CDN and multi-AZ at launch | No active-active multi-region; accepted for launch, revisit when latency or availability targets require it |
 | Consent-aware analytics only | Lower acquisition insight than ad-tech tracking; accepted for privacy and regulatory safety |
+| Authorisation decided in-process inside Identity, with a thin C4 endpoint for other services (instead of a shared library or a network hop per in-Identity request) | The operation catalogue, status read, audit write, and ownership rule exist once; in-Identity callers pay no hop; Account and Portfolio use one small HTTP surface with a service token plus the forwarded JWT |
 
 ---
 
@@ -318,7 +371,7 @@ covers `Production` only; Supabase services are external systems, not deployment
 | BRD | Where it is satisfied |
 | --- | --- |
 | BRD-001 Product vision and scope | Whole model; global retail aggregation, P&L, valuation, orders, briefs, billing and support |
-| BRD-002 Users, roles and permissions | Identity Service (roles from `app_metadata.role`), gateway deny-by-default + admin/support gating, Support Console |
+| BRD-002 Users, roles and permissions | Identity Service (roles from `app_metadata.role`, one in-process authorisation decision exposed through C4 for Account and Portfolio), gateway deny-by-default + admin/support gating, Support Console |
 | BRD-003 Authentication and sessions | Supabase Auth + SPA (PKCE, MFA, passkeys, magic link), Identity webhooks, session revocation |
 | BRD-004 Account management and coverage | Account Service (verified read-only credentials, multi-venue and multi-chain adapters, WalletConnect, xpub, CSV, spam filtering, quotas) |
 | BRD-005 Asset catalog and market data | Asset Registry Service, Market Data Service (multi-source prices, FX, benchmarks, licensing, freshness) |

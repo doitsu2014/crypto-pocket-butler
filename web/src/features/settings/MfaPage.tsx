@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { gatewayClient } from "../../api/client";
-import { useProfile } from "../../api/queries";
 import type { Profile, RecoveryCodes } from "../../api/types";
 import { useLimitedSession } from "../../auth/limited";
-import { ErrorPanel, Loading, PageHeader } from "../../components";
+import { ErrorPanel, PageHeader } from "../../components";
 import { useI18n } from "../../i18n/react";
 
 type Enrolment = { secret: string; otpauthUrl: string };
@@ -23,8 +22,7 @@ export default function MfaPage({
   const { t } = useI18n();
   const navigate = useNavigate();
   const limited = useLimitedSession();
-  const profileQuery = useProfile(!profileOverride);
-  const profile = profileOverride ?? profileQuery.data;
+  const profile = profileOverride;
 
   const [enrolment, setEnrolment] = useState<Enrolment | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
@@ -66,10 +64,6 @@ export default function MfaPage({
     }
     setDeclined(true);
     navigate("/dashboard");
-  }
-
-  if (profileQuery.isLoading && !profileOverride) {
-    return <Loading />;
   }
 
   return (

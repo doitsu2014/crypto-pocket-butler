@@ -19,6 +19,10 @@ path = "src/bin/api.rs"
 name = "identity-worker"
 path = "src/bin/worker.rs"
 
+[[bin]]
+name = "identity-migrate"
+path = "src/bin/migrate.rs"
+
 [dependencies]
 identity-domain = { path = "domain" }
 identity-application = { path = "application" }

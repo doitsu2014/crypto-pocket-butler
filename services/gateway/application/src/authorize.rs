@@ -1,5 +1,9 @@
 //! The gateway request path: validate the JWT, deny by default, attach the
 //! correlation id, and forward the request with the JWT unchanged (BR4.1–BR4.3).
+//!
+//! `route_budget` exposes the declared per-route limit for the support-access
+//! paths (FR16.3–FR16.6, NFR11.1); the HTTP layer applies it after the address
+//! budget.
 
 use std::sync::Arc;
 
@@ -52,6 +56,16 @@ impl AuthorizeAndRoute {
             clock,
             routes,
         }
+    }
+
+    /// The matched route's label and its per-route budget, when the table
+    /// declares one (NFR11.1). The middleware applies it before the request
+    /// reaches the use case.
+    #[must_use]
+    pub fn route_budget(&self, method: Method, path: &str) -> Option<(&str, u32)> {
+        let route = self.routes.match_route(method, path)?;
+        let limit = route.max_requests_per_minute?;
+        Some((route.pattern_label(), limit))
     }
 
     /// Runs the gateway request path.

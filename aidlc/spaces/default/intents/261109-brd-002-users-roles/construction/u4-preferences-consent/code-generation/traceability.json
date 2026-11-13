@@ -1,0 +1,86 @@
+{
+  "stage": "code-generation",
+  "unit": "u4-preferences-consent",
+  "upstream_ids": [
+    "AC6.1.1", "AC6.1.2", "AC6.2.1", "AC6.2.2", "AC6.5.1", "AC6.5.2",
+    "BR4.1", "BR4.2", "BR4.3", "BR4.4", "BR4.5", "BR4.6", "BR4.7", "BR4.8", "BR4.9", "BR4.10", "BR4.11",
+    "NFR1.1", "NFR1.2", "NFR1.3", "NFR1.4", "NFR1.5", "NFR1.6",
+    "NFR2.1", "NFR2.2", "NFR2.3", "NFR2.4", "NFR2.5", "NFR2.6", "NFR2.7",
+    "NFR9.1", "NFR9.2", "NFR10.1",
+    "NFR17.1", "NFR17.2", "NFR17.3", "NFR17.4", "NFR17.5", "NFR17.6",
+    "NFR18.1", "NFR19.1", "NFR19.2", "NFR19.3", "NFR19.4",
+    "NFR20.1", "NFR20.2", "NFR20.3", "NFR20.5", "NFR20.6",
+    "NFR22.1", "NFR22.2", "NFR22.3", "NFR22.4",
+    "NFR23.1", "NFR23.2", "NFR24.1"
+  ],
+  "coverage": [
+    { "id": "AC6.1.1", "status": "OK", "target": "services/identity/domain/src/consent.rs" },
+    { "id": "AC6.1.2", "status": "OK", "target": "services/identity/infrastructure/src/consent/repository.rs" },
+    { "id": "AC6.2.1", "status": "OK", "target": "services/identity/application/src/consent/state.rs" },
+    { "id": "AC6.2.2", "status": "OK", "target": "services/identity/tests/consent_application.rs" },
+    { "id": "AC6.5.1", "status": "OK", "target": "services/identity/domain/src/consent.rs" },
+    { "id": "AC6.5.2", "status": "OK", "target": "services/identity/tests/consent_domain.rs" },
+
+    { "id": "BR4.1", "status": "OK", "target": "services/identity/domain/src/consent.rs" },
+    { "id": "BR4.2", "status": "OK", "target": "services/identity/domain/src/consent.rs" },
+    { "id": "BR4.3", "status": "OK", "target": "services/identity/http/src/consent.rs" },
+    { "id": "BR4.4", "status": "OK", "target": "services/identity/migrations/0005_preferences_consent.up.sql" },
+    { "id": "BR4.5", "status": "OK", "target": "services/identity/infrastructure/src/consent/repository.rs" },
+    { "id": "BR4.6", "status": "OK", "target": "services/identity/application/src/consent/state.rs" },
+    { "id": "BR4.7", "status": "OK", "target": "services/identity/application/src/consent/withdraw.rs" },
+    { "id": "BR4.8", "status": "OK", "target": "services/identity/application/src/consent/grant.rs" },
+    { "id": "BR4.9", "status": "OK", "target": "services/identity/application/src/preferences/read.rs" },
+    { "id": "BR4.10", "status": "OK", "target": "services/identity/tests/consent_http.rs" },
+    { "id": "BR4.11", "status": "OK", "target": "services/identity/application/src/consent/state.rs" },
+
+    { "id": "NFR1.1", "status": "OK", "target": "services/identity/src/lib.rs" },
+    { "id": "NFR1.2", "status": "OK", "target": "services/identity/http/src/consent.rs" },
+    { "id": "NFR1.3", "status": "N/A", "target": "the service's existing readiness check; no new probe" },
+    { "id": "NFR1.4", "status": "OK", "target": "services/identity/infrastructure/src/consent/outbox.rs" },
+    { "id": "NFR1.5", "status": "OK", "target": "services/identity/application/src/consent/withdraw.rs" },
+    { "id": "NFR1.6", "status": "OK", "target": "services/identity/infrastructure/src/consent/outbox.rs" },
+
+    { "id": "NFR2.1", "status": "OK", "target": "services/identity/application/src/preferences/read.rs" },
+    { "id": "NFR2.2", "status": "OK", "target": "services/identity/infrastructure/src/preferences/repository.rs" },
+    { "id": "NFR2.3", "status": "OK", "target": "services/identity/infrastructure/src/preferences/repository.rs" },
+    { "id": "NFR2.4", "status": "OK", "target": "services/identity/infrastructure/src/consent/repository.rs" },
+    { "id": "NFR2.5", "status": "OK", "target": "services/identity/application/src/consent/grant.rs" },
+    { "id": "NFR2.6", "status": "OK", "target": "services/identity/infrastructure/src/consent/repository.rs" },
+    { "id": "NFR2.7", "status": "OK", "target": "services/identity/application/src/consent/history.rs" },
+
+    { "id": "NFR9.1", "status": "OK", "target": "services/identity/http/src/middleware.rs" },
+    { "id": "NFR9.2", "status": "OK", "target": "services/identity/http/src/consent.rs" },
+    { "id": "NFR10.1", "status": "OK", "target": "services/identity/http/src/consent.rs" },
+
+    { "id": "NFR17.1", "status": "OK", "target": "services/identity/http/src/metrics.rs" },
+    { "id": "NFR17.2", "status": "OK", "target": "services/identity/http/src/metrics.rs" },
+    { "id": "NFR17.3", "status": "OK", "target": "services/identity/http/src/metrics.rs" },
+    { "id": "NFR17.4", "status": "OK", "target": "services/identity/http/src/metrics.rs" },
+    { "id": "NFR17.5", "status": "OK", "target": "services/identity/http/src/metrics.rs" },
+    { "id": "NFR17.6", "status": "OK", "target": "services/identity/http/src/metrics.rs" },
+
+    { "id": "NFR18.1", "status": "N/A", "target": "platform Postgres backups; no unit code" },
+    { "id": "NFR19.1", "status": "OK", "target": "services/identity/infrastructure/src/consent/repository.rs" },
+    { "id": "NFR19.2", "status": "OK", "target": "services/identity/infrastructure/src/consent/outbox.rs" },
+    { "id": "NFR19.3", "status": "OK", "target": "services/identity/application/src/consent/withdraw.rs" },
+    { "id": "NFR19.4", "status": "OK", "target": "services/identity/infrastructure/src/consent/outbox.rs" },
+
+    { "id": "NFR20.1", "status": "N/A", "target": "stateless replicas; scaling is the Swarm replica policy" },
+    { "id": "NFR20.2", "status": "OK", "target": "services/identity/migrations/0005_preferences_consent.up.sql" },
+    { "id": "NFR20.3", "status": "OK", "target": "services/identity/infrastructure/src/consent/outbox.rs" },
+    { "id": "NFR20.5", "status": "OK", "target": "services/identity/migrations/0005_preferences_consent.up.sql" },
+    { "id": "NFR20.6", "status": "N/A", "target": "the erasure job's own legal-hold check; no unit code until BRD-017" },
+
+    { "id": "NFR22.1", "status": "OK", "target": "services/identity/domain/src/consent.rs" },
+    { "id": "NFR22.2", "status": "OK", "target": "services/identity/http/src/consent.rs" },
+    { "id": "NFR22.3", "status": "OK", "target": "services/identity/migrations/0005_preferences_consent.up.sql" },
+    { "id": "NFR22.4", "status": "N/A", "target": "the audit service's own retention; no unit code" },
+
+    { "id": "NFR23.1", "status": "OK", "target": "services/identity/migrations/0005_preferences_consent.up.sql" },
+    { "id": "NFR23.2", "status": "OK", "target": "services/identity/migrations/0005_preferences_consent.up.sql" },
+    { "id": "NFR24.1", "status": "OK", "target": "services/identity/application/src/consent/state.rs" }
+  ],
+  "reverse": [
+    { "id": "BR4.3", "status": "N/A", "target": "cross-cutting ownership rule: enforced by the token-derived user id on every /v1/me route and the C6 path-id check (404)" }
+  ]
+}

@@ -831,3 +831,61 @@ async fn the_worker_health_and_wake_endpoint_behave() {
     let response = worker_router(h.worker).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+// ---------------------------------------------------------------------------
+// The listeners themselves
+// ---------------------------------------------------------------------------
+
+/// One blocking HTTP/1.1 request against a bound listener, read to EOF.
+async fn raw_get(addr: std::net::SocketAddr, path: &str) -> String {
+    let path = path.to_string();
+    tokio::task::spawn_blocking(move || {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .unwrap();
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        stream.flush().unwrap();
+        let mut buffer = String::new();
+        let _ = stream.read_to_string(&mut buffer);
+        buffer
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn the_api_listener_answers_healthz_on_its_bound_port() {
+    let h = harness();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(account_http::server::serve(listener, h.state.clone()));
+
+    let response = raw_get(addr, "/healthz").await;
+
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    assert!(response.contains("\"status\":\"ok\""), "{response}");
+    server.abort();
+}
+
+#[tokio::test]
+async fn the_worker_listener_answers_healthz_on_its_bound_port() {
+    let h = harness();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(account_http::server::serve_worker(
+        listener,
+        h.worker.clone(),
+    ));
+
+    let response = raw_get(addr, "/healthz").await;
+
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    assert!(response.contains("\"status\":\"ok\""), "{response}");
+    server.abort();
+}

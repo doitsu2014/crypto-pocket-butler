@@ -3,8 +3,6 @@ import { gatewayClient } from "./client";
 import type {
   Account,
   Brief,
-  ConsentRecord,
-  DeletionRequest,
   ExportJob,
   Incident,
   NotificationItem,
@@ -12,9 +10,7 @@ import type {
   Pnl,
   Portfolio,
   PortfolioValuation,
-  Preferences,
   Profile,
-  SessionInfo,
   Snapshot,
   SupportArticle,
   Transaction,
@@ -29,9 +25,6 @@ const MINUTE = 60_000;
 
 export const queryKeys = {
   profile: ["profile"] as const,
-  preferences: ["preferences"] as const,
-  consent: ["consent"] as const,
-  sessions: ["sessions"] as const,
   portfolios: ["portfolios"] as const,
   portfolio: (id: string) => ["portfolio", id] as const,
   accounts: (userId: string) => ["accounts", userId] as const,
@@ -50,37 +43,16 @@ export const queryKeys = {
   incidents: ["incidents"] as const,
 };
 
+/**
+ * The signed-in user's identity as the shell and other journeys read it (the
+ * account id behind their lists). The settings Profile panel reads P1 through
+ * `settingsQueries.useProfile` instead; this hook is not its source.
+ */
 export function useProfile(enabled = true) {
   return useQuery<Profile>({
     queryKey: queryKeys.profile,
     queryFn: () => gatewayClient.getProfile(),
     staleTime: MINUTE,
-    enabled,
-  });
-}
-
-export function usePreferences() {
-  return useQuery<Preferences>({
-    queryKey: queryKeys.preferences,
-    queryFn: () => gatewayClient.getPreferences(),
-    staleTime: 5 * MINUTE,
-  });
-}
-
-export function useConsent(enabled = true) {
-  return useQuery<ConsentRecord[]>({
-    queryKey: queryKeys.consent,
-    queryFn: () => gatewayClient.getConsent(),
-    staleTime: 5 * MINUTE,
-    enabled,
-  });
-}
-
-export function useSessions(enabled = true) {
-  return useQuery<SessionInfo[]>({
-    queryKey: queryKeys.sessions,
-    queryFn: () => gatewayClient.listSessions(),
-    staleTime: 30_000,
     enabled,
   });
 }
@@ -211,11 +183,5 @@ export function useIncidents(enabled = true) {
 export function useStartExport() {
   return useMutation<ExportJob, Error, void>({
     mutationFn: () => gatewayClient.startExport(),
-  });
-}
-
-export function useRequestDeletion() {
-  return useMutation<DeletionRequest, Error, void>({
-    mutationFn: () => gatewayClient.requestDeletion(),
   });
 }

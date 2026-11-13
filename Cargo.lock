@@ -984,6 +984,7 @@ dependencies = [
  "gateway-domain",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tower",
@@ -1372,6 +1373,7 @@ dependencies = [
  "chrono",
  "identity-domain",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tracing",
@@ -1383,6 +1385,9 @@ name = "identity-domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "chrono-tz",
+ "hex",
+ "sha2",
  "thiserror",
  "uuid",
 ]

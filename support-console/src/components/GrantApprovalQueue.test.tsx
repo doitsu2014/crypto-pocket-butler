@@ -5,12 +5,11 @@ import type { ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { axe } from "jest-axe";
 import { describe, expect, it, vi } from "vitest";
-import { activeGrant, pendingGrant, problemDetails } from "../test/fixtures";
-import { renderWithQuery } from "../test/fixtures";
+import { activeGrant, pendingGrant, problemDetails, renderWithQuery } from "../test/fixtures";
 import { server } from "../test/server";
 import { GrantApprovalQueue } from "./GrantApprovalQueue";
 
-const ownGrant = pendingGrant({ id: "grant-own", requestedBy: "agent-1" });
+const ownGrant = pendingGrant({ id: "grant-own", requestedBy: "admin-1" });
 const otherGrant = pendingGrant({ id: "grant-other", requestedBy: "agent-2" });
 
 describe("GrantApprovalQueue", () => {
@@ -18,8 +17,8 @@ describe("GrantApprovalQueue", () => {
     renderWithQuery(
       <GrantApprovalQueue
         grants={[]}
-        currentUserId="agent-1"
-        role="support"
+        currentUserId="admin-1"
+        role="admin"
         token="token-1"
         onChanged={vi.fn()}
       />,
@@ -32,8 +31,8 @@ describe("GrantApprovalQueue", () => {
     renderWithQuery(
       <GrantApprovalQueue
         grants={[otherGrant]}
-        currentUserId="agent-1"
-        role="support"
+        currentUserId="admin-1"
+        role="admin"
         token="token-1"
         onChanged={vi.fn()}
       />,
@@ -45,8 +44,27 @@ describe("GrantApprovalQueue", () => {
     expect(row).toHaveTextContent("Pending approval");
   });
 
-  it("approves a grant as the second approver and reports the update", async () => {
-    const approved = { ...otherGrant, status: "active" as const, expiresAt: new Date().toISOString() };
+  it("disables approval for a non-admin viewer and says why", () => {
+    renderWithQuery(
+      <GrantApprovalQueue
+        grants={[otherGrant]}
+        currentUserId="agent-1"
+        role="support"
+        token="token-1"
+        onChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId(`grant-approval-approve-${otherGrant.id}`)).toBeDisabled();
+    expect(screen.getByText(/only an administrator can approve/i)).toBeInTheDocument();
+  });
+
+  it("enables approval for a different administrator", async () => {
+    const approved = {
+      ...otherGrant,
+      status: "active" as const,
+      expiresAt: new Date().toISOString(),
+    };
     const seen: string[] = [];
     server.use(
       http.post("*/v1/support-grants/*/approve", ({ request }) => {
@@ -58,25 +76,27 @@ describe("GrantApprovalQueue", () => {
     renderWithQuery(
       <GrantApprovalQueue
         grants={[otherGrant]}
-        currentUserId="agent-1"
-        role="support"
+        currentUserId="admin-1"
+        role="admin"
         token="token-1"
         onChanged={onChanged}
       />,
     );
 
-    await userEvent.setup().click(screen.getByTestId(`grant-approval-approve-${otherGrant.id}`));
+    const button = screen.getByTestId(`grant-approval-approve-${otherGrant.id}`);
+    expect(button).toBeEnabled();
+    await userEvent.setup().click(button);
 
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(approved));
     expect(seen[0]).toContain(`/v1/support-grants/${otherGrant.id}/approve`);
   });
 
-  it("disables approval when the current user requested the grant", () => {
+  it("disables approval when the administrator requested the grant", () => {
     renderWithQuery(
       <GrantApprovalQueue
         grants={[ownGrant]}
-        currentUserId="agent-1"
-        role="support"
+        currentUserId="admin-1"
+        role="admin"
         token="token-1"
         onChanged={vi.fn()}
       />,
@@ -118,9 +138,7 @@ describe("GrantApprovalQueue", () => {
 
   it("revokes a grant as an admin and reports the update", async () => {
     const revoked = activeGrant({ id: otherGrant.id, status: "revoked" });
-    server.use(
-      http.delete("*/v1/support-grants/*", () => HttpResponse.json(revoked)),
-    );
+    server.use(http.delete("*/v1/support-grants/*", () => HttpResponse.json(revoked)));
     const onChanged = vi.fn();
     renderWithQuery(
       <GrantApprovalQueue
@@ -151,8 +169,8 @@ describe("GrantApprovalQueue", () => {
     renderWithQuery(
       <GrantApprovalQueue
         grants={[otherGrant]}
-        currentUserId="agent-1"
-        role="support"
+        currentUserId="admin-1"
+        role="admin"
         token="token-1"
         onChanged={vi.fn()}
       />,
@@ -169,8 +187,8 @@ describe("GrantApprovalQueue", () => {
     const { container } = renderWithQuery(
       <GrantApprovalQueue
         grants={[otherGrant]}
-        currentUserId="agent-1"
-        role="support"
+        currentUserId="admin-1"
+        role="admin"
         token="token-1"
         onChanged={vi.fn()}
       />,

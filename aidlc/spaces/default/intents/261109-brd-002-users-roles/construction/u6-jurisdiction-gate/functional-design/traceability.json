@@ -1,0 +1,14 @@
+{
+  "stage": "functional-design",
+  "unit": "u6-jurisdiction-gate",
+  "upstream_ids": ["AC6.3.1", "AC6.3.2", "AC6.4.1", "AC6.4.2"],
+  "coverage": [
+    { "id": "AC6.3.1", "status": "OK", "target": "BR1.1, BR1.2, BR1.3, BR1.4, BR1.5, BR1.6" },
+    { "id": "AC6.3.2", "status": "OK", "target": "BR1.8" },
+    { "id": "AC6.4.1", "status": "OK", "target": "BR1.9" },
+    { "id": "AC6.4.2", "status": "OK", "target": "BR1.7, BR1.10" }
+  ],
+  "reverse": [
+    { "id": "BR1.6", "status": "N/A", "target": "operational integrity rule for the list version; supports AC6.3.1" }
+  ]
+}

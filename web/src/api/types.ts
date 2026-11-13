@@ -349,3 +349,130 @@ export interface ClientErrorEvent {
   correlationId: string;
   sessionId?: string;
 }
+
+// ── Signup gates (U8) ──────────────────────────────────────────────────────
+// Transcribed from contract-summary.md C1 (Principal) and functional-spec §6
+// (G2/G3). Additive only — no existing type changes.
+
+export type PrincipalRole = "owner" | "admin" | "support";
+
+export type PrincipalStatus = "pending" | "active" | "disabled" | "pending_deletion" | "deleted";
+
+export type PrincipalNextStep = "none" | "verify_email" | "enrol_mfa" | "restore_account";
+
+/** C1: the self-scoped, read-only principal answer (functional-spec §6 G1). */
+export interface Principal {
+  userId: string;
+  role: PrincipalRole;
+  status: PrincipalStatus;
+  displayName?: string;
+  emailVerified?: boolean;
+  nextStep: PrincipalNextStep;
+}
+
+/** G2: what is still outstanding, and whether continued use is blocked. */
+export interface SignupGateState {
+  missing: Array<"terms" | "risk" | "age">;
+  jurisdictionBlocked: boolean;
+}
+
+/** G3 request body — exactly four fields (functional-spec §3). */
+export interface SignupGatesPayload {
+  countryCode: string;
+  terms: boolean;
+  risk: boolean;
+  age: boolean;
+}
+
+// ── Settings (U7) ──────────────────────────────────────────────────────────
+// Transcribed from functional-spec §8 (D0/P1/P2/D1/D2/D3 and X2–X6). Additive
+// only — no existing type changes.
+
+/** The stored lifecycle state (identity_domain::UserStatus). */
+export type UserStatus = "pending" | "active" | "disabled" | "pending_deletion" | "deleted";
+
+/** D0 `GET /v1/me/account-status`: the caller's own status and nothing else. */
+export interface AccountStatusView {
+  status: UserStatus;
+}
+
+/** P1 `GET /v1/me/profile` and the P2 response. */
+export interface ProfileView {
+  userId: string;
+  displayName: string | null;
+  displayNameOverridden: boolean;
+  providerDisplayName: string | null;
+  email: string | null;
+  emailVerified: boolean;
+  status: UserStatus;
+}
+
+/** D1/D2/D3 `DeletionResponse` (contract-summary C3). */
+export interface DeletionView {
+  deletionId: string;
+  status: string;
+  requestedAt: string;
+  completedAt?: string | null;
+  failureReason?: string | null;
+  retainedCategories: Array<{ category: string; basis: string }>;
+  recoveryEndsAt: string;
+  cancelledAt?: string | null;
+  erasedAt?: string | null;
+  attemptCount: number;
+}
+
+/** One effective preference value and where it came from. */
+export interface PreferenceValue<T> {
+  value: T;
+  source: string;
+}
+
+/** X2 `GET|PUT /v1/me/preferences` response. */
+export interface EffectivePreferences {
+  userId: string;
+  locale: PreferenceValue<string>;
+  baseCurrency: PreferenceValue<string>;
+  timezone: PreferenceValue<string>;
+  notifications: {
+    email: PreferenceValue<boolean>;
+    push: PreferenceValue<boolean>;
+  };
+}
+
+/** X2 request body: only the fields the person changed. */
+export interface PreferencesPatch {
+  locale?: string;
+  baseCurrency?: string;
+  timezone?: string;
+  notifications?: { email?: boolean; push?: boolean };
+}
+
+/** X3 `GET /v1/me/consent/state`. */
+export interface ConsentStateView {
+  userId: string;
+  kinds: Record<string, string>;
+  missing: string[];
+}
+
+/** One X4 consent event. */
+export interface ConsentEvent {
+  id: string;
+  seq: number;
+  kind: string;
+  action: string;
+  occurredAt: string;
+  policyVersion: string;
+}
+
+/** X4 `GET /v1/me/consent` page. */
+export interface ConsentHistoryView {
+  events: ConsentEvent[];
+  nextCursor?: string | null;
+}
+
+/** X5/X6 decision answer. Named apart from the legacy onboarding `ConsentDecision`. */
+export interface ConsentDecisionView {
+  kind: string;
+  state: string;
+  changed?: boolean;
+}

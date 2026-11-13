@@ -175,3 +175,43 @@ async fn an_unreachable_upstream_maps_to_unavailable() {
         .await;
     assert!(matches!(result, Err(UpstreamError::Unavailable(_))));
 }
+
+#[tokio::test]
+async fn each_route_is_forwarded_to_its_own_service_and_an_unknown_service_is_refused() {
+    let (registry_url, registry_seen) = start_server().await;
+    let (identity_url, identity_seen) = start_server().await;
+    let client = ReqwestUpstreamClient::with_services(
+        std::collections::BTreeMap::from([
+            ("asset-registry".to_string(), registry_url),
+            ("identity".to_string(), identity_url),
+        ]),
+        1_000,
+    );
+
+    client
+        .forward(forward("/v1/assets/resolve", Method::Get))
+        .await
+        .expect("the registry answers");
+    assert!(registry_seen.lock().unwrap().is_some());
+    assert!(
+        identity_seen.lock().unwrap().is_none(),
+        "the registry request never reaches Identity"
+    );
+
+    let mut identity_request = forward("/v1/principals/abc", Method::Get);
+    identity_request.service = ServiceName::identity();
+    client
+        .forward(identity_request)
+        .await
+        .expect("identity answers");
+    let seen = identity_seen.lock().unwrap().clone().expect("recorded");
+    assert_eq!(seen.uri, "/v1/principals/abc");
+
+    let mut unknown = forward("/v1/principals/abc", Method::Get);
+    unknown.service = ServiceName::new("portfolio").unwrap();
+    let error = client
+        .forward(unknown)
+        .await
+        .expect_err("an undeclared service has no upstream");
+    assert!(matches!(error, UpstreamError::Unavailable(_)));
+}

@@ -1,7 +1,9 @@
 //! Internal service identities and the operations each may call.
 //!
 //! Each calling service holds its own token; the registry maps a token hash to
-//! the caller name and a per-operation allow-list (security design).
+//! the caller name and a per-operation allow-list (security design). The
+//! `support_metadata` operation lets only Identity read the support projection
+//! (BR3.9).
 
 use crate::error::DomainError;
 
@@ -18,6 +20,8 @@ pub enum Operation {
     TransactionsRead,
     /// `POST /v1/internal/run/account-sync`.
     RunScheduledSync,
+    /// `GET /v1/internal/support-metadata/{userId}` (BR3.9).
+    SupportMetadata,
 }
 
 impl Operation {
@@ -30,6 +34,7 @@ impl Operation {
             Self::HoldingsRead => "holdings_read",
             Self::TransactionsRead => "transactions_read",
             Self::RunScheduledSync => "run_scheduled_sync",
+            Self::SupportMetadata => "support_metadata",
         }
     }
 
@@ -44,6 +49,7 @@ impl Operation {
             "holdings_read" => Ok(Self::HoldingsRead),
             "transactions_read" => Ok(Self::TransactionsRead),
             "run_scheduled_sync" => Ok(Self::RunScheduledSync),
+            "support_metadata" => Ok(Self::SupportMetadata),
             _ => Err(DomainError::Invalid {
                 field: "operation",
                 reason: "is not a registered Account operation".to_string(),
@@ -59,7 +65,7 @@ pub fn service_allowed(service: &str, operation: Operation) -> bool {
     match service.trim().to_ascii_lowercase().as_str() {
         "identity" => matches!(
             operation,
-            Operation::PrivacyExport | Operation::PrivacyAnonymise
+            Operation::PrivacyExport | Operation::PrivacyAnonymise | Operation::SupportMetadata
         ),
         "portfolio" | "ledger" => matches!(
             operation,

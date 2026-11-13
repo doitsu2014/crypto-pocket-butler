@@ -10,15 +10,17 @@ mod exports;
 mod jurisdiction;
 mod keys;
 mod sessions;
+mod status_transitions;
 mod support;
 mod users;
 
 pub use consent::PgConsentRepository;
 pub use deletions::PgDeletionRepository;
 pub use exports::PgExportRepository;
-pub use jurisdiction::PgJurisdictionRepository;
+pub use jurisdiction::{PgJurisdictionListRepository, PgJurisdictionRepository};
 pub use keys::PgShreddingKeyRepository;
 pub use sessions::PgDeviceSessionRepository;
+pub use status_transitions::PgStatusTransitionStore;
 pub use support::PgSupportGrantRepository;
 pub use users::PgUserRepository;
 

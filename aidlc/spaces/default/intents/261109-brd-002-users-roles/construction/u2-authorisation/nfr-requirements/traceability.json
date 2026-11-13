@@ -1,0 +1,23 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u2-authorisation",
+  "upstream_ids": ["NFR21", "NFR22", "NFR23", "NFR24", "NFR25", "NFR26"],
+  "coverage": [
+    { "id": "NFR21", "status": "N/A", "target": "audit retention is owned by the Audit service" },
+    { "id": "NFR22", "status": "N/A", "target": "the stored-identifier rule (hash plus deterministic ciphertext) is enforced by u1-user-registry, which owns the subject; this unit stores nothing and keeps the plaintext out of its logs and audit records (NFR22.1)" },
+    { "id": "NFR23", "status": "OK", "target": "NFR23.1, NFR23.2" },
+    { "id": "NFR24", "status": "OK", "target": "NFR24.1" },
+    { "id": "NFR25", "status": "N/A", "target": "backend unit with no user-facing surfaces" },
+    { "id": "NFR26", "status": "N/A", "target": "no user-facing copy in this unit" }
+  ],
+  "reverse": [
+    { "id": "NFR1.x", "status": "N/A", "target": "availability prefixes inherited from the BRD-001 intent requirements record (NFR1.1–NFR1.3 in reliability-requirements.md)" },
+    { "id": "NFR2.x", "status": "N/A", "target": "latency prefixes inherited from the BRD-001 intent requirements record (NFR2.1–NFR2.8 in performance-requirements.md)" },
+    { "id": "NFR9.x", "status": "N/A", "target": "transport and secret protection prefixes inherited from the BRD-001 intent requirements record (NFR9.1–NFR9.2 in security-requirements.md)" },
+    { "id": "NFR10.x", "status": "N/A", "target": "token and authorisation prefixes inherited from the BRD-001 intent requirements record (NFR10.1–NFR10.6 in security-requirements.md)" },
+    { "id": "NFR17.x", "status": "N/A", "target": "observability prefixes inherited from the BRD-001 intent requirements record (NFR17.1–NFR17.6 in observability-requirements.md)" },
+    { "id": "NFR18.x", "status": "N/A", "target": "recovery-objective prefix inherited from the BRD-001 intent requirements record (NFR18.1 in reliability-requirements.md)" },
+    { "id": "NFR19.x", "status": "N/A", "target": "audit-rule prefixes inherited from the BRD-001 intent requirements record (NFR19.1–NFR19.3 in security-requirements.md)" },
+    { "id": "NFR20.x", "status": "N/A", "target": "scalability prefixes inherited from the BRD-001 intent requirements record (NFR20.1–NFR20.4 in scalability-requirements.md)" }
+  ]
+}

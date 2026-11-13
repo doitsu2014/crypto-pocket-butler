@@ -2,7 +2,12 @@ import { useMutation } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { ApiError, NetworkError, requestSupportGrant } from "../api/client";
 import type { SupportAccessGrant } from "../api/types";
-import { hasGrantRequestErrors, validateGrantRequest, type GrantRequestErrors } from "../domain/grants";
+import {
+  hasGrantRequestErrors,
+  validateGrantRequest,
+  type GrantRequestErrors,
+} from "../domain/grants";
+import { GATEWAY_UNREACHABLE_MESSAGE } from "../domain/presentation";
 import {
   alertClass,
   cardClass,
@@ -11,22 +16,22 @@ import {
   labelClass,
   overlineClass,
   primaryButtonClass,
+  secondaryButtonClass,
   sectionTitleClass,
 } from "./ui";
 
 export interface GrantRequestFormProps {
-  requesterId: string;
   token: string | null;
   onCreated: (grant: SupportAccessGrant) => void;
+  onCheckStatus: () => void;
 }
 
-/** BR1.2: reason ≥ 20 characters, 1–480 minutes, and a second approver who is not the requester. */
-export function GrantRequestForm({ requesterId, token, onCreated }: GrantRequestFormProps) {
+/** W1: a request carries a target user id and a reason of 1–500 characters. */
+export function GrantRequestForm({ token, onCreated, onCheckStatus }: GrantRequestFormProps) {
   const [targetUserId, setTargetUserId] = useState("");
   const [reason, setReason] = useState("");
-  const [durationMinutes, setDurationMinutes] = useState("60");
-  const [approverId, setApproverId] = useState("");
   const [errors, setErrors] = useState<GrantRequestErrors>({});
+  const [created, setCreated] = useState(false);
 
   const mutation = useMutation<SupportAccessGrant, Error>({
     mutationFn: () =>
@@ -34,13 +39,14 @@ export function GrantRequestForm({ requesterId, token, onCreated }: GrantRequest
         {
           userId: targetUserId.trim(),
           reason: reason.trim(),
-          durationMinutes: Number(durationMinutes),
-          approverId: approverId.trim(),
         },
         token,
       ),
     onSuccess: (grant) => {
       setErrors({});
+      setCreated(true);
+      setTargetUserId("");
+      setReason("");
       onCreated(grant);
     },
   });
@@ -51,33 +57,68 @@ export function GrantRequestForm({ requesterId, token, onCreated }: GrantRequest
       return;
     }
 
-    const nextErrors = validateGrantRequest({
-      requesterId,
-      targetUserId,
-      reason,
-      durationMinutes: Number(durationMinutes),
-      approverId,
-    });
+    const nextErrors = validateGrantRequest({ targetUserId, reason });
     setErrors(nextErrors);
+    setCreated(false);
     if (hasGrantRequestErrors(nextErrors)) {
       return;
     }
     mutation.mutate();
   }
 
-  const problem = mutation.error instanceof ApiError ? mutation.error.problem : null;
+  const problem = mutation.error instanceof ApiError ? mutation.error : null;
   const isNetworkFailure = mutation.error instanceof NetworkError;
+  const serverFieldErrors: GrantRequestErrors = {};
+  for (const entry of problem?.problem.errors ?? []) {
+    if (entry.field === "userId") {
+      serverFieldErrors.targetUserId = entry.reason;
+    } else if (entry.field === "reason") {
+      serverFieldErrors.reason = entry.reason;
+    }
+  }
+  const shownErrors: GrantRequestErrors = { ...errors, ...serverFieldErrors };
+
+  let message: string | null = null;
+  if (isNetworkFailure) {
+    message = GATEWAY_UNREACHABLE_MESSAGE;
+  } else if (problem !== null) {
+    switch (problem.status) {
+      case 403:
+        message = "You are not allowed to request support access.";
+        break;
+      case 404:
+        message = "No user matches that id. Check the target user's id and try again.";
+        break;
+      case 409:
+        message =
+          "You already have an open grant. Check your current grant before requesting a new one.";
+        break;
+      case 422:
+        message = "The request could not be accepted. Check the fields below.";
+        break;
+      case 429:
+        message =
+          mutation.error instanceof ApiError && mutation.error.retryAfterSeconds !== undefined
+            ? `Too many requests. Try again in ${mutation.error.retryAfterSeconds} seconds.`
+            : "Too many requests. Try again shortly.";
+        break;
+      default:
+        message = problem.problem.title;
+    }
+  }
+
+  const showCorrelationId = problem !== null && problem.status !== 403;
 
   return (
     <form data-testid="grant-request-form" onSubmit={submit} className={cardClass} noValidate>
       <p className={overlineClass}>New support grant</p>
       <h2 className={`${sectionTitleClass} mt-1`}>Request access</h2>
       <p className="mt-2 text-small text-ink-2">
-        A grant is pending until a second approver accepts it. Access ends automatically at the
-        chosen time.
+        A grant is pending until a second approver accepts it. Access lasts only as long as the
+        approved grant, and every metadata read is recorded by the support API.
       </p>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4">
         <label className={labelClass} htmlFor="grant-request-target">
           Target user
           <input
@@ -87,38 +128,18 @@ export function GrantRequestForm({ requesterId, token, onCreated }: GrantRequest
             onChange={(event) => setTargetUserId(event.target.value)}
             autoComplete="off"
             spellCheck={false}
-            aria-invalid={Boolean(errors.targetUserId)}
-            aria-describedby={errors.targetUserId ? "grant-request-target-error" : undefined}
+            aria-invalid={Boolean(shownErrors.targetUserId)}
+            aria-describedby={shownErrors.targetUserId ? "grant-request-target-error" : undefined}
             className={inputClass}
           />
-          {errors.targetUserId ? (
+          {shownErrors.targetUserId ? (
             <span id="grant-request-target-error" className={fieldErrorClass}>
-              {errors.targetUserId}
+              {shownErrors.targetUserId}
             </span>
           ) : null}
         </label>
 
-        <label className={labelClass} htmlFor="grant-request-approver">
-          Second approver
-          <input
-            id="grant-request-approver"
-            data-testid="grant-request-approver"
-            value={approverId}
-            onChange={(event) => setApproverId(event.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-            aria-invalid={Boolean(errors.approverId)}
-            aria-describedby={errors.approverId ? "grant-request-approver-error" : undefined}
-            className={inputClass}
-          />
-          {errors.approverId ? (
-            <span id="grant-request-approver-error" className={fieldErrorClass}>
-              {errors.approverId}
-            </span>
-          ) : null}
-        </label>
-
-        <label className={`${labelClass} sm:col-span-2`} htmlFor="grant-request-reason">
+        <label className={labelClass} htmlFor="grant-request-reason">
           Reason
           <textarea
             id="grant-request-reason"
@@ -126,47 +147,49 @@ export function GrantRequestForm({ requesterId, token, onCreated }: GrantRequest
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             rows={3}
-            aria-invalid={Boolean(errors.reason)}
-            aria-describedby={errors.reason ? "grant-request-reason-error" : undefined}
+            aria-invalid={Boolean(shownErrors.reason)}
+            aria-describedby={shownErrors.reason ? "grant-request-reason-error" : undefined}
             className={inputClass}
           />
-          {errors.reason ? (
+          {shownErrors.reason ? (
             <span id="grant-request-reason-error" className={fieldErrorClass}>
-              {errors.reason}
-            </span>
-          ) : null}
-        </label>
-
-        <label className={labelClass} htmlFor="grant-request-duration">
-          Duration (minutes)
-          <input
-            id="grant-request-duration"
-            data-testid="grant-request-duration"
-            type="number"
-            min={1}
-            max={480}
-            value={durationMinutes}
-            onChange={(event) => setDurationMinutes(event.target.value)}
-            aria-invalid={Boolean(errors.durationMinutes)}
-            aria-describedby={errors.durationMinutes ? "grant-request-duration-error" : undefined}
-            className={inputClass}
-          />
-          {errors.durationMinutes ? (
-            <span id="grant-request-duration-error" className={fieldErrorClass}>
-              {errors.durationMinutes}
+              {shownErrors.reason}
             </span>
           ) : null}
         </label>
       </div>
 
-      {mutation.error ? (
-        <p role="alert" className={`${alertClass} mt-4`}>
-          {isNetworkFailure
-            ? "Could not reach the gateway. Check your connection and try again."
-            : (problem?.title ?? mutation.error.message)}
-          {problem ? (
-            <span className="ml-2 font-mono text-meta">Correlation ID {problem.correlationId}</span>
+      {message ? (
+        <div className={`${alertClass} mt-4`} role="alert">
+          <span>{message}</span>
+          {showCorrelationId ? (
+            <span className="ml-2 font-mono text-meta">
+              Correlation ID {problem?.problem.correlationId}
+            </span>
           ) : null}
+        </div>
+      ) : null}
+
+      {problem?.status === 409 ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            data-testid="grant-request-check-status"
+            onClick={onCheckStatus}
+            className={secondaryButtonClass}
+          >
+            Check your current grant
+          </button>
+        </div>
+      ) : null}
+
+      {created ? (
+        <p
+          data-testid="grant-request-success"
+          role="status"
+          className="mt-4 text-small text-success"
+        >
+          Grant requested. It stays pending until a second approver accepts it.
         </p>
       ) : null}
 

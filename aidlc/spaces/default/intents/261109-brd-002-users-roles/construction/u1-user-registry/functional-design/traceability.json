@@ -1,0 +1,26 @@
+{
+  "stage": "functional-design",
+  "unit": "u1-user-registry",
+  "upstream_ids": ["AC1.1.1", "AC1.1.2", "AC1.2.1", "AC1.2.2", "AC1.3.1", "AC1.3.2", "AC1.4.1", "AC1.4.2", "AC1.5.1", "AC1.5.2", "AC1.6.1", "AC1.6.2", "AC4.1.1", "AC4.1.2", "AC7.1.1", "AC7.1.2"],
+  "coverage": [
+    { "id": "AC1.1.1", "status": "OK", "target": "BR1.1" },
+    { "id": "AC1.1.2", "status": "OK", "target": "BR1.1" },
+    { "id": "AC1.2.1", "status": "OK", "target": "BR1.2" },
+    { "id": "AC1.2.2", "status": "OK", "target": "BR1.2" },
+    { "id": "AC1.3.1", "status": "OK", "target": "BR1.3, BR1.8" },
+    { "id": "AC1.3.2", "status": "OK", "target": "BR1.3" },
+    { "id": "AC1.4.1", "status": "OK", "target": "BR1.4" },
+    { "id": "AC1.4.2", "status": "OK", "target": "BR1.4" },
+    { "id": "AC1.5.1", "status": "OK", "target": "BR1.5" },
+    { "id": "AC1.5.2", "status": "OK", "target": "BR1.5" },
+    { "id": "AC1.6.1", "status": "OK", "target": "BR1.6" },
+    { "id": "AC1.6.2", "status": "OK", "target": "BR1.6" },
+    { "id": "AC4.1.1", "status": "OK", "target": "BR1.7" },
+    { "id": "AC4.1.2", "status": "OK", "target": "BR1.10" },
+    { "id": "AC7.1.1", "status": "OK", "target": "BR1.9" },
+    { "id": "AC7.1.2", "status": "OK", "target": "BR1.9" }
+  ],
+  "reverse": [
+    { "id": "BR1.8", "status": "N/A", "target": "extends NFR22 to the provider subject stored in this unit" }
+  ]
+}

@@ -1,0 +1,417 @@
+{
+  "stage": "nfr-design",
+  "unit": "u3-support-access",
+  "upstream_ids": [
+    "NFR2.1",
+    "NFR2.2",
+    "NFR2.3",
+    "NFR2.4",
+    "NFR2.5",
+    "NFR2.6",
+    "NFR2.7",
+    "NFR2.8",
+    "NFR2.9",
+    "NFR2.10",
+    "NFR2.11",
+    "NFR17.1",
+    "NFR17.2",
+    "NFR17.3",
+    "NFR9.1",
+    "NFR9.2",
+    "NFR10.1",
+    "NFR10.2",
+    "NFR10.3",
+    "NFR10.4",
+    "NFR10.5",
+    "NFR10.6",
+    "NFR10.7",
+    "NFR11.1",
+    "NFR22.1",
+    "NFR22.2",
+    "NFR23.1",
+    "NFR23.2",
+    "NFR23.3",
+    "NFR19.1",
+    "NFR19.2",
+    "NFR19.3",
+    "NFR19.4",
+    "NFR24.1",
+    "NFR20.6",
+    "NFR20.1",
+    "NFR20.2",
+    "NFR20.3",
+    "NFR20.4",
+    "NFR20.5",
+    "NFR20.7",
+    "NFR20.8",
+    "NFR20.9",
+    "NFR17.4",
+    "NFR17.5",
+    "NFR17.6",
+    "NFR17.7",
+    "NFR17.8",
+    "NFR17.9",
+    "NFR17.10",
+    "NFR17.11",
+    "NFR17.12",
+    "NFR17.13",
+    "NFR1.1",
+    "NFR1.2",
+    "NFR1.3",
+    "NFR1.4",
+    "NFR1.5",
+    "NFR1.6",
+    "NFR1.7",
+    "NFR1.8",
+    "NFR1.9",
+    "NFR1.10",
+    "NFR1.11",
+    "NFR18.1",
+    "NFR18.2",
+    "NFR18.3",
+    "NFR18.4"
+  ],
+  "coverage": [
+    {
+      "id": "NFR2.1",
+      "status": "OK",
+      "target": "performance-design.md 'Where the time goes' row 1 and the read pipeline: role from validated claims, one target-user read, one grant insert plus its outbox row in one transaction, no external hop (80/180 ms)"
+    },
+    {
+      "id": "NFR2.2",
+      "status": "OK",
+      "target": "performance-design.md row 2: a role refusal answers before any read; a refused request costs one outbox insert in its own transaction (60/150 ms)"
+    },
+    {
+      "id": "NFR2.3",
+      "status": "OK",
+      "target": "performance-design.md row 3: one grant read, one conditional UPDATE plus its outbox row in one transaction (80/180 ms)"
+    },
+    {
+      "id": "NFR2.4",
+      "status": "OK",
+      "target": "performance-design.md row 4: zero rows affected by the conditional UPDATE or the stale-request branch, plus the refusal's own audit transaction (60/150 ms)"
+    },
+    {
+      "id": "NFR2.5",
+      "status": "OK",
+      "target": "performance-design.md 'Concurrency and connections': the metadata read loads its grant by primary key in a one-statement transaction with SET LOCAL statement_timeout = '500ms', released before the fan-out; the holder and status checks run in the domain on the clock (15/40 ms)"
+    },
+    {
+      "id": "NFR2.6",
+      "status": "OK",
+      "target": "logical-components.md HttpSupportMetadataSource: connect_timeout 1 s, request timeout 120 ms, one attempt, timeout above the source's p99 (60/80 ms)"
+    },
+    {
+      "id": "NFR2.7",
+      "status": "OK",
+      "target": "performance-design.md 'The read pipeline': tokio::try_join! fan-out costs the slower source, not the sum; p99 composition 40 + 80 + 150 = 270 ms inside a 300 ms budget (150/300 ms)"
+    },
+    {
+      "id": "NFR2.8",
+      "status": "OK",
+      "target": "performance-design.md property 1: a refusal never fans out, so no source hop is made (60/150 ms)"
+    },
+    {
+      "id": "NFR2.9",
+      "status": "OK",
+      "target": "reliability-design.md timeout table: the existing HttpAuditClient appends synchronously with a 200 ms request timeout and one attempt before the projection is returned (50/150 ms)"
+    },
+    {
+      "id": "NFR2.10",
+      "status": "OK",
+      "target": "performance-design.md 'The read pipeline' and 'Concurrency and connections': tokio::time::timeout(500 ms) is started before the grant read and encloses pool acquire, both one-statement transactions, the two hops and the append; whichever bound is reached first cancels the request, which answers 503 metadata-source-unavailable"
+    },
+    {
+      "id": "NFR2.11",
+      "status": "OK",
+      "target": "performance-design.md 'Outbox pass' and logical-components.md SupportAuditOutbox: the support sink joins OutboxDrainer::run_once with batch 5, 1 s connect / 2 s request, one attempt per row, and the shipped 30 s claim lease, so 5 x 2 s = 10 s worst case fits the lease"
+    },
+    {
+      "id": "NFR17.1",
+      "status": "OK",
+      "target": "observability-design.md 'Series': support_grants_total{operation,outcome} rendered zero-initialised, and the write availability SLI computed from it"
+    },
+    {
+      "id": "NFR17.2",
+      "status": "OK",
+      "target": "observability-design.md 'Series': support_reads_total{outcome} with its four outcomes rendered zero-initialised, and the read availability SLI computed from it"
+    },
+    {
+      "id": "NFR17.3",
+      "status": "OK",
+      "target": "observability-design.md 'Series': support_read_duration_seconds histogram bucketed at 25, 50, 100, 150, 200, 300, 500, 1000, +Inf per outcome, so the 150 ms p95 and 300 ms p99 are readable from it"
+    },
+    {
+      "id": "NFR9.1",
+      "status": "OK",
+      "target": "security-design.md trust boundaries, Identity -> Account/Portfolio row: the route-scoped `identity` service-token allowlist opens exactly the two support-metadata routes, and no user JWT is sent"
+    },
+    {
+      "id": "NFR9.2",
+      "status": "OK",
+      "target": "security-design.md 'The one directed edge': the two new endpoints must not call back into C4 /internal/authorize; the decision already ran in Identity"
+    },
+    {
+      "id": "NFR10.1",
+      "status": "OK",
+      "target": "security-design.md authentication flow step 1: the existing middleware validates signature, issuer, audience and expiry against JWKS before any support rule runs; failure is 401"
+    },
+    {
+      "id": "NFR10.2",
+      "status": "OK",
+      "target": "security-design.md step 2 'Classify': support and admin are read only from app_metadata.role; no other claim, table or header grants either; a wrong role is 403 role-required"
+    },
+    {
+      "id": "NFR10.3",
+      "status": "OK",
+      "target": "security-design.md step 3: holder check requestedBy = caller; an admin is an approver and revoker, never a reader under a grant"
+    },
+    {
+      "id": "NFR10.4",
+      "status": "OK",
+      "target": "security-design.md step 3 and threat table 'Privilege escalation through a grant': the role is never inherited from the grant and every ownership predicate ignores it"
+    },
+    {
+      "id": "NFR10.5",
+      "status": "OK",
+      "target": "security-design.md step 5 'Closed projection': each owner is asked only for its allowlisted fields and the response DTO has no field for email address, provider subject, venue, provider account id, error detail or any content field"
+    },
+    {
+      "id": "NFR10.6",
+      "status": "OK",
+      "target": "security-design.md step 4 'Non-disclosure': an unknown id and a foreign grant answer one uniform 403 support-access-refused; approve and revoke keep 404 for an unknown id because the admin check runs first"
+    },
+    {
+      "id": "NFR10.7",
+      "status": "OK",
+      "target": "security-design.md threat table 'Credential/content access through support': no support route names a credential, holding, balance, valuation, transaction or order; the route set is the boundary"
+    },
+    {
+      "id": "NFR11.1",
+      "status": "OK",
+      "target": "security-design.md 'Rate limiting' and logical-components.md RouteLimits: an optional max_requests_per_minute on the gateway Route, 20/min creation and 60/min read keyed on a SHA-256 hash of the bearer token, applied in addition to the existing per-IP 120/min budget, 429 with Retry-After, accepted by two gateway HTTP boundary tests"
+    },
+    {
+      "id": "NFR22.1",
+      "status": "OK",
+      "target": "security-design.md 'Field set per event' (a fixed shape with no free-form context) and observability-design.md 'Series': every label vocabulary is a closed enum bounded by the code"
+    },
+    {
+      "id": "NFR22.2",
+      "status": "OK",
+      "target": "security-design.md 'Field set per event' and observability-design.md 'Logging': the grant reason text, email address, subjects, tokens and full wallet addresses have nowhere to go in an audit event, a log line or a metric label"
+    },
+    {
+      "id": "NFR23.1",
+      "status": "OK",
+      "target": "security-design.md trust boundary 'Identity -> its own Postgres': the identity_app role on the identity schema only; support_audit_outbox is granted to identity_app and identity_migrator and to no one else"
+    },
+    {
+      "id": "NFR23.2",
+      "status": "OK",
+      "target": "security-design.md trust boundary 'Identity -> audit service' and 'Delivery': the audit store stays insert-only behind its own role; U3 never writes the audit schema, only posts C10 events and stores its own outbox rows"
+    },
+    {
+      "id": "NFR23.3",
+      "status": "OK",
+      "target": "security-design.md 'Secrets': the identity service token is provisioned through the existing registry/Vault path, held in memory, attached to the two hops, and never logged or forwarded onward; no new secret is introduced"
+    },
+    {
+      "id": "NFR19.1",
+      "status": "OK",
+      "target": "security-design.md 'Three mechanisms, one rule' with the per-action field set: every request, approval, revocation, served read and refusal is audited with actor, action, target, timestamp, identifier-only context and a C9 outcome"
+    },
+    {
+      "id": "NFR19.2",
+      "status": "OK",
+      "target": "security-design.md audit table row 1: the grant write and its support_audit_outbox row commit in one transaction, so the mutation rolls back rather than existing without its intent"
+    },
+    {
+      "id": "NFR19.3",
+      "status": "OK",
+      "target": "security-design.md 'Field set per event': no credential, token, secret, full wallet address or the grant's reason text appears; the C10 payload carries identifiers and the refusal code only"
+    },
+    {
+      "id": "NFR19.4",
+      "status": "OK",
+      "target": "security-design.md 'Delivery' and reliability-design.md: at-least-once with the outbox row id as the stable idempotency key; a dead row is replayed by the NFR1.5 operator statement"
+    },
+    {
+      "id": "NFR24.1",
+      "status": "OK",
+      "target": "security-design.md threat table 'Stale authorisation': the role is recomputed from the signed token and the grant status read from the row on every request; nothing about a grant is cached in process"
+    },
+    {
+      "id": "NFR20.6",
+      "status": "OK",
+      "target": "scalability-design.md 'Data layout': NFR20.6 permits deletion only with the target user's account, and this deployment has none — identity_app holds no DELETE on support_access_grants, users are anonymised in place under 0006, so the FK never fires; grant rows persist as identifier-only evidence and ~365,000 rows/year needs no partitioning"
+    },
+    {
+      "id": "NFR20.1",
+      "status": "OK",
+      "target": "scalability-design.md 'Correctness under concurrency' row 1: the partial unique index on (support_agent_id, user_id) WHERE status IN ('pending_approval','active'); the loser answers 409"
+    },
+    {
+      "id": "NFR20.2",
+      "status": "OK",
+      "target": "scalability-design.md row 2: the conditional UPDATE ... WHERE id = :id AND status = 'pending_approval'; zero rows affected answers 409"
+    },
+    {
+      "id": "NFR20.3",
+      "status": "OK",
+      "target": "scalability-design.md row 3: revocation is a conditional UPDATE on the current status, so a revoke racing an expiry or a second revoke answers 409"
+    },
+    {
+      "id": "NFR20.4",
+      "status": "OK",
+      "target": "scalability-design.md row 4: the stale-pending expiry shares one transaction with the insert and touches only that (agent, user) row pair"
+    },
+    {
+      "id": "NFR20.5",
+      "status": "OK",
+      "target": "scalability-design.md row 5 and reliability-design.md 'The outbox state machine': FOR UPDATE SKIP LOCKED with the shipped 30 s claim lease makes N replicas safe"
+    },
+    {
+      "id": "NFR20.7",
+      "status": "OK",
+      "target": "scalability-design.md 'Data layout': the primary key on id, the existing support_grants_read_idx unchanged, and the new partial unique index; no second user index is added and none is dropped"
+    },
+    {
+      "id": "NFR20.8",
+      "status": "OK",
+      "target": "scalability-design.md 'Data layout': support_audit_outbox mirrors consent_audit_outbox with a partial index on (next_attempt_at) WHERE state = 'pending' and one on (delivered_at) WHERE state = 'delivered' for the 24 h cleanup"
+    },
+    {
+      "id": "NFR20.9",
+      "status": "OK",
+      "target": "performance-design.md 'What is deliberately absent' and scalability-design.md 'Capacity thresholds': the projection is assembled per request, with no cache to size or warm and no stale projection under a revoked grant"
+    },
+    {
+      "id": "NFR17.4",
+      "status": "OK",
+      "target": "observability-design.md 'Series' (support_metadata_source_errors_total{source,cause}) and 'Alerting' (SupportMetadataSourceErrors at 0.2% per source over 10 minutes)"
+    },
+    {
+      "id": "NFR17.5",
+      "status": "OK",
+      "target": "observability-design.md 'Series' (support_audit_write_failures_total{cause}) and alert SupportAuditFailingClosed: a non-zero increase means a read or a refusal failed closed"
+    },
+    {
+      "id": "NFR17.6",
+      "status": "OK",
+      "target": "observability-design.md 'Series' (support_outbox_deliveries_total{outcome}) and alert SupportOutboxDeadRows: `dead` names the one delivery nobody can retry automatically"
+    },
+    {
+      "id": "NFR17.7",
+      "status": "OK",
+      "target": "observability-design.md 'Where the drainer gauges come from': support_outbox_pending is a scrape-time COUNT(*) of pending rows through SupportOutboxBacklog, not a value pushed by the pass"
+    },
+    {
+      "id": "NFR17.8",
+      "status": "OK",
+      "target": "observability-design.md 'Where the drainer gauges come from': support_outbox_oldest_age_seconds is a scrape-time MIN(created_at) of pending rows through SupportOutboxBacklog"
+    },
+    {
+      "id": "NFR17.9",
+      "status": "OK",
+      "target": "observability-design.md 'Where the drainer gauges come from': support_outbox_last_pass_timestamp_seconds is written at the end of every support pass regardless of outcome, and SupportOutboxStalled treats a stale or absent series as stalled"
+    },
+    {
+      "id": "NFR17.10",
+      "status": "OK",
+      "target": "observability-design.md 'Series' (support_grant_decision_errors_total{cause}) names the grant lookup as a dependency of the read, with timeout and unavailable as its causes"
+    },
+    {
+      "id": "NFR17.11",
+      "status": "OK",
+      "target": "reliability-design.md 'Health and readiness': /healthz reports only that the process is up and is the gate the Swarm rolling update waits on"
+    },
+    {
+      "id": "NFR17.12",
+      "status": "OK",
+      "target": "reliability-design.md 'Health and readiness': /readyz reports the database and the audit store; Account and Portfolio are reported but do not fail readiness"
+    },
+    {
+      "id": "NFR17.13",
+      "status": "OK",
+      "target": "observability-design.md 'Where the drainer gauges come from' and reliability-design.md: the heartbeat is not part of either endpoint, and a lagging drainer does not make Identity unready"
+    },
+    {
+      "id": "NFR1.1",
+      "status": "OK",
+      "target": "reliability-design.md 'Failure containment' and the timeout table: each write path needs its own transaction and its outbox row and commits without both; delivery is asynchronous"
+    },
+    {
+      "id": "NFR1.2",
+      "status": "OK",
+      "target": "reliability-design.md 'Failure containment' (per-path fail-closed) and observability-design.md SLI table: read availability is modelled as the product of its four fail-closed dependencies (~99.6%), not the platform 99.9%"
+    },
+    {
+      "id": "NFR1.3",
+      "status": "OK",
+      "target": "reliability-design.md 'Health and readiness': /healthz reports the process only and is the Swarm gate; /readyz reports the database and the audit store, while Account and Portfolio are reported but do not fail readiness"
+    },
+    {
+      "id": "NFR1.4",
+      "status": "OK",
+      "target": "reliability-design.md 'The outbox state machine': state in (pending, delivered, dead), attempts with a budget of 3, next_attempt_at, last_error, idempotency key = row id, delivered_at, and the 30 s claim lease"
+    },
+    {
+      "id": "NFR1.5",
+      "status": "OK",
+      "target": "reliability-design.md 'The outbox state machine' Replay bullet: the documented operator UPDATE resets state, attempts, next_attempt_at and last_error on the same row; it is not an automatic retry"
+    },
+    {
+      "id": "NFR1.6",
+      "status": "OK",
+      "target": "reliability-design.md 'Idempotency': the key is the outbox row id, stable across attempts and replay, so C10 appends once; retries happen across passes, never within one"
+    },
+    {
+      "id": "NFR1.7",
+      "status": "OK",
+      "target": "reliability-design.md 'Retention' and scalability-design.md 'Data layout': delivered rows are deleted 24 h after delivery by the drainer's existing cleanup, so the outbox never becomes a second audit store"
+    },
+    {
+      "id": "NFR1.8",
+      "status": "OK",
+      "target": "observability-design.md 'Where the drainer gauges come from': pending and oldest-age are scrape-time reads of the table through SupportOutboxBacklog, never pushed by the pass; the last-pass heartbeat is the one in-process reading, and SupportOutboxStalled also fires on an absent or stale heartbeat"
+    },
+    {
+      "id": "NFR1.9",
+      "status": "OK",
+      "target": "reliability-design.md 'Timeout and retry policy': no write is retried automatically; the grant endpoints are not idempotent, and BR3.3's 409 is the safety net for a duplicate"
+    },
+    {
+      "id": "NFR1.10",
+      "status": "OK",
+      "target": "reliability-design.md 'No read is retried inside the deadline': the two source reads are single-attempt with a 120 ms request timeout inside the 500 ms deadline; a slow source is refused, not waited for"
+    },
+    {
+      "id": "NFR1.11",
+      "status": "OK",
+      "target": "reliability-design.md timeout table, audit append row: one attempt with the existing 200 ms client timeout, and a failed append refuses the read"
+    },
+    {
+      "id": "NFR18.1",
+      "status": "OK",
+      "target": "reliability-design.md 'Recovery and rollback', database restore row: grants and outbox rows live in the Identity schema and inherit the platform backup (RPO <= 24 h, RTO <= 4 h); the unit owns no store"
+    },
+    {
+      "id": "NFR18.2",
+      "status": "OK",
+      "target": "reliability-design.md migration rollback row and 'The outbox cannot be dropped with an intent still in it': the pre-0007 approval-shape clause is restored as NOT VALID so grant history never blocks; the release rollback exports pending and dead intents first, and the down migration refuses to drop an outbox that still holds one"
+    },
+    {
+      "id": "NFR18.3",
+      "status": "OK",
+      "target": "reliability-design.md release rollback row: the existing Swarm rolling policy with failure_action: rollback on the /healthz gate"
+    },
+    {
+      "id": "NFR18.4",
+      "status": "OK",
+      "target": "reliability-design.md replica loss row and 'No cross-request state': nothing to recover, no cache and no leader; a restart resumes draining from the table"
+    }
+  ],
+  "reverse": []
+}

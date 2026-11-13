@@ -86,6 +86,7 @@ fn map_repository(error: RepositoryError) -> AppError {
         }
         RepositoryError::Conflict(detail) => AppError::Conflict(detail),
         RepositoryError::Forbidden(detail) => AppError::Forbidden(detail),
+        RepositoryError::Validation(detail) => AppError::Conflict(detail),
     }
 }
 

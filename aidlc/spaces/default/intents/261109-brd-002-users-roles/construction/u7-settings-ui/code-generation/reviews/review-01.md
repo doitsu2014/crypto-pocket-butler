@@ -1,0 +1,32 @@
+**Verdict:** NOT-READY
+**Reviewer:** aidlc-architecture-reviewer-agent
+**Iteration:** 1
+**Verdict Dictated:** no
+
+### Prior findings
+
+| ID | Now | Severity | Note |
+|---|---|---|---|
+None (first iteration).
+
+### New findings
+
+| Severity | Location | Finding | Required action |
+|---|---|---|---|
+| Major | web/src/api/settingsQueries.ts > `useAccountStatus` | `useAccountStatus` sets `staleTime: MINUTE` (60 s), while performance-requirements NFR2.9 requires D0 to set `staleTime: 0`, overriding the app-wide 30 s default and refetching on every authenticated entry. The code-generation traceability marks NFR2.9 `OK` against this exact file, so the claimed coverage is false: entry routing can run on a status up to a minute old. | Set D0's query to `staleTime: 0` (or pass it as a parameter the hook uses) so it matches NFR2.9, and re-check the NFR2.9 traceability row. |
+| Major | web/src/features/signup-gates/useGateStatus.ts > returned `deriveGateStatus` input | The entry-resolution error is computed as `principalQuery.error ?? gateStateQuery.error` and the loading flag from the two existing reads only; the D0 `accountQuery.error` and `accountQuery.isPending` are never included. If D0 fails or is still pending while the principal and gate-state reads settle, `deriveGateStatus` routes on an unresolved status and can send the person into the app. NFR2.2 requires a guaranteed full-page retry and "never routes into the app on an unknown status". | Include the D0 query's error and pending state in the resolution input so a D0 failure or pending read yields the full-page retry state and never the app. |
+| Major | web/src/features/settings/DeleteAccountPage.tsx > `onConfirm` | Any D3 failure, including `409` "already open", is rendered as an inline error; the page never re-reads D1. functional-spec §10 states `409` is not an error and must re-read D1 and render the open-request state, and NFR24.5 repeats that `409` is treated as an existing state re-read through D1. NFR2.5 also requires re-reading D1 when a deletion answer is lost. The same missing re-read applies to a lost D2 answer on the restore page. | On a D3 or D2 error, invalidate/refetch the deletion query; render `409` as the open-request state rather than an error, and keep the inline error only for genuinely recoverable failures. |
+| Minor | web/src/features/settings/PreferencesPanel.tsx > per-field error paragraphs | Locale, base-currency, timezone and notification error messages are rendered next to their controls but no control references them with `aria-describedby` (ProfilePanel does this for the display name). NFR25.3 requires every field error to be tied to its field. | Give each preferences control an `aria-describedby` pointing at its error element id. |
+| Minor | web/src/features/settings/PreferencesPanel.tsx > timezone combobox | The timezone control sets `role="combobox"`, `aria-expanded` and a listbox, but has no Arrow/Enter/Escape handling, no `aria-activedescendant` and no active-option state, so the list cannot be operated from the keyboard. frontend-components §2 specifies a WAI-ARIA APG combobox for timezone. | Add keyboard navigation and active-option semantics to the combobox, or use a native select for timezone as the closed sets do. |
+| Minor | web/src/features/account-status/AccountBlockedPage.tsx > variant resolution | When no `variant` prop is supplied the page resolves any status other than `deleted` (including `active`, `pending_deletion`, an unresolved read, or a 503) to the `disabled` screen and states "Your account is disabled." functional-spec §3.7 says a `pending_deletion` principal never renders this screen and the variant is chosen from the status. | Handle the unresolved and non-terminal statuses explicitly (loading or route by status) instead of defaulting them to the disabled variant. |
+| Minor | web/src/features/settings/*.test.tsx and web/src/app/accessibility.test.tsx > jest-axe coverage | The settings shell is never rendered under jest-axe: `SettingsLayout` has no test, and the tests that render `SettingsNav` (PreferencesPanel, PrivacyPanel) do not call `expectNoAxeViolations` on that tree. NFR25.6 and the code summary claim jest-axe on every rendered state of the shell. | Add an axe assertion for the shell plus navigation, for example in `accessibility.test.tsx` or a `SettingsLayout` test. |
+| Minor | aidlc/spaces/default/intents/261109-brd-002-users-roles/construction/u7-settings-ui/code-generation/code-summary.md > Rust test table | The table reports `cargo test --workspace` as "every target 0 failed, 0 ignored" while the same summary reports 30 `#[ignore]`d repository cases run separately with `--include-ignored`. The two statements cannot both describe the same run. | Correct the `cargo test --workspace` row to state that 30 database-backed cases are ignored by that command and were run separately. |
+| Minor | aidlc/spaces/default/intents/261109-brd-002-users-roles/construction/u7-settings-ui/code-generation/traceability.json > coverage | Every row traces to an NFR id and its target file exists, but the story acceptance criteria the plan names (AC1.4.1, AC1.4.2, AC4.3.1, AC4.3.2, AC4.3.3, AC6.1.1, AC6.1.2) have no code-generation traceability row, so the build cannot be tied back to the acceptance criteria it claims to satisfy. | Add the acceptance-criteria rows (or record why they trace to the functional-design mapping) with the implementing or test paths as targets. |
+| Minor | aidlc/spaces/default/intents/261109-brd-002-users-roles/construction/u7-settings-ui/code-generation/code-generation-plan.md > Steps 3, 6, 9, 12, 15 | The TDD Red steps are ticked and the unit-test instructions make a recorded failing command output part of the definition of done, but no failing output is recorded in the plan, the summary or the instructions; the checkboxes are the only evidence of test-first ordering. | Record each Red step's failing command and output (or point at where it is stored) so the TDD ordering is verifiable. |
+| Minor | services/gateway/domain/src/route.rs > module header | The header says "the seven settings routes", but the table declares eight U7 paths (five `/v1/me/*` entries, `/v1/privacy/deletions`, and the two export routes). | Correct the count in the module header to eight. |
+
+### Findings
+
+| ID | Severity | Location | Finding | Required action | Status |
+|---|---|---|---|---|---|
+| - | - | - | No findings | No action required | Resolved |

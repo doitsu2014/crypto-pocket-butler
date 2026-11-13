@@ -27,12 +27,15 @@ The customer build runs first (it empties `web/dist`), then the support build wr
 
 - The Supabase session lives in memory only; `persistSession: false` with an in-memory storage
   adapter. Sign-out, grant expiry/revocation, and any 401/403 clear the TanStack Query cache.
+- On load the shell restores the operator's own grant from `GET /v1/support-grants/mine`, which
+  is self-scoped from the forwarded JWT and answers a bare array of at most 20 rows, newest
+  first. The shell adopts the newest entry rather than choosing one.
 - The gateway is the control; the console's role gate is only what the operator sees.
 - Search and metadata reads require a grant id. The client refuses a missing grant id before it
   makes a request. The ticket list is grant-scoped too.
-- The free-text read reason travels in the `X-Support-Reason` request header, never in a URL, so
-  it never reaches access logs, browser history, or referrers. The support API hashes it for C10;
-  nginx and the gateway must not log the header.
+- The free-text read reason travels in the `POST /v1/support-grants` request body, never in a
+  URL or a custom header, so it never reaches access logs, browser history, or referrers. The
+  support API hashes it for C10.
 - The DTO whitelists in `src/domain/metadata.ts` strip any credential, holding, valuation,
   portfolio, requester-label, or ticket-conversation field the API might over-send. Grants and
   incidents use the same narrow-picker treatment.

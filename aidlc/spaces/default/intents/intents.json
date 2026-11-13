@@ -14,5 +14,13 @@
     "scope": "classic",
     "status": "complete",
     "request": "24283fa2"
+  },
+  {
+    "uuid": "01a1d306-15ea-712d-b440-73096567b4a7",
+    "slug": "authentication-session",
+    "dirName": "261113-authentication-session",
+    "scope": "classic",
+    "status": "in-flight",
+    "request": "e2e1d321"
   }
 ]

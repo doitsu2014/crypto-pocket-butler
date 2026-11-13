@@ -256,7 +256,9 @@ async fn build_state_wires_the_service_name_routes_and_readiness() {
     let (status, body) =
         request(state.clone(), "/v1/assets/resolve?symbol=BTC", Some(&token)).await;
     assert!(
-        status == StatusCode::BAD_GATEWAY || status == StatusCode::SERVICE_UNAVAILABLE,
+        status == StatusCode::BAD_GATEWAY
+            || status == StatusCode::SERVICE_UNAVAILABLE
+            || status == StatusCode::GATEWAY_TIMEOUT,
         "{status} {body}"
     );
 

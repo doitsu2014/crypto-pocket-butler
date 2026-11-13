@@ -220,7 +220,26 @@ contributors, deletions, storage):
 | `infrastructure/src/repositories/deletions.rs` | 42 |
 
 u1's own `repositories/users.rs` and `repositories/keys.rs` error and retry branches are now
-exercised. The frontends are untouched and have no configured TypeScript threshold.
+exercised. The second-pass support adapter cases now exercise the drainer delivery path and the
+Account/Portfolio source success, non-2xx, malformed UUID, and missing-field projections through a
+local Axum stub; they assert requests, delivery observations, and mapped errors. The frontends are
+untouched and have no configured TypeScript threshold.
+
+### Second-pass evidence (Steps 23–26, 2026-11-13)
+
+The plan's original command was rejected by the installed `cargo-llvm-cov` because
+`--include-ignored` is not a cargo-llvm-cov option. The accepted equivalent was run as:
+`TEST_DATABASE_URL=postgres://… cargo llvm-cov -p identity-infrastructure -p identity --ignore-run-fail --json --output-path target/coverage.json -- --include-ignored --test-threads=1`.
+The run completed its report generation with the known pgsodium assertion failure; the failure is
+out of scope and was not altered. The support adapter integration tests were then run explicitly:
+`TEST_DATABASE_URL=postgres://… cargo test -p identity --test support_adapters -- --ignored --test-threads=1 support_drainer_delivers_and_records_observation support_sources_cover_success_and_error_projection_paths`
+— 2 passed, 0 failed. The complete ignored support-adapter suite was also verified by the build-and-test
+run (27 passed, with only the documented pgsodium assertion excluded from the passing baseline).
+
+The second pass adds no behavior changes. Remaining coverage gaps are the inaccessible external
+failure/timing arms in JWKS refresh, geo-provider timeout, and service-level adapters not owned by
+U1; these require live external systems or are owned by later units. The pgsodium key-destruction
+assertion remains intentionally unchanged.
 
 ## Known gaps / issues
 

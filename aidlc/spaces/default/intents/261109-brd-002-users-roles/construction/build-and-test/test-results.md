@@ -392,6 +392,16 @@ in three of the four crates.
 **Re-run condition.** On the forward replay, Build and Test re-executes Step 9 with the Artifact
 Re-use choice set to **Modify** for this stage, so this log survives.
 
+## Current verification update — 2026-11-13
+
+The recorded construction verification command was rerun after the approved gateway test correction and package-scoped Yarn dependency installation:
+
+| Command | Exit | Result |
+|---|---:|---|
+| `cargo test --workspace && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && yarn --cwd web test && yarn --cwd web lint && yarn --cwd web build && yarn --cwd support-console test && yarn --cwd support-console lint` | 0 | Workspace tests, Rust formatting/Clippy, web tests/lint/build, and support-console tests/lint passed; checkpoint proof `dfd5dad9-4e5a-4dd7-b4eb-6133a3ed6bf3` |
+
+The gateway composition test now accepts the bounded 504 timeout returned by a dead upstream, alongside 502 and 503. This is a test expectation correction; production behavior is unchanged. The prior boundary, database, coverage, formatting, Structurizr, and cross-unit traceability findings remain recorded above and in the existing target matrix.
+
 **Correction to the diagnosis above (appended in the same run, nothing removed).** Re-reading the
 Units' evidence files changed two points. FR18.1–18.3 and AC5.1.1–AC5.3.2 are **not** unbuilt work
 in U2: U2's `traceability.json` marks all six AC5 ids `Deferred`, with a reason each, because the

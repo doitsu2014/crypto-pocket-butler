@@ -14,6 +14,7 @@
     { "path": "services/gateway/src/lib.rs" },
     { "path": "services/gateway/tests/domain.rs" },
     { "path": "services/gateway/tests/upstream.rs" },
+    { "path": "services/gateway/tests/composition.rs" },
 
     { "path": "services/identity/Cargo.toml" },
     { "path": "services/identity/Dockerfile.migrate" },
@@ -53,6 +54,7 @@
     { "path": "services/identity/tests/composition.rs" },
     { "path": "services/identity/tests/domain.rs" },
     { "path": "services/identity/tests/http.rs" },
-    { "path": "services/identity/tests/repositories.rs" }
+    { "path": "services/identity/tests/repositories.rs" },
+    { "path": "services/identity/tests/support_adapters.rs" }
   ]
 }

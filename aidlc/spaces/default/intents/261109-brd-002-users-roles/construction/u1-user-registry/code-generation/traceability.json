@@ -297,6 +297,16 @@
   "repairs": [
     {
       "loop_back": 1,
+      "date": "2026-11-13",
+      "finding": "R-04",
+      "summary": "Second-pass support adapter coverage added for drainer delivery and Account/Portfolio HTTP source success and error projections; coverage command syntax adjusted for installed cargo-llvm-cov.",
+      "evidence": "services/identity/tests/support_adapters.rs::support_drainer_delivers_and_records_observation and ::support_sources_cover_success_and_error_projection_paths",
+      "command": "TEST_DATABASE_URL=... cargo test -p identity --test support_adapters -- --ignored --test-threads=1",
+      "result": "2 focused tests passed; complete support adapter suite verified 27 passed; known pgsodium assertion remains out of scope",
+      "ids": ["BR3.7", "BR3.9", "BR3.10", "BR3.13"]
+    },
+    {
+      "loop_back": 1,
       "date": "2026-11-12",
       "finding": "F2a",
       "summary": "the seam test no longer erases an active user; the refusal is asserted deliberately and the at-rest assertions run on a pending_deletion leg, with the tombstone contract asserted after erasure",

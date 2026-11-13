@@ -9,18 +9,125 @@
 mod common;
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::{Arc, Mutex};
+
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
+use axum::routing::get;
+use axum::Router;
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use identity_application::ports::{SupportGrantRepository, SupportOutbox};
+use identity_application::ports::{
+    SupportAccountsSource, SupportDrainDelivery, SupportDrainObservation, SupportGrantRepository,
+    SupportOutbox, SupportPortfoliosSource,
+};
 use identity_domain::support::{SupportAccessGrant, SupportGrantId, SupportGrantStatus};
 use identity_domain::{AuditOutcome, AuditRecord, UserId};
 use identity_infrastructure::repositories::PgSupportGrantRepository;
 use identity_infrastructure::support::backlog::SupportOutboxBacklog;
+use identity_infrastructure::support::drainer::SupportOutboxDrainer;
 use identity_infrastructure::support::outbox::{SupportDelivery, SupportOutboxStore};
+use identity_infrastructure::support::sources::{HttpSupportAccounts, HttpSupportPortfolios};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use common::{drop_schema, test_pool};
+
+#[derive(Default)]
+struct DrainObservation {
+    deliveries: Mutex<Vec<SupportDrainDelivery>>,
+    passes: Mutex<Vec<(u64, i64)>>,
+}
+
+impl SupportDrainObservation for DrainObservation {
+    fn record_delivery(&self, outcome: SupportDrainDelivery) {
+        self.deliveries.lock().unwrap().push(outcome);
+    }
+
+    fn record_pass(&self, pending: u64, age: i64) {
+        self.passes.lock().unwrap().push((pending, age));
+    }
+}
+
+#[derive(Default)]
+struct SourceStub {
+    status: AtomicU16,
+    body: Mutex<String>,
+    requests: Mutex<Vec<(String, String)>>,
+}
+
+async fn source_response(
+    State(stub): State<Arc<SourceStub>>,
+    headers: HeaderMap,
+    axum::extract::Path(user_id): axum::extract::Path<String>,
+) -> (StatusCode, String) {
+    stub.requests.lock().unwrap().push((
+        user_id,
+        headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string(),
+    ));
+    (
+        StatusCode::from_u16(stub.status.load(Ordering::Relaxed)).unwrap(),
+        stub.body.lock().unwrap().clone(),
+    )
+}
+
+async fn serve_source(stub: Arc<SourceStub>) -> String {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route(
+            "/v1/internal/support-metadata/{user_id}",
+            get(source_response),
+        )
+        .with_state(stub);
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    format!("http://{address}")
+}
+
+#[derive(Default)]
+struct AuditStub {
+    status: AtomicU16,
+    requests: Mutex<Vec<(String, String)>>,
+}
+
+async fn audit_response(
+    State(stub): State<Arc<AuditStub>>,
+    headers: HeaderMap,
+    body: String,
+) -> StatusCode {
+    stub.requests.lock().unwrap().push((
+        headers
+            .get("idempotency-key")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_string(),
+        body,
+    ));
+    StatusCode::from_u16(stub.status.load(Ordering::Relaxed)).unwrap()
+}
+
+async fn serve_audit(stub: Arc<AuditStub>) -> String {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route("/v1/events", axum::routing::post(audit_response))
+        .with_state(stub);
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    format!("http://{address}")
+}
 
 fn at(hour: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 7, hour, 0, 0).unwrap()
@@ -1180,4 +1287,99 @@ async fn an_agent_with_no_grants_reads_an_empty_list() {
     assert!(mine.is_empty());
 
     drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "needs TEST_DATABASE_URL pointing at a disposable Postgres database"]
+async fn support_drainer_delivers_and_records_observation() {
+    let (pool, schema) = test_pool().await;
+    let store = SupportOutboxStore::new(pool.clone());
+    let actor = UserId::generate();
+    let target = UserId::generate();
+    store
+        .append(
+            &record(actor, "identity.support_read.served", target),
+            "corr-drain",
+            at(9),
+        )
+        .await
+        .unwrap();
+    let stub = Arc::new(AuditStub {
+        status: AtomicU16::new(200),
+        ..Default::default()
+    });
+    let observation = Arc::new(DrainObservation::default());
+    let audit_url = serve_audit(stub.clone()).await;
+    let drainer = SupportOutboxDrainer::new(
+        pool.clone(),
+        audit_url,
+        "audit-token",
+        observation.clone(),
+        std::time::Duration::from_secs(60),
+    );
+    let report = drainer.run_once(at(9)).await;
+    assert_eq!(report.delivered, 1);
+    assert_eq!(
+        observation.deliveries.lock().unwrap().as_slice(),
+        &[SupportDrainDelivery::Delivered]
+    );
+    assert_eq!(stub.requests.lock().unwrap().len(), 1);
+    drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "needs TEST_DATABASE_URL pointing at a disposable Postgres database"]
+async fn support_sources_cover_success_and_error_projection_paths() {
+    let user_id = UserId::generate();
+    let stub = Arc::new(SourceStub {
+        status: AtomicU16::new(200),
+        body: Mutex::new(
+            serde_json::json!({
+                "accounts": [{
+                    "id": Uuid::new_v4(), "label": "Ledger", "sourceType": "manual",
+                    "syncStatus": "ready", "lastSyncedAt": null
+                }],
+                "portfolios": [{ "id": Uuid::new_v4(), "label": "Long term" }]
+            })
+            .to_string(),
+        ),
+        ..Default::default()
+    });
+    let base = serve_source(stub.clone()).await;
+    assert_eq!(
+        HttpSupportAccounts::new(&base, "account-token")
+            .accounts(user_id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        HttpSupportPortfolios::new(&base, "portfolio-token")
+            .portfolios(user_id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(stub.requests.lock().unwrap().len(), 2);
+
+    stub.status.store(503, Ordering::Relaxed);
+    assert!(HttpSupportAccounts::new(&base, "token")
+        .accounts(user_id)
+        .await
+        .is_err());
+    stub.status.store(200, Ordering::Relaxed);
+    *stub.body.lock().unwrap() =
+        serde_json::json!({"accounts": [{"id": "not-a-uuid"}]}).to_string();
+    assert!(HttpSupportAccounts::new(&base, "token")
+        .accounts(user_id)
+        .await
+        .is_err());
+    *stub.body.lock().unwrap() =
+        serde_json::json!({"portfolios": [{"id": Uuid::new_v4()}]}).to_string();
+    assert!(HttpSupportPortfolios::new(&base, "token")
+        .portfolios(user_id)
+        .await
+        .is_err());
 }

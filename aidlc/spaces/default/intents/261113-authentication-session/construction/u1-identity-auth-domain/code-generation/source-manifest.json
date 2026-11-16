@@ -1,0 +1,14 @@
+{
+  "stage": "code-generation",
+  "unit": "u1-identity-auth-domain",
+  "version": 1,
+  "writes": [
+    { "path": "services/identity/domain/src/session.rs" },
+    { "path": "services/identity/infrastructure/src/repositories/sessions.rs" },
+    { "path": "services/identity/tests/domain.rs" },
+    { "path": "services/identity/tests/common/fakes.rs" },
+    { "path": "services/identity/tests/repositories.rs" },
+    { "path": "services/identity/migrations/0009_session_absolute_cap.up.sql" },
+    { "path": "services/identity/migrations/0009_session_absolute_cap.down.sql" }
+  ]
+}

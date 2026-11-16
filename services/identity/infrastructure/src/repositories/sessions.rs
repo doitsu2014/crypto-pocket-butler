@@ -30,6 +30,7 @@ struct SessionRow {
     auth_session_id: String,
     device: Option<String>,
     location: Option<String>,
+    first_seen_at: DateTime<Utc>,
     last_activity_at: DateTime<Utc>,
     revoked_at: Option<DateTime<Utc>>,
 }
@@ -42,6 +43,7 @@ impl SessionRow {
             self.auth_session_id,
             self.device,
             self.location,
+            self.first_seen_at,
             self.last_activity_at,
             self.revoked_at,
         )
@@ -49,15 +51,15 @@ impl SessionRow {
 }
 
 const SESSION_COLUMNS: &str =
-    "id, user_id, auth_session_id, device, location, last_activity_at, revoked_at";
+    "id, user_id, auth_session_id, device, location, first_seen_at, last_activity_at, revoked_at";
 
 #[async_trait]
 impl DeviceSessionRepository for PgDeviceSessionRepository {
     async fn upsert(&self, session: &DeviceSession) -> Result<(), RepositoryError> {
         sqlx::query(
             "INSERT INTO device_sessions
-                 (id, user_id, auth_session_id, device, location, last_activity_at, revoked_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+                 (id, user_id, auth_session_id, device, location, first_seen_at, last_activity_at, revoked_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT (user_id, auth_session_id) DO UPDATE
              SET device = COALESCE(EXCLUDED.device, device_sessions.device),
                  location = EXCLUDED.location,
@@ -69,6 +71,7 @@ impl DeviceSessionRepository for PgDeviceSessionRepository {
         .bind(session.auth_session_id())
         .bind(session.device())
         .bind(session.location())
+        .bind(session.first_seen_at())
         .bind(session.last_activity_at())
         .bind(session.revoked_at())
         .execute(&self.pool)

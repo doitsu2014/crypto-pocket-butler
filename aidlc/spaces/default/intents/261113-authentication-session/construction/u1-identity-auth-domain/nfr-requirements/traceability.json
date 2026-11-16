@@ -1,0 +1,28 @@
+{
+  "stage": "nfr-requirements",
+  "unit": "u1-identity-auth-domain",
+  "upstream_ids": [
+    "NFR1",
+    "NFR2",
+    "NFR3",
+    "NFR4",
+    "NFR5",
+    "NFR6",
+    "NFR7",
+    "NFR8",
+    "NFR9",
+    "NFR10"
+  ],
+  "coverage": [
+    { "id": "NFR1", "status": "OK", "target": "NFR1.1; NFR1.2; NFR1.3; NFR1.4; NFR1.5" },
+    { "id": "NFR2", "status": "OK", "target": "NFR2.1; NFR2.2" },
+    { "id": "NFR3", "status": "OK", "target": "NFR3.1; NFR3.2; NFR3.3; NFR3.4; NFR3.5; NFR3.6; NFR3.7; NFR3.8; NFR3.9; NFR3.10" },
+    { "id": "NFR4", "status": "Deferred", "target": "U3 SPA auth and sessions UI; WCAG 2.2 AA criteria" },
+    { "id": "NFR5", "status": "OK", "target": "NFR5.1; NFR5.2; NFR5.3" },
+    { "id": "NFR6", "status": "OK", "target": "NFR6.1; NFR6.2; NFR6.3; NFR6.4; NFR6.5; NFR6.6; NFR6.7; NFR6.8; NFR6.9" },
+    { "id": "NFR7", "status": "OK", "target": "NFR7.1; NFR7.2" },
+    { "id": "NFR8", "status": "Deferred", "target": "Project testing posture and U4 browser journey gate; Rust 80% coverage measured in verification/build gates" },
+    { "id": "NFR9", "status": "OK", "target": "NFR9.1; NFR9.2" },
+    { "id": "NFR10", "status": "Deferred", "target": "U3 browser compatibility and unsupported-browser experience" }
+  ]
+}

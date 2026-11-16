@@ -1,0 +1,41 @@
+{
+  "stage": "domain-design",
+  "upstream_ids": ["US8.1", "US1.1", "US1.2", "US1.3", "US2.1", "US2.2", "US2.3", "US2.4", "US3.1", "US3.2", "US3.3", "US4.1", "US4.2", "US4.3", "US5.1", "US5.2", "US5.3", "US5.4", "US6.1", "US7.1", "US7.2", "US7.3", "US9.1", "US9.2", "US9.3", "US10.1", "US10.2"],
+  "coverage": [
+    { "id": "US8.1", "status": "OK", "target": "ApiGateway" },
+    { "id": "US1.1", "status": "OK", "target": "SpaAuthentication" },
+    { "id": "US1.2", "status": "OK", "target": "SpaAuthentication" },
+    { "id": "US1.3", "status": "OK", "target": "ApiGateway" },
+    { "id": "US2.1", "status": "OK", "target": "SupabaseAuth" },
+    { "id": "US2.2", "status": "OK", "target": "SupabaseAuth" },
+    { "id": "US2.3", "status": "OK", "target": "SpaAuthentication" },
+    { "id": "US2.4", "status": "OK", "target": "SupabaseAuth" },
+    { "id": "US3.1", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US3.2", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US3.3", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US4.1", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US4.2", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US4.3", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US5.1", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US5.2", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US5.3", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US5.4", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US6.1", "status": "OK", "target": "NotificationDelivery" },
+    { "id": "US7.1", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US7.2", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US7.3", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US9.1", "status": "OK", "target": "ApiGateway" },
+    { "id": "US9.2", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US9.3", "status": "OK", "target": "IdentityAuthDomain" },
+    { "id": "US10.1", "status": "Deferred", "target": "out-of-scope: deferred OAuth sign-in; no component delivered in this intent" },
+    { "id": "US10.2", "status": "Deferred", "target": "out-of-scope: deferred passkey sign-in; no component delivered in this intent" }
+  ],
+  "reverse": [
+    { "id": "SpaAuthentication", "status": "OK", "target": "US1.1, US1.2, US1.3, US2.3, US4.1, US5.1, US5.2, US5.3, US7.1, US9.3" },
+    { "id": "ApiGateway", "status": "OK", "target": "US1.3, US8.1, US9.1" },
+    { "id": "IdentityAuthDomain", "status": "OK", "target": "US3.1, US3.2, US3.3, US4.1, US4.2, US4.3, US5.1, US5.2, US5.3, US5.4, US7.1, US7.2, US7.3, US9.2, US9.3" },
+    { "id": "SupabaseAuth", "status": "OK", "target": "US1.1, US1.2, US2.1, US2.2, US2.4, US3.1" },
+    { "id": "NotificationDelivery", "status": "OK", "target": "US6.1" },
+    { "id": "AuditTrail", "status": "OK", "target": "US2.4, US3.1, US5.2, US5.3, US5.4, US7.1, US7.2, US7.3" }
+  ]
+}

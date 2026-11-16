@@ -122,6 +122,38 @@ organisation or team memory.
 
 - ALWAYS keep the canonical build, lint and test command list in `aidlc/spaces/default/memory/project.md` as the single authoritative list. (Interview Q7) (affirmed 2026-11-10)
 
+- ALWAYS declare every gateway route the SPA calls in the deny-by-default route table, with an owning service handler behind it — and ALWAYS treat reachability through those declared routes as the completion test for a slice. (Interview Q2 of this run; `services/gateway/domain/src/route.rs` header "Anything not declared is denied (BR4.2)", `services/identity/http/src/routes.rs`, `web/src/api/client.ts`) (affirmed 2026-11-13)
+
+- ALWAYS scan dependencies and container images for vulnerabilities before release. **[intention]** — required by BRD-012 NFR-SEC-14 and named in unit design records; no scanner configuration or pipeline exists in the tree. (BRD-012 NFR-SEC-14) (affirmed 2026-11-13)
+
+- ALWAYS deploy every backend service and the static frontend artefact as replicated Docker Swarm services. **[corrected]** — the observability stack is *not* deployed: `infra/swarm-stack.yml` contains no Prometheus, Loki, Tempo or Grafana service, and no scrape configuration exists anywhere in the repository. The self-hosted Loki/Prometheus/Tempo/Grafana stack remains the target; structured logs exist today, metrics and traces are not collected. The earlier wording ("every service and the observability stack") named something that does not exist — the same claim is still in `docs/development/README.md`'s stack table and is part of the open action above. (`.claude/rules/development.md`, `docs/development/README.md`, `infra/swarm-stack.yml` — 31 services, none of them the observability stack; `infra/prometheus/support-rules.yml` header: "There is no Prometheus scrape configuration in this repository"; Interview Q6 of this run) (affirmed 2026-11-13)
+
+- ALWAYS deploy with the Docker Swarm rolling update configured in `infra/swarm-stack.yml` — `parallelism: 1`, `failure_action: rollback`, `monitor: 30s`, `order: start-first` for the APIs, gateway, `web`, `audit-retention`, `job-orchestration` and `identity-worker`, and `order: stop-first` for the seven background workers — with the service health check gating the update. (Interview Q1 of the second discovery, `infra/swarm-stack.yml` — re-verified in this run: 22 update policies, 22 health checks, 22 `stop_grace_period` entries) (affirmed 2026-11-13)
+
+- ALWAYS tag release images with the commit SHA, and ALWAYS release continuously from `main` with no semantic-versioning ceremony until a first production release exists. (Interview Q8 of this run; `infra/swarm-stack.yml` `${REGISTRY:-ghcr.io/crypto-pocket-butler}/<service>:${TAG:-latest}`; `git tag` empty) (affirmed 2026-11-13)
+
+- ALWAYS ship schema changes as versioned sqlx up/down migration pairs, and ALWAYS run the service's migrate one-shot before the API and worker are updated — then apply the matching down migration on rollback as an automatic step of the release job. **[intention]** — 19 matched pairs exist in eleven services, 9 one-shot `*-migrate` services ship, and no job exists to order them or apply a `.down.sql`; building the automatic down step is an explicit deliverable of this intent. (Interview Q7 of this run; `services/*/src/bin/migrate.rs` header; `infra/swarm-stack.yml`) (affirmed 2026-11-13)
+
+- ALWAYS merge unit work back within days; an intent's own AI-DLC branch may live as long as the intent. (Interview Q1 of this run; `memory/team.md` "short-lived branches"; `112b354` on `feat/authentication-session-management`) (affirmed 2026-11-13)
+
+- ALWAYS write a failing test before the implementation for all production code (TDD), and land the test in the same change as the code it covers. (Interview Q3 of the first discovery) (affirmed 2026-11-13)
+
+- ALWAYS keep line coverage at or above 80% per Rust crate. (Interview Q4 of the first discovery, re-affirmed at Q4 of this run) (affirmed 2026-11-13)
+
+- ALWAYS measure Rust line coverage with `cargo llvm-cov`, using a reading that instruments the package carrying the tests — the workspace run, or the paired `-p <crate> -p <service>` run — after the disposable database is up so the `#[ignore]` suites contribute. **[corrected]** — a bare `cargo llvm-cov -p <crate>` measures almost nothing here, because most suites live in the service package rather than the library crate; a review round was already spent on a number produced that way. (`aidlc/spaces/default/knowledge/aidlc-quality-agent/coverage-runbook.md` "The measurement trap"; Interview Q4 of this run) (affirmed 2026-11-13)
+
+- ALWAYS quote the `cargo llvm-cov` command beside a coverage figure, so every quoted number carries the invocation that produced it. (Interview Q4 of this run) (affirmed 2026-11-13)
+
+- ALWAYS run `yarn e2e` for any change touching the auth/sign-in surface, and treat a green run as a gate on that change. (Interview Q3 of this run; `web/package.json`, `web/e2e/README.md` — the suite found a first-render crash all 312 unit tests passed over) (affirmed 2026-11-13)
+
+- ALWAYS provision a disposable Postgres database per gate run and run the `#[ignore]` adapter and migration suites against it as a blocking gate, with `TEST_DATABASE_URL` pointing at that database. **[intention]** — no committed provisioning script exists; the runbook records the manual `docker run supabase/postgres:15.8.1.060` shape. (Interview Q5 of the second discovery, `coverage-runbook.md`) (affirmed 2026-11-13)
+
+- ALWAYS run `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` for Rust, and ESLint plus Prettier through Yarn for TypeScript. (Interview Q8 of the first discovery) (affirmed 2026-11-13)
+
+- ALWAYS keep the canonical build, lint and test command list in `aidlc/spaces/default/memory/project.md` as the single authoritative list, including `yarn e2e` and `yarn size` for `web/`. (Interview Q7 of the second discovery, Interview Q9 of this run) (affirmed 2026-11-13)
+
+- ALWAYS use Yarn 4.18.1, pinned through corepack (`packageManager: yarn@4.18.1` at the root and in `web/` and `support-console/`), for every JavaScript/TypeScript command. (`.claude/rules/development.md`, `package.json`, `web/package.json`, `support-console/package.json` — supersedes the earlier "Yarn ≥ 6" rule, which no Yarn release satisfied; re-verified in this run at all three levels) (affirmed 2026-11-13)
+
 ## Forbidden
 - NEVER use a backend language other than Rust or an ORM other than sqlx. (`.claude/rules/development.md`) (affirmed 2026-11-05)
 - NEVER let `domain` import a sibling crate or framework — no Axum, sqlx, reqwest, or serde transport types. (`.claude/rules/development.md`, `docs/development/README.md`) (affirmed 2026-11-05)
@@ -155,3 +187,12 @@ organisation or team memory.
 - NEVER introduce a new requirement in inception without documenting its origin. (`memory/phases/inception.md`) (affirmed 2026-11-05)
 - NEVER ship a schema change without a matching down migration. (Interview Q6) (affirmed 2026-11-10)
 - NEVER let a Swarm service update proceed without its health check passing. (Interview Q1) (affirmed 2026-11-10)
+- NEVER let an SPA call exist without a declared gateway route and an owning service handler behind it. (Interview Q2 of this run; `services/gateway/domain/src/route.rs` — deny-by-default) (affirmed 2026-11-13)
+- NEVER store browser tokens in `localStorage`. (BRD-012 NFR-SEC-10) (affirmed 2026-11-13)
+- NEVER merge production code whose test was written after the implementation. (Interview Q3 of the first discovery) (affirmed 2026-11-13)
+- NEVER merge a change touching the auth/sign-in surface with a failing `yarn e2e`. (Interview Q3 of this run) (affirmed 2026-11-13)
+- NEVER quote a coverage figure without the `cargo llvm-cov` command that produced it. (Interview Q4 of this run) (affirmed 2026-11-13)
+- NEVER create a staging environment or gate a release on staging; production is the only environment. (Interview Q5 and Q9 of the first discovery — supersedes ideation scope document launch gates C11–C12) (affirmed 2026-11-13)
+- NEVER ship a schema change without a matching down migration. (Interview Q6 of the second discovery, re-affirmed at Q7 of this run) (affirmed 2026-11-13)
+- NEVER update the API or worker before the service's migrate one-shot has run against the migrator DSN. (Interview Q7 of this run; `services/*/src/bin/migrate.rs` header; `infra/swarm-stack.yml` `*-migrate` services) (affirmed 2026-11-13)
+- NEVER let a Swarm service update proceed without its health check passing. (Interview Q1 of the second discovery) (affirmed 2026-11-13)

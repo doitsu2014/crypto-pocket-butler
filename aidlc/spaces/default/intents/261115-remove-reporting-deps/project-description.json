@@ -1,0 +1,1 @@
+"Remove the unused serde and serde_json dependencies from reporting-domain so the Clean Architecture boundary check passes"

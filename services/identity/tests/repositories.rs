@@ -38,6 +38,7 @@ use identity_infrastructure::repositories::{
     PgJurisdictionListRepository, PgJurisdictionRepository, PgShreddingKeyRepository,
     PgSupportGrantRepository, PgUserRepository,
 };
+use uuid::Uuid;
 
 fn at(hour: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 7, hour, 0, 0).unwrap()
@@ -224,18 +225,95 @@ async fn consent_latest_returns_the_newest_decision_and_delete_removes_the_histo
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
+async fn the_session_cap_migration_expires_legacy_rows_and_allows_old_writer_inserts() {
+    let (pool, schema) = common::empty_test_pool().await;
+    let user_id = Uuid::new_v4();
+    let last_activity = at(10);
+    let legacy_session_id = Uuid::new_v4();
+
+    // The helper leaves a deliberately minimal pre-migration schema so this
+    // migration can be exercised independently of pgsodium and later migrations.
+    sqlx::query("CREATE TABLE device_sessions (id uuid PRIMARY KEY, user_id uuid NOT NULL, auth_session_id text NOT NULL, device text, location text, last_activity_at timestamptz NOT NULL, revoked_at timestamptz)")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Seed a pre-migration row with recent activity but no original sign-in
+    // timestamp; the migration must not turn last activity into a fresh cap.
+    sqlx::query(
+        "INSERT INTO device_sessions
+             (id, user_id, auth_session_id, device, location, last_activity_at, revoked_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(legacy_session_id)
+    .bind(user_id)
+    .bind("legacy-session")
+    .bind(Some("Legacy browser".to_string()))
+    .bind(Option::<String>::None)
+    .bind(last_activity)
+    .bind(Option::<DateTime<Utc>>::None)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::raw_sql(include_str!(
+        "../migrations/0009_session_absolute_cap.up.sql"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (first_seen, stored_activity): (DateTime<Utc>, DateTime<Utc>) =
+        sqlx::query_as("SELECT first_seen_at, last_activity_at FROM device_sessions WHERE id = $1")
+            .bind(legacy_session_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        first_seen <= Utc::now() - Duration::days(30),
+        "legacy rows without original sign-in time are expired rather than granted a fresh cap"
+    );
+    assert_eq!(
+        stored_activity, last_activity,
+        "the activity history is retained"
+    );
+
+    // The previous app writer omitted first_seen_at. The compatibility default
+    // must allow that INSERT during a start-first deployment.
+    sqlx::query(
+        "INSERT INTO device_sessions
+             (id, user_id, auth_session_id, device, location, last_activity_at, revoked_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(user_id)
+    .bind("legacy-writer-session")
+    .bind(Some("Old application".to_string()))
+    .bind(Option::<String>::None)
+    .bind(at(11))
+    .bind(Option::<DateTime<Utc>>::None)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    common::drop_schema(&schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL with pgsodium (disposable Postgres)"]
 async fn a_device_session_upserts_one_row_per_auth_session() {
     let (pool, schema) = common::test_pool().await;
     let (_users, _user, _key, id) = stored_user(&pool).await;
     let sessions = PgDeviceSessionRepository::new(pool.clone());
 
+    let first_seen = at(9);
     let first = DeviceSession::new(
         DeviceSessionId::generate(),
         id,
         "auth-session-1",
         Some("Firefox".to_string()),
         Some("Hanoi, VN".to_string()),
-        at(9),
+        first_seen,
     );
     sessions.upsert(&first).await.unwrap();
 
@@ -252,6 +330,11 @@ async fn a_device_session_upserts_one_row_per_auth_session() {
 
     let listed = sessions.list_for_user(id).await.unwrap();
     assert_eq!(listed.len(), 1, "one row per (user, auth session)");
+    assert_eq!(
+        listed[0].first_seen_at(),
+        first_seen,
+        "upsert must preserve the original cap anchor"
+    );
     assert_eq!(listed[0].last_activity_at(), at(10));
     assert_eq!(listed[0].location(), None);
 
@@ -260,6 +343,52 @@ async fn a_device_session_upserts_one_row_per_auth_session() {
     sessions.update(&stored).await.unwrap();
     let found = sessions.find(stored.id()).await.unwrap().unwrap();
     assert!(found.is_revoked());
+    assert_eq!(
+        found.first_seen_at(),
+        first_seen,
+        "a later revoke/update must preserve the original cap anchor"
+    );
+
+    // A row with recent activity but an unknown, over-30-day-old session
+    // history must not receive a fresh 30-day window during migration. New
+    // column defaults are applied when this pre-migration-style insert omits
+    // `first_seen_at`; the explicit old anchor here models the migration's
+    // conservative expiry treatment for existing rows.
+    let old_session = DeviceSession::new(
+        DeviceSessionId::generate(),
+        id,
+        "auth-session-old",
+        Some("Old browser".to_string()),
+        None,
+        at(9) - Duration::days(31),
+    );
+    sessions.upsert(&old_session).await.unwrap();
+    let old_row = sessions
+        .list_for_user(id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|session| session.auth_session_id() == "auth-session-old")
+        .unwrap();
+    assert!(!old_row.is_within_absolute_cap(at(10) + Duration::days(31)));
+
+    // Simulate the previous application writer: omit `first_seen_at`. The
+    // migration default must allow that insert during the start-first rollout.
+    sqlx::query(
+        "INSERT INTO device_sessions
+             (id, user_id, auth_session_id, device, location, last_activity_at, revoked_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(id.as_uuid())
+    .bind("legacy-writer-session")
+    .bind(Some("Legacy browser".to_string()))
+    .bind(Option::<String>::None)
+    .bind(at(10))
+    .bind(Option::<DateTime<Utc>>::None)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     common::drop_schema(&schema).await;
 }

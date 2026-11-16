@@ -652,6 +652,15 @@ pub async fn test_pool_before(version: i64) -> (PgPool, String) {
     (pool, schema)
 }
 
+/// Creates an isolated schema and pool without running Identity migrations.
+/// Use only for tests that exercise a single migration against a minimal legacy shape.
+///
+/// # Panics
+/// Panics when `TEST_DATABASE_URL` is unset or the database/schema setup fails.
+pub async fn empty_test_pool() -> (PgPool, String) {
+    disposable_pool().await
+}
+
 async fn disposable_pool() -> (PgPool, String) {
     let url = std::env::var("TEST_DATABASE_URL").expect(
         "TEST_DATABASE_URL must point at a disposable Postgres database for integration tests",

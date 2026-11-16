@@ -22,5 +22,13 @@
     "scope": "classic",
     "status": "in-flight",
     "request": "e2e1d321"
+  },
+  {
+    "uuid": "01a1ddce-34d9-753f-8798-899962d53a48",
+    "slug": "remove-reporting-deps",
+    "dirName": "261115-remove-reporting-deps",
+    "scope": "bugfix",
+    "status": "complete",
+    "request": "4f5a6b92"
   }
 ]

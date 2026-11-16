@@ -2,68 +2,64 @@
 
 ## Run Record
 
-- Date: 2026-11-09
-- Commit: 14742cb9626e0277df057db016a3ca73fa81b990
+- Date: 2026-11-15
+- Commit: 112b3541355aa1c38d9370d49142a2d3fb9e5866
 
-Full rescan of the project-root repository `crypto-pocket-butler` for intent
-`brd-002-users-roles`. The scan covered the whole repository except build
-output, dependency folders, IDE/tool caches, generated Structurizr artefacts,
-and AI-DLC's own install (`./.claude/` and `./aidlc/`). Deep analysis focused on
-the Rust service crates (especially Identity and the API Gateway), the frontend
-packages, the migrations and schema bootstraps, and the architecture and BRD
-documents; the remaining service bodies were read at route/layout/representative
-granularity. See `../../inception/reverse-engineering/developer-scan.md` in the
-intent record for the full coverage report.
+Focused merge of the CURRENT shared CodeKB. The verified existing scope is retained and unioned with this run's focused `services/reporting/domain/` scan. The source snapshot fingerprint covers the complete merged analyzed path set. No builds, tests, or programs were run.
 
 ## Scope of Analysis
 
 ```yaml
 scope_version: 1
-kind: full
-intent: brd-002-users-roles
-fingerprint: 7c8881eb6f944c30773d9a7ab635551e668e94ee
+kind: partial
+intent: 261115-remove-reporting-deps
+fingerprint: 4c865a1c3273c8998f986dfa90d7674daccd83e4
 analyzed:
   paths:
-    - ./
+    - Cargo.toml
+    - package.json
+    - web/package.json
+    - web/src/auth/session.ts
+    - web/src/auth/storage.ts
+    - web/src/auth/client.ts
+    - web/src/auth/session.test.ts
+    - web/src/features/auth/SignInPage.tsx
+    - web/src/api/client.ts
+    - services/gateway/domain/src/route.rs
+    - services/gateway/infrastructure/src/auth.rs
+    - services/identity/Cargo.toml
+    - services/identity/http/src/routes.rs
+    - services/identity/http/src/middleware.rs
+    - services/identity/application/src/sessions.rs
+    - services/identity/tests/http.rs
+    - services/identity/tests/authorisation_adapters.rs
+    - docs/brds/BRD-003-authentication-and-session-management.md
+    - .gitignore
+    - aidlc/spaces/default/knowledge/aidlc-shared/domain-glossary.md
+    - aidlc/spaces/default/knowledge/aidlc-shared/problem-details.md
+    - aidlc/spaces/default/knowledge/aidlc-shared/service-map.md
+    - aidlc/spaces/default/knowledge/aidlc-shared/stack-facts.md
+    - aidlc/spaces/default/knowledge/aidlc-developer-agent/rust-conventions.md
+    - aidlc/spaces/default/knowledge/aidlc-developer-agent/sqlx-migrations.md
+    - aidlc/spaces/default/knowledge/aidlc-developer-agent/test-layout.md
+    - services/reporting/domain/
   components:
-    - API Gateway (BFF)
-    - Identity Service
-    - Account Service
-    - Asset Registry Service
-    - Market Data Service
-    - Portfolio Service
-    - Ledger Service
-    - Reporting Service
-    - Notification Service
-    - Analytics Service
-    - Job Orchestration Service
-    - Audit Service
-    - React Web Client (SPA)
-    - Support Console
-    - Shared Four-Crate Architecture
-    - Local Docker Compose Stack
-    - Swarm Production Stack
-    - Observability Stack
-    - Design System
-    - Documentation Set
-    - Build and Boundary Tooling
-    - Billing Service (planned, not implemented)
+    - SPA Authentication Session
+    - SPA Gateway Client
+    - Gateway Route Table
+    - Gateway JWT Validator
+    - Identity HTTP API
+    - Identity Device Sessions
+    - Reporting Domain
 shallow:
   paths:
-    - services/analytics/
-    - services/asset-registry/
-    - services/ledger/
-    - services/market-data/
-    - services/notification/
-    - services/reporting/
-    - web/src/features/
-    - web/src/components/
-    - web/src/i18n/
-    - support-console/src/components/
-    - support-console/src/domain/
-    - deployment/localhost/scripts/
-    - docs/brds/
-    - docs/architecture/workspace.dsl
-    - design-system/
+    - services/
+    - web/src/
+    - support-console/src/
+    - deployment/
+    - infra/
     - supabase/
+    - scripts/
+    - docs/
+    - design-system/
 ```

@@ -766,6 +766,7 @@ impl DeviceSessionRepository for FakeSessions {
                     .map(ToString::to_string)
                     .or_else(|| existing.device().map(ToString::to_string)),
                 session.location().map(ToString::to_string),
+                existing.first_seen_at(),
                 existing.last_activity_at().max(session.last_activity_at()),
                 existing.revoked_at().or_else(|| session.revoked_at()),
             );

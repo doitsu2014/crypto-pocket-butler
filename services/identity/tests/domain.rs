@@ -601,6 +601,50 @@ fn a_device_session_tracks_activity_and_revocation() {
 }
 
 #[test]
+fn a_device_session_absolute_cap_is_anchored_to_first_seen_not_account_age() {
+    use chrono::Duration;
+
+    let first_seen = at(9);
+    let session = DeviceSession::new(
+        identity_domain::ids::DeviceSessionId::generate(),
+        UserId::generate(),
+        "auth-session-cap",
+        None,
+        None,
+        first_seen,
+    );
+
+    assert!(session.is_within_absolute_cap(first_seen + Duration::days(29)));
+    assert!(!session.is_within_absolute_cap(first_seen + Duration::days(30)));
+}
+
+#[test]
+fn refreshing_device_activity_does_not_extend_the_absolute_cap() {
+    use chrono::Duration;
+
+    let first_seen = at(9);
+    let mut session = DeviceSession::new(
+        identity_domain::ids::DeviceSessionId::generate(),
+        UserId::generate(),
+        "auth-session-refresh",
+        Some("Firefox".to_string()),
+        None,
+        first_seen,
+    );
+    let original_expiry = session.absolute_expires_at();
+
+    session.touch(
+        Some("Firefox current".to_string()),
+        None,
+        first_seen + Duration::days(29),
+    );
+
+    assert_eq!(session.first_seen_at(), first_seen);
+    assert_eq!(session.absolute_expires_at(), original_expiry);
+    assert!(!session.is_within_absolute_cap(original_expiry));
+}
+
+#[test]
 fn the_export_secret_scan_finds_credential_shaped_fields_and_ignores_clean_data() {
     assert_eq!(
         find_secret_field(r#"{"accounts":[{"apiKey":"fake-value"}]}"#).as_deref(),
